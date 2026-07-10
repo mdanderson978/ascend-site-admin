@@ -1,0 +1,28 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: node --check index.mjs
+      - name: Parse admin inline script
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const html=fs.readFileSync('admin.html','utf8'); const start=html.indexOf('<script>')+8; const end=html.lastIndexOf('</script>'); if(start<8||end<start) throw new Error('Inline script missing'); new Function(html.slice(start,end));"
+      - name: Verify package contents
+        run: npm pack --dry-run

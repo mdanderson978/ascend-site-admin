@@ -46,6 +46,9 @@ It has no user authentication and must not be exposed through a network proxy
 or changed to listen on a public interface. Repository and deployment access
 remain protected by the Git credentials on the editor's machine.
 
+Please report suspected vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md).
+
 ## Releasing a new engine version
 
 1. Make changes here; test against a real site by temporarily pointing its
