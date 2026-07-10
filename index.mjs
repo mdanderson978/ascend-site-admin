@@ -33,6 +33,8 @@
  *   port            default port (env ADMIN_PORT always wins), default 4322.
  *   gitIdentity     { name, email } used only when the machine has no git
  *                   identity at all; defaults to Website Admin <developerEmail>.
+ *   pullOnStart     optional; false disables the best-effort startup pull
+ *                   for CI and read-only verification. Defaults to true.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, and history/restore live here. The admin UI (admin.html,
@@ -606,8 +608,10 @@ export function startAdmin(config) {
 
     // Best-effort: start from the latest content another editor may have
     // published, so this session isn't already stale before anyone types.
-    try { git(['pull', '--no-rebase', '--no-edit']); }
-    catch (_) { /* non-fatal — the pull-before-push in /api/git/push still protects publishing */ }
+    if (config.pullOnStart !== false) {
+      try { git(['pull', '--no-rebase', '--no-edit']); }
+      catch (_) { /* non-fatal — the pull-before-push in /api/git/push still protects publishing */ }
+    }
   });
 
   return server;
