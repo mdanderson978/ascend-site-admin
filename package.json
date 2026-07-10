@@ -1,0 +1,28 @@
+{
+  "name": "site-admin",
+  "version": "1.0.0",
+  "description": "Ascend Web Design's local CMS admin engine for split-repo Astro sites. Consumed by content repos as a git dependency pinned to a version tag.",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "admin.html"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mdanderson978/ascend-site-admin.git"
+  },
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "gray-matter": "^4.0.3",
+    "sharp": "^0.35.2"
+  }
+}
