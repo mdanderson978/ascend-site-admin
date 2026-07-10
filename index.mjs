@@ -16,7 +16,7 @@
  *                   src/content, src/assets/uploads, public/documents.
  *   fields          (required) the FIELDS map: '<collection>/<slug>' → field
  *                   array. See the contract comment in references/admin.config.mjs.
- *   siteTitle       (required) e.g. 'The Heights CC' — sidebar logo + console.
+ *   siteTitle       (required) e.g. 'Example Community Centre' — sidebar logo + console.
  *   developerName   (required) shown in client-facing error messages.
  *   developerEmail  (required) shown in client-facing error messages.
  *   sections        SECTIONS map: collection → field-name → {label, hint}.
@@ -44,7 +44,7 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import matter from 'gray-matter';
 import sharp from 'sharp';
 import Busboy from 'busboy';
@@ -66,7 +66,7 @@ export function startAdmin(config) {
     if (!config?.[key]) throw new Error(`site-admin: config.${key} is required`);
   }
 
-  const ROOT     = config.root;
+  const ROOT     = path.resolve(config.root);
   const CONTENT  = path.join(ROOT, 'src', 'content');
   const UPLOADS  = path.join(ROOT, 'src', 'assets', 'uploads');
   const DOCS     = path.join(ROOT, 'public', 'documents');
@@ -78,6 +78,16 @@ export function startAdmin(config) {
 
   fs.mkdirSync(UPLOADS, { recursive: true });
   fs.mkdirSync(DOCS,    { recursive: true });
+
+  const git = (args, options = {}) => execFileSync(
+    'git', ['-C', ROOT, ...args],
+    { encoding: 'utf-8', stdio: 'pipe', ...options },
+  );
+
+  function isInside(parent, candidate) {
+    const rel = path.relative(path.resolve(parent), path.resolve(candidate));
+    return rel === '' || (!rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel));
+  }
 
   // ── Form section headings ────────────────────────────────────────────────
   // Injected at serve time before the named field, so every page's long form
@@ -233,13 +243,13 @@ export function startAdmin(config) {
   // config).
   function ensureGitIdentity() {
     let email = '';
-    try { email = execSync(`git -C "${ROOT}" config user.email`, { encoding: 'utf-8', stdio: 'pipe' }).trim(); }
+    try { email = git(['config', 'user.email']).trim(); }
     catch (_) { /* unset — git exits 1 */ }
     if (email) return;
     const id = { name: 'Website Admin', email: developerEmail, ...(config.gitIdentity || {}) };
     try {
-      execSync(`git -C "${ROOT}" config user.name "${id.name}"`, { stdio: 'pipe' });
-      execSync(`git -C "${ROOT}" config user.email "${id.email}"`, { stdio: 'pipe' });
+      git(['config', 'user.name', String(id.name)]);
+      git(['config', 'user.email', String(id.email)]);
     } catch (_) { /* non-fatal; publish will surface any real git problem */ }
   }
 
@@ -319,8 +329,27 @@ export function startAdmin(config) {
     const url   = new URL(req.url, 'http://localhost:' + PORT);
     const path_ = url.pathname;
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+    const allowedOrigins = new Set([
+      `http://localhost:${PORT}`,
+      `http://127.0.0.1:${PORT}`,
+    ]);
+    const origin = req.headers.origin;
+    const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method || 'GET');
+
+    // This unauthenticated service is deliberately localhost-only. Reject
+    // cross-origin writes so a hostile website cannot drive a running admin
+    // through the visitor's browser. Same-origin responses need no CORS.
+    if ((origin && !allowedOrigins.has(origin)) || (mutating && !origin)) {
+      jsonResp(res, 403, { error: 'Forbidden origin' });
+      return;
+    }
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    if (req.method === 'OPTIONS') {
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.writeHead(204); res.end(); return;
+    }
 
     try {
 
@@ -398,7 +427,7 @@ export function startAdmin(config) {
         const rel = `src/content/${collection}/${slug}.md`;
         let out = '';
         try {
-          out = execSync(`git -C "${ROOT}" log --format=%H%x09%ct%x09%s -n 30 -- "${rel}"`, { encoding: 'utf-8', stdio: 'pipe' });
+          out = git(['log', '--format=%H%x09%ct%x09%s', '-n', '30', '--', rel]);
         } catch (_) { /* not committed yet — empty history */ }
         const versions = out.trim().split('\n').filter(Boolean).map(line => {
           const [sha, epoch, ...msg] = line.split('\t');
@@ -418,7 +447,7 @@ export function startAdmin(config) {
 
         let oldContent;
         try {
-          oldContent = execSync(`git -C "${ROOT}" show ${sha}:"${rel}"`, { encoding: 'utf-8', stdio: 'pipe' });
+          oldContent = git(['show', `${sha}:${rel}`]);
         } catch (_) {
           jsonResp(res, 400, { error: 'Could not read that version.' });
           return;
@@ -435,7 +464,7 @@ export function startAdmin(config) {
             : `public/documents/${m[2]}`;
           if (fs.existsSync(path.join(ROOT, assetRel))) continue;
           try {
-            execSync(`git -C "${ROOT}" checkout ${sha} -- "${assetRel}"`, { encoding: 'utf-8', stdio: 'pipe' });
+            git(['checkout', sha, '--', assetRel]);
             restoredFiles.push(m[2]);
           } catch (_) { /* asset predates repo or path changed — page still restores */ }
         }
@@ -448,6 +477,7 @@ export function startAdmin(config) {
       const contentMatch = path_.match(/^\/api\/content\/([^/]+)\/(.+)$/);
       if (contentMatch && req.method === 'GET') {
         const [, collection, slug] = contentMatch;
+        if (!FIELDS[collection + '/' + slug]) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const fp = contentFile(collection, slug);
         if (!fs.existsSync(fp)) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const { data, content: body } = matter(fs.readFileSync(fp, 'utf-8'));
@@ -459,6 +489,7 @@ export function startAdmin(config) {
 
       if (contentMatch && req.method === 'POST') {
         const [, collection, slug] = contentMatch;
+        if (!FIELDS[collection + '/' + slug]) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const fp     = contentFile(collection, slug);
         const fields = FIELDS[collection + '/' + slug] || [];
         const { data, body } = await parseJsonBody(req);
@@ -499,11 +530,11 @@ export function startAdmin(config) {
       }
 
       if (path_ === '/api/preview' && req.method === 'GET') {
-        const p = decodeURIComponent(url.searchParams.get('p') || '');
-        if (!p.startsWith('src/assets/') && !p.startsWith('public/')) {
+        const p = url.searchParams.get('p') || '';
+        const abs = path.resolve(ROOT, p);
+        if ((!isInside(UPLOADS, abs) && !isInside(DOCS, abs)) || !isInside(ROOT, abs)) {
           res.writeHead(403); res.end('Forbidden'); return;
         }
-        const abs = path.join(ROOT, p);
         if (!fs.existsSync(abs)) { res.writeHead(404); res.end('Not found'); return; }
         const ext  = path.extname(abs).toLowerCase();
         const mime = { '.webp': 'image/webp', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.svg': 'image/svg+xml' }[ext] || 'application/octet-stream';
@@ -514,7 +545,7 @@ export function startAdmin(config) {
 
       if (path_ === '/api/git/push' && req.method === 'POST') {
         const { message } = await parseJsonBody(req);
-        const msg = (message || 'Content update').replace(/"/g, '\\"');
+        const msg = String(message || 'Content update').replace(/[\r\n]+/g, ' ').slice(0, 200);
         let gitOk     = false;
         let gitOutput = '';
         try {
@@ -523,24 +554,25 @@ export function startAdmin(config) {
           // pull below merges two real commits instead of choking on
           // uncommitted edits.
           pruneOrphanUploads();
-          execSync(`git -C "${ROOT}" add src/content src/assets/uploads public/documents`, { encoding: 'utf-8', stdio: 'pipe' });
-          execSync(`git -C "${ROOT}" diff --cached --quiet || git -C "${ROOT}" commit -m "${msg}"`, { encoding: 'utf-8', stdio: 'pipe' });
+          git(['add', 'src/content', 'src/assets/uploads', 'public/documents']);
+          try { git(['diff', '--cached', '--quiet']); }
+          catch (_) { git(['commit', '-m', msg]); }
 
           // Pull in anything another editor published since this copy was
           // last opened. Two editors is the NORMAL case, not an edge case.
           // Most of the time this merges cleanly (different pages changed);
           // only a real same-file conflict needs a human.
           try {
-            execSync(`git -C "${ROOT}" pull --no-rebase --no-edit`, { encoding: 'utf-8', stdio: 'pipe' });
+            git(['pull', '--no-rebase', '--no-edit']);
           } catch (pullErr) {
-            try { execSync(`git -C "${ROOT}" merge --abort`, { encoding: 'utf-8', stdio: 'pipe' }); } catch (_) {}
+            try { git(['merge', '--abort']); } catch (_) {}
             throw Object.assign(
               new Error(`Someone else published changes just before you that overlap with your edit. Please contact ${developerName} so both changes can be combined, then try Publish again.`),
               { friendly: true }
             );
           }
 
-          const out = execSync(`git -C "${ROOT}" push`, { encoding: 'utf-8', stdio: 'pipe' });
+          const out = git(['push']);
           gitOk     = true;
           gitOutput = out || 'Changes pushed successfully.';
         } catch (e) {
@@ -574,7 +606,7 @@ export function startAdmin(config) {
 
     // Best-effort: start from the latest content another editor may have
     // published, so this session isn't already stale before anyone types.
-    try { execSync(`git -C "${ROOT}" pull --no-rebase --no-edit`, { encoding: 'utf-8', stdio: 'pipe' }); }
+    try { git(['pull', '--no-rebase', '--no-edit']); }
     catch (_) { /* non-fatal — the pull-before-push in /api/git/push still protects publishing */ }
   });
 

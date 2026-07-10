@@ -32,12 +32,19 @@ Only the standard layout conventions:
 - the repo is a git clone whose `origin` accepts non-interactive push
   (publishing = commit → pull --no-rebase → push)
 
-## Access
+## Installation access
 
-This repo is **private**. Every machine that runs a consuming site's admin
-must be able to read it with its stored git credentials — add each client's
-GitHub account as a read-only collaborator here (they are already
-collaborators on their own content repo).
+This repository is designed for public distribution, so consuming machines
+can install the pinned Git dependency anonymously once its visibility is
+public. Editors then only need access to their own private content repository;
+they never need access to or make changes in this engine repo.
+
+## Security model
+
+The admin server listens on `127.0.0.1` only and rejects cross-origin writes.
+It has no user authentication and must not be exposed through a network proxy
+or changed to listen on a public interface. Repository and deployment access
+remain protected by the Git credentials on the editor's machine.
 
 ## Releasing a new engine version
 
@@ -54,3 +61,8 @@ collaborators on their own content repo).
 Never edit engine code inside a site's `node_modules` or re-copy engine files
 into a content repo — that recreates the divergence problem this package
 exists to fix.
+
+## License
+
+Copyright 2026 Ascend Web Design. Licensed under the
+[Apache License 2.0](LICENSE).
