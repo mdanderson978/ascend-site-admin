@@ -1,15 +1,17 @@
 {
   "name": "site-admin",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Ascend Web Design's local CMS admin engine for split-repo Astro sites. Consumed by content repos as a git dependency pinned to a version tag.",
   "type": "module",
   "main": "index.mjs",
   "exports": {
-    ".": "./index.mjs"
+    ".": "./index.mjs",
+    "./verify": "./verify-site.mjs"
   },
   "files": [
     "index.mjs",
-    "admin.html"
+    "admin.html",
+    "verify-site.mjs"
   ],
   "repository": {
     "type": "git",
@@ -18,6 +20,10 @@
   "license": "Apache-2.0",
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test",
+    "verify": "npm test && npm audit --omit=dev && node --check index.mjs && node --check verify-site.mjs"
   },
   "dependencies": {
     "busboy": "^1.6.0",

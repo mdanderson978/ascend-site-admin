@@ -19,8 +19,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm audit --omit=dev
-      - run: node --check index.mjs
+      - run: npm run verify
       - name: Parse admin inline script
         run: |
           node --input-type=module -e "import fs from 'node:fs'; const html=fs.readFileSync('admin.html','utf8'); const start=html.indexOf('<script>')+8; const end=html.lastIndexOf('</script>'); if(start<8||end<start) throw new Error('Inline script missing'); new Function(html.slice(start,end));"

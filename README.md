@@ -22,6 +22,10 @@ The full config contract is documented at the top of `index.mjs`. A worked
 example lives in the `new-astro-split-cms` skill at
 `references/admin.config.mjs`.
 
+Every consuming site should run `verifySite` from `site-admin/verify` in CI
+before accepting an engine update. See [RELEASING.md](RELEASING.md) for the
+compatibility and release policy.
+
 ## What the engine assumes about a content repo
 
 Only the standard layout conventions:
