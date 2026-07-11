@@ -1,0 +1,26 @@
+name: Fleet Status
+
+on:
+  schedule:
+    - cron: "41 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    env:
+      ASCEND_INVENTORY_TOKEN: ${{ secrets.ASCEND_INVENTORY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check configured sites
+        if: env.ASCEND_INVENTORY_TOKEN != ''
+        run: node scripts/check-inventory.mjs
+      - name: Explain missing inventory credential
+        if: env.ASCEND_INVENTORY_TOKEN == ''
+        run: |
+          echo "ASCEND_INVENTORY_TOKEN is not configured." >> "$GITHUB_STEP_SUMMARY"
+          echo "Install the Ascend inventory GitHub App or add a fine-grained token with read-only Contents access to the private content repositories." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
