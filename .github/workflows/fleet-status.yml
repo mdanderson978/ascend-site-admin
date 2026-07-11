@@ -23,4 +23,3 @@ jobs:
         run: |
           echo "ASCEND_INVENTORY_TOKEN is not configured." >> "$GITHUB_STEP_SUMMARY"
           echo "Install the Ascend inventory GitHub App or add a fine-grained token with read-only Contents access to the private content repositories." >> "$GITHUB_STEP_SUMMARY"
-          exit 1
