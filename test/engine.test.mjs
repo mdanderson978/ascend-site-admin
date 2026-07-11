@@ -6,6 +6,8 @@ import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { verifySite } from '../verify-site.mjs';
 
+const packageVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'site-admin-test-'));
   fs.mkdirSync(path.join(root, 'src/content/pages'), { recursive: true });
@@ -36,5 +38,5 @@ test('site verifier exercises the generic engine safely', async t => {
   const result = await verifySite(config, { root, port: 4411 });
   assert.equal(result.ok, true);
   assert.equal(result.pages, 1);
-  assert.equal(result.engineVersion, '1.2.0');
+  assert.equal(result.engineVersion, packageVersion);
 });
