@@ -21,10 +21,7 @@ developer contact details remain in each content repo's `admin.config.mjs`.
 4. Merge the pull request.
 5. Create and push an immutable annotated `vX.Y.Z` tag on the merge commit.
 6. Confirm the content-repo updater workflows detect the release.
-7. Confirm the fleet inventory reports every site current or explains why an
-   update is blocked.
 
-The scheduled inventory uses `ASCEND_INVENTORY_TOKEN`, which must be a
-fine-grained token with read-only Contents access to the registered private
-content repositories. Prefer replacing it with a GitHub App installation as
-the fleet grows. Never use a broad classic personal token.
+Client-fleet inventory and rollout reporting are private business operations,
+not engine responsibilities. Keep them in a separate private operations
+repository; never add client names or private repository identifiers here.

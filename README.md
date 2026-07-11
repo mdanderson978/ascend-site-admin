@@ -7,7 +7,7 @@ carry their own copy of the server or UI.
 
 ```
 content-repo/
-  package.json          "site-admin": "github:mdanderson978/ascend-site-admin#v1.1.0"
+  package.json          "site-admin": "github:mdanderson978/ascend-site-admin#v1.2.1"
   scripts/
     admin.mjs           import { startAdmin } from 'site-admin';
                         import { config } from './admin.config.mjs';
