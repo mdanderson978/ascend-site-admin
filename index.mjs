@@ -71,6 +71,7 @@ export function startAdmin(config) {
   const ROOT     = path.resolve(config.root);
   const CONTENT  = path.join(ROOT, 'src', 'content');
   const UPLOADS  = path.join(ROOT, 'src', 'assets', 'uploads');
+  const ASSETS   = path.join(ROOT, 'src', 'assets');
   const DOCS     = path.join(ROOT, 'public', 'documents');
   const PORT     = parseInt(process.env.ADMIN_PORT || String(config.port || 4322), 10);
 
@@ -534,7 +535,12 @@ export function startAdmin(config) {
       if (path_ === '/api/preview' && req.method === 'GET') {
         const p = url.searchParams.get('p') || '';
         const abs = path.resolve(ROOT, p);
-        if ((!isInside(UPLOADS, abs) && !isInside(DOCS, abs)) || !isInside(ROOT, abs)) {
+        // Previews cover both CMS-uploaded images (src/assets/uploads) and
+        // legacy images already in the repo when it was migrated to the CMS
+        // (src/assets/images, etc.) — buildPreviews() resolves image fields
+        // to wherever the content file's frontmatter actually points, which
+        // for pre-CMS content is anywhere under src/assets, not just uploads.
+        if ((!isInside(ASSETS, abs) && !isInside(DOCS, abs)) || !isInside(ROOT, abs)) {
           res.writeHead(403); res.end('Forbidden'); return;
         }
         if (!fs.existsSync(abs)) { res.writeHead(404); res.end('Not found'); return; }
