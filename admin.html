@@ -79,6 +79,21 @@ body {
 .nav-item.nav-sub::before { content: '·'; position: absolute; left: 1.35rem; opacity: .6; }
 .nav-item.nav-sub:hover, .nav-item.nav-sub.active { color: #fff; }
 
+.nav-section-header-row { display: flex; align-items: center; padding: .25rem 1rem .4rem; }
+.nav-section-header-row .nav-section-label { flex: 1; padding: 0; }
+.nav-new-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,.22);
+  color: rgba(255,255,255,.65);
+  border-radius: 4px;
+  padding: 2px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.nav-new-btn:hover { background: rgba(255,255,255,.1); color: #fff; border-color: rgba(255,255,255,.4); }
+
 /* ── Sidebar search ── */
 #sidebar-search { padding: .75rem .75rem .5rem; }
 #search-input {
@@ -152,6 +167,8 @@ body {
 .btn-publish { background: var(--amber);  color: var(--ink); }
 .btn-history { background: none; border: 1px solid var(--line); color: var(--muted); font-weight: 500; }
 .btn-history:hover:not(:disabled) { border-color: var(--canopy); color: var(--canopy); opacity: 1; }
+.btn-danger  { background: none; border: 1px solid #c0392b; color: #c0392b; font-weight: 500; }
+.btn-danger:hover:not(:disabled) { background: #c0392b; color: #fff; opacity: 1; }
 .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 #status-msg { font-size: 12px; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
 #status-msg.ok   { color: var(--ok); }
@@ -716,6 +733,7 @@ textarea.markdown { min-height: 240px; font-family: 'Consolas', 'Monaco', monosp
       <div id="topbar-path"></div>
     </div>
     <div id="status-msg"></div>
+    <button class="btn btn-danger" id="btn-delete" style="display:none" title="Delete this entry">Delete</button>
     <button class="btn btn-history" id="btn-history" disabled title="See and restore previous versions of this page">🕐 History</button>
     <button class="btn btn-save" id="btn-save" disabled title="Save your changes (does not go live until you Publish)">Save Draft</button>
     <button class="btn btn-publish" id="btn-publish" disabled>Publish Changes</button>
@@ -758,6 +776,7 @@ textarea.markdown { min-height: 240px; font-family: 'Consolas', 'Monaco', monosp
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
 let currentKey      = null;
+let currentIsNew    = false;
 let currentData     = {};
 let currentBody     = '';
 let currentFields   = [];
@@ -796,6 +815,7 @@ $('save-reminder-btn').addEventListener('click', () => $('btn-save').click());
 let CONFIG        = {};
 let PAGE_LABELS   = {};
 let NAV_STRUCTURE = [];
+let DYNAMIC_COLLECTIONS = {}; // { <collection>: { label } } — which sidebar groups get + New / Delete
 
 // ── Image minimums ────────────────────────────────────────────────────────
 const IMG_MIN = {
@@ -843,19 +863,57 @@ function breadcrumb(key) {
       }
     }
   }
-  return PAGE_LABELS[key] || key;
+  return PAGE_LABELS[key] || humanizeSlug(key.split('/').pop());
+}
+
+function humanizeSlug(slug) {
+  return slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────
+function buildNavItem(key, sub, label) {
+  const item = document.createElement('div');
+  item.className   = 'nav-item' + (sub ? ' nav-sub' : '');
+  item.dataset.key = key;
+  item.textContent = label;
+  item.addEventListener('click', () => openPage(key));
+  return item;
+}
+
+// A dynamic-collection section renders its entries straight from the files
+// on disk (there's no NAV_STRUCTURE list of them — new ones didn't exist
+// when admin.config.mjs was written) plus a "+ New <label>" button.
+function buildDynamicSection(col, slugs) {
+  const { label } = DYNAMIC_COLLECTIONS[col];
+  const sec = document.createElement('div');
+  sec.className = 'nav-section';
+  const hdr = document.createElement('div');
+  hdr.className = 'nav-section-header-row';
+  hdr.innerHTML = `<span class="nav-section-label">${label}s</span>`;
+  const newBtn = document.createElement('button');
+  newBtn.className   = 'nav-new-btn';
+  newBtn.textContent  = '+ New';
+  newBtn.title        = `Add a new ${label}`;
+  newBtn.addEventListener('click', () => openPage(col + '/new'));
+  hdr.appendChild(newBtn);
+  sec.appendChild(hdr);
+  for (const slug of slugs) {
+    sec.appendChild(buildNavItem(col + '/' + slug, false, PAGE_LABELS[col + '/' + slug] || humanizeSlug(slug)));
+  }
+  return sec;
+}
+
 async function loadSidebar() {
   const tree = await fetch('/api/content').then(r => r.json());
   const nav  = $('nav-tree');
   nav.innerHTML = '';
 
   // Any page the server knows about that NAV_STRUCTURE doesn't (a future
-  // addition) still gets listed rather than silently disappearing.
+  // addition) still gets listed rather than silently disappearing. Dynamic
+  // collections are excluded here — they get their own section below.
   const known    = new Set(NAV_STRUCTURE.flatMap(s => s.items.map(i => i.key)));
   const orphans  = Object.entries(tree)
+    .filter(([col]) => !DYNAMIC_COLLECTIONS[col])
     .flatMap(([col, slugs]) => slugs.map(slug => ({ key: col + '/' + slug })))
     .filter(i => !known.has(i.key));
   const sections = orphans.length
@@ -867,14 +925,13 @@ async function loadSidebar() {
     sec.className = 'nav-section';
     sec.innerHTML = `<div class="nav-section-label">${section.label}</div>`;
     for (const { key, sub } of section.items) {
-      const item = document.createElement('div');
-      item.className   = 'nav-item' + (sub ? ' nav-sub' : '');
-      item.dataset.key = key;
-      item.textContent = PAGE_LABELS[key] || key.split('/').pop();
-      item.addEventListener('click', () => openPage(key));
-      sec.appendChild(item);
+      sec.appendChild(buildNavItem(key, sub, PAGE_LABELS[key] || key.split('/').pop()));
     }
     nav.appendChild(sec);
+  }
+
+  for (const [col, slugs] of Object.entries(tree)) {
+    if (DYNAMIC_COLLECTIONS[col]) nav.appendChild(buildDynamicSection(col, slugs));
   }
 }
 
@@ -884,16 +941,20 @@ async function openPage(key) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   document.querySelector(`.nav-item[data-key="${key}"]`)?.classList.add('active');
 
-  currentKey = key;
-  $('topbar-title').textContent = PAGE_LABELS[key] || key;
-  $('topbar-path').textContent  = breadcrumb(key);
+  const [col, slug] = key.split('/');
+  currentKey   = key;
+  currentIsNew = slug === 'new';
+
+  $('topbar-title').textContent = currentIsNew
+    ? `New ${DYNAMIC_COLLECTIONS[col]?.label || 'Item'}`
+    : (PAGE_LABELS[key] || humanizeSlug(slug));
+  $('topbar-path').textContent  = currentIsNew ? '' : breadcrumb(key);
   $('btn-publish').disabled     = false;
-  $('btn-history').disabled     = false;
+  $('btn-history').disabled     = currentIsNew;
   $('history-panel').classList.remove('visible');
   markClean();
   setStatus('Loading…');
 
-  const [col, slug] = key.split('/');
   const json = await fetch(`/api/content/${col}/${slug}`).then(r => r.json());
   currentData     = json.data     || {};
   currentBody     = json.body     || '';
@@ -902,6 +963,16 @@ async function openPage(key) {
 
   renderForm();
   setStatus('');
+  updateDeleteButton();
+}
+
+// A fixed/static page (e.g. Home, Contact) can never be deleted — only an
+// entry in a collection explicitly marked dynamicCollections in
+// admin.config.mjs can. Never shown for an unsaved "new" draft either.
+function updateDeleteButton() {
+  const [col] = (currentKey || '').split('/');
+  const canDelete = !!DYNAMIC_COLLECTIONS[col] && !currentIsNew;
+  $('btn-delete').style.display = canDelete ? '' : 'none';
 }
 
 // ── Form renderer ──────────────────────────────────────────────────────────
@@ -1563,6 +1634,20 @@ $('btn-save').addEventListener('click', async () => {
   }).then(r => r.json());
   if (json.ok) {
     markClean(); setStatus('Saved ✓', 'ok');
+    if (currentIsNew && json.slug) {
+      // First save of a new dynamic-collection entry: the server just
+      // picked its real slug — adopt it so subsequent saves/history/delete
+      // target the right file instead of re-creating a new one each time.
+      currentKey   = col + '/' + json.slug;
+      currentIsNew = false;
+      $('topbar-title').textContent = PAGE_LABELS[currentKey] || humanizeSlug(json.slug);
+      $('topbar-path').textContent  = breadcrumb(currentKey);
+      $('btn-history').disabled     = false;
+      await loadSidebar();
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelector(`.nav-item[data-key="${currentKey}"]`)?.classList.add('active');
+      updateDeleteButton();
+    }
     refreshSearchIndex();   // keep content search in step with what was just saved
   }
   else {
@@ -1570,6 +1655,34 @@ $('btn-save').addEventListener('click', async () => {
     // them verbatim (e.g. '"Price ($)" must be a number...').
     $('btn-save').disabled = false;
     setStatus(json.error || 'Save failed', 'err');
+  }
+});
+
+// ── Delete ────────────────────────────────────────────────────────────────
+$('btn-delete').addEventListener('click', async () => {
+  if (!currentKey) return;
+  const [col, slug] = currentKey.split('/');
+  const label = DYNAMIC_COLLECTIONS[col]?.label || 'item';
+  const title = currentData.title || currentData.name || humanizeSlug(slug);
+  if (!confirm(`Delete this ${label} — "${title}"?\n\nThis removes it from your working copy now. Nothing on the live site changes until you click Publish Changes, and it stays recoverable from Git history if you change your mind before then.`)) return;
+
+  setStatus('Deleting…');
+  const json = await fetch(`/api/content/${col}/${slug}`, { method: 'DELETE' }).then(r => r.json());
+  if (json.ok) {
+    currentKey = null; currentIsNew = false; isDirty = false;
+    $('form-area').innerHTML = '<div id="empty-state"><h2>Deleted</h2><p>Choose another item from the sidebar, or click Publish Changes to make the deletion live.</p></div>';
+    $('topbar-title').textContent = 'Select a page to edit';
+    $('topbar-path').textContent  = '';
+    $('btn-delete').style.display = 'none';
+    $('btn-history').disabled     = true;
+    $('btn-save').disabled        = true;
+    $('btn-publish').disabled     = false;
+    $('save-reminder').classList.remove('visible');
+    await loadSidebar();
+    refreshSearchIndex();
+    setStatus(`Deleted. Publish Changes to make it live.`, 'ok');
+  } else {
+    setStatus(json.error || 'Delete failed', 'err');
   }
 });
 
@@ -1767,6 +1880,7 @@ async function boot() {
   CONFIG        = await fetch('/api/config').then(r => r.json());
   PAGE_LABELS   = CONFIG.pageLabels   || {};
   NAV_STRUCTURE = CONFIG.navStructure || [];
+  DYNAMIC_COLLECTIONS = CONFIG.dynamicCollections || {};
 
   document.title = CONFIG.browserTitle || (CONFIG.siteTitle + ' — Content Admin');
   $('sidebar-logo').prepend(document.createTextNode(CONFIG.siteTitle));

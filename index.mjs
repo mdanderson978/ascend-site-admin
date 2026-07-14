@@ -25,6 +25,19 @@
  *                   [{ label, breadcrumb?: false, items: [{ key, sub? }] }].
  *                   breadcrumb:false omits that group's label from the top-bar
  *                   trail (use it on the main "Website Pages" group).
+ *   dynamicCollections   optional; collections the client can add/delete
+ *                   entries in from the admin UI, keyed by collection name:
+ *                     { <collection>: { fields, titleField, label } }
+ *                   `fields` is the FIELDS-style array applied to every entry
+ *                   in that collection (existing and new — there is no
+ *                   static per-slug FIELDS entry for a dynamic collection,
+ *                   since slugs don't exist ahead of time). `titleField`
+ *                   names which submitted field is slugified for the new
+ *                   file's filename. `label` is the singular noun shown in
+ *                   UI copy ("+ New <label>", "Delete this <label>?"). A
+ *                   collection not listed here keeps today's behavior
+ *                   exactly: a fixed, developer-defined set of entries that
+ *                   can never be added to or deleted via the admin.
  *   tasks           start-screen shortcuts: [{ goto, field?, label }].
  *   startScreenIntro / startScreenNote   optional start-screen copy
  *                   (note may contain simple HTML: <br>, <strong>).
@@ -77,6 +90,7 @@ export function startAdmin(config) {
 
   const FIELDS   = config.fields;
   const SECTIONS = config.sections || {};
+  const DYNAMIC  = config.dynamicCollections || {};
   const { siteTitle, developerName, developerEmail } = config;
 
   fs.mkdirSync(UPLOADS, { recursive: true });
@@ -111,6 +125,16 @@ export function startAdmin(config) {
       out.push(f);
     }
     return out;
+  }
+
+  // Static FIELDS entries keep working exactly as before; a collection
+  // listed in DYNAMIC has no per-slug entry (slugs don't exist ahead of
+  // time) so its shared field template applies to every one of its entries.
+  function resolveFields(collection, slug) {
+    const key = collection + '/' + slug;
+    if (FIELDS[key]) return FIELDS[key];
+    if (DYNAMIC[collection]) return DYNAMIC[collection].fields;
+    return null;
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -349,7 +373,7 @@ export function startAdmin(config) {
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     if (req.method === 'OPTIONS') {
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
       res.writeHead(204); res.end(); return;
     }
@@ -371,6 +395,9 @@ export function startAdmin(config) {
           browserTitle:     config.browserTitle || (siteTitle + ' — Content Admin'),
           pageLabels:       config.pageLabels   || {},
           navStructure:     config.navStructure || [],
+          dynamicCollections: Object.fromEntries(
+            Object.entries(DYNAMIC).map(([col, d]) => [col, { label: d.label }])
+          ),
           tasks:            config.tasks        || [],
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
@@ -385,6 +412,14 @@ export function startAdmin(config) {
           const [col, slug] = key.split('/');
           (tree[col] = tree[col] || []).push(slug);
         }
+        // Dynamic collections have no static FIELDS entries — the files on
+        // disk ARE the source of truth for which entries exist.
+        for (const col of Object.keys(DYNAMIC)) {
+          const dir = path.join(CONTENT, col);
+          tree[col] = fs.existsSync(dir)
+            ? fs.readdirSync(dir).filter(f => f.endsWith('.md')).map(f => f.slice(0, -3))
+            : [];
+        }
         jsonResp(res, 200, tree);
         return;
       }
@@ -396,8 +431,17 @@ export function startAdmin(config) {
       // names. The client re-fetches this after every save.
       if (path_ === '/api/search' && req.method === 'GET') {
         const index = {};
-        for (const [key, fields] of Object.entries(FIELDS)) {
+        const searchKeys = Object.keys(FIELDS);
+        for (const col of Object.keys(DYNAMIC)) {
+          const dir = path.join(CONTENT, col);
+          if (!fs.existsSync(dir)) continue;
+          for (const f of fs.readdirSync(dir)) {
+            if (f.endsWith('.md')) searchKeys.push(col + '/' + f.slice(0, -3));
+          }
+        }
+        for (const key of searchKeys) {
           const [col, slug] = key.split('/');
+          const fields = resolveFields(col, slug) || [];
           let data = {}, body = '';
           const fp = contentFile(col, slug);
           if (fs.existsSync(fp)) ({ data, content: body } = matter(fs.readFileSync(fp, 'utf-8')));
@@ -426,7 +470,7 @@ export function startAdmin(config) {
       const historyMatch = path_.match(/^\/api\/history\/([^/]+)\/(.+)$/);
       if (historyMatch && req.method === 'GET') {
         const [, collection, slug] = historyMatch;
-        if (!FIELDS[collection + '/' + slug]) { jsonResp(res, 404, { error: 'Not found' }); return; }
+        if (!resolveFields(collection, slug)) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const rel = `src/content/${collection}/${slug}.md`;
         let out = '';
         try {
@@ -443,7 +487,7 @@ export function startAdmin(config) {
       const restoreMatch = path_.match(/^\/api\/restore\/([^/]+)\/(.+)$/);
       if (restoreMatch && req.method === 'POST') {
         const [, collection, slug] = restoreMatch;
-        if (!FIELDS[collection + '/' + slug]) { jsonResp(res, 404, { error: 'Not found' }); return; }
+        if (!resolveFields(collection, slug)) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const { sha } = await parseJsonBody(req);
         if (!/^[0-9a-f]{7,40}$/i.test(sha || '')) { jsonResp(res, 400, { error: 'Bad version id' }); return; }
         const rel = `src/content/${collection}/${slug}.md`;
@@ -477,24 +521,87 @@ export function startAdmin(config) {
         return;
       }
 
+      // ── Dynamic collections: new-entry form + create ─────────────────────
+      // Checked ahead of the generic contentMatch routes below, since "new"
+      // would otherwise be swallowed as an ordinary (nonexistent) slug.
+      const newMatch = path_.match(/^\/api\/content\/([^/]+)\/new$/);
+      if (newMatch && req.method === 'GET') {
+        const [, collection] = newMatch;
+        const dyn = DYNAMIC[collection];
+        if (!dyn) { jsonResp(res, 404, { error: 'Not found' }); return; }
+        const fields = withSections(collection + '/_new', dyn.fields);
+        jsonResp(res, 200, { data: {}, body: '', fields, previews: {} });
+        return;
+      }
+
+      if (newMatch && req.method === 'POST') {
+        const [, collection] = newMatch;
+        const dyn = DYNAMIC[collection];
+        if (!dyn) { jsonResp(res, 400, { error: 'Not a dynamic collection' }); return; }
+        const fields = dyn.fields;
+        const { data, body } = await parseJsonBody(req);
+
+        const byName  = Object.fromEntries(fields.map(f => [f.name, f]));
+        const coerced = Object.fromEntries(
+          Object.entries(data || {}).map(([k, v]) => [k, byName[k] ? coerceValue(byName[k], v) : v])
+        );
+        const merged = Object.fromEntries(
+          Object.entries(coerced).filter(([, v]) => v !== null && v !== undefined && v !== '')
+        );
+
+        const errors = validateData(fields, merged);
+        if (errors.length) { jsonResp(res, 400, { ok: false, error: errors.join(' ') }); return; }
+
+        const titleVal = merged[dyn.titleField];
+        if (!titleVal) {
+          const titleLabel = byName[dyn.titleField]?.label || dyn.titleField;
+          jsonResp(res, 400, { ok: false, error: `"${titleLabel}" is needed to create a new ${dyn.label}.` });
+          return;
+        }
+
+        const dir = path.join(CONTENT, collection);
+        fs.mkdirSync(dir, { recursive: true });
+        const base = sanitize(String(titleVal)) || 'untitled';
+        let slug = base, n = 2;
+        while (fs.existsSync(path.join(dir, slug + '.md'))) { slug = `${base}-${n++}`; }
+
+        fs.writeFileSync(path.join(dir, slug + '.md'), matter.stringify(body || '', merged), 'utf-8');
+        jsonResp(res, 200, { ok: true, slug });
+        return;
+      }
+
       const contentMatch = path_.match(/^\/api\/content\/([^/]+)\/(.+)$/);
       if (contentMatch && req.method === 'GET') {
         const [, collection, slug] = contentMatch;
-        if (!FIELDS[collection + '/' + slug]) { jsonResp(res, 404, { error: 'Not found' }); return; }
+        const fieldTemplate = resolveFields(collection, slug);
+        if (!fieldTemplate) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const fp = contentFile(collection, slug);
         if (!fs.existsSync(fp)) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const { data, content: body } = matter(fs.readFileSync(fp, 'utf-8'));
-        const fields   = withSections(collection + '/' + slug, FIELDS[collection + '/' + slug] || []);
+        const fields   = withSections(collection + '/' + slug, fieldTemplate);
         const previews = buildPreviews(data, fields, fp);
         jsonResp(res, 200, { data, body, fields, previews });
         return;
       }
 
+      if (contentMatch && req.method === 'DELETE') {
+        const [, collection, slug] = contentMatch;
+        if (!DYNAMIC[collection]) { jsonResp(res, 400, { error: 'This page cannot be deleted.' }); return; }
+        const fp = contentFile(collection, slug);
+        if (!fs.existsSync(fp)) { jsonResp(res, 404, { error: 'Not found' }); return; }
+        fs.unlinkSync(fp);
+        // No extra git-staging step needed — the publish handler's
+        // `git add src/content ...` already stages deletions within that
+        // path, same as any other modification.
+        jsonResp(res, 200, { ok: true });
+        return;
+      }
+
       if (contentMatch && req.method === 'POST') {
         const [, collection, slug] = contentMatch;
-        if (!FIELDS[collection + '/' + slug]) { jsonResp(res, 404, { error: 'Not found' }); return; }
+        const fields = resolveFields(collection, slug);
+        if (!fields) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const fp     = contentFile(collection, slug);
-        const fields = FIELDS[collection + '/' + slug] || [];
         const { data, body } = await parseJsonBody(req);
 
         // Coerce incoming values per field type BEFORE merging/writing.

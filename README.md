@@ -114,6 +114,7 @@ content-driven sites:
 - upload and replace PDFs;
 - search field names and saved content across the site;
 - navigate using a sidebar that mirrors the public website;
+- add or delete entries in collections the site marks as client-manageable (e.g. a list of projects or events), without a developer commit;
 - save drafts and publish through Git;
 - inspect page history and restore an earlier version;
 - safely prune media that is no longer referenced.
