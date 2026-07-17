@@ -78,6 +78,15 @@ body {
 .nav-item.nav-sub { padding-left: 2rem; font-size: 12.5px; color: rgba(255,255,255,.66); position: relative; }
 .nav-item.nav-sub::before { content: '·'; position: absolute; left: 1.35rem; opacity: .6; }
 .nav-item.nav-sub:hover, .nav-item.nav-sub.active { color: #fff; }
+.nav-item-button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  font-family: inherit;
+}
 
 .nav-section-header-row { display: flex; align-items: center; padding: .25rem 1rem .4rem; }
 .nav-section-header-row .nav-section-label { flex: 1; padding: 0; }
@@ -815,7 +824,9 @@ $('save-reminder-btn').addEventListener('click', () => $('btn-save').click());
 let CONFIG        = {};
 let PAGE_LABELS   = {};
 let NAV_STRUCTURE = [];
-let DYNAMIC_COLLECTIONS = {}; // { <collection>: { label } } — which sidebar groups get + New / Delete
+let DYNAMIC_COLLECTIONS = {}; // { <collection>: { label, titleField, orderField } } — which sidebar groups get + New / Delete
+let DYNAMIC_ENTRY_LABELS = {}; // '<collection>/<slug>' → saved titleField value
+let DYNAMIC_ENTRY_ORDER = {}; // '<collection>/<slug>' → saved orderField value
 
 // ── Image minimums ────────────────────────────────────────────────────────
 const IMG_MIN = {
@@ -853,7 +864,7 @@ function breadcrumb(key) {
   for (const section of NAV_STRUCTURE) {
     let parent = null;
     for (const item of section.items) {
-      if (!item.sub) parent = item.key;
+      if (!item.sub && item.key) parent = item.key;
       if (item.key === key) {
         const trail = [];
         if (section.breadcrumb !== false) trail.push(section.label);
@@ -861,13 +872,44 @@ function breadcrumb(key) {
         trail.push(PAGE_LABELS[key] || key);
         return trail.join(' › ');
       }
+      if (item.dynamic && key.startsWith(item.dynamic + '/')) {
+        const trail = [];
+        if (section.breadcrumb !== false) trail.push(section.label);
+        if (item.sub && parent) trail.push(PAGE_LABELS[parent] || parent);
+        trail.push(DYNAMIC_ENTRY_LABELS[key] || PAGE_LABELS[key] || humanizeSlug(key.split('/').pop()));
+        return trail.join(' › ');
+      }
     }
   }
-  return PAGE_LABELS[key] || humanizeSlug(key.split('/').pop());
+  return DYNAMIC_ENTRY_LABELS[key] || PAGE_LABELS[key] || humanizeSlug(key.split('/').pop());
 }
 
 function humanizeSlug(slug) {
   return slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+async function loadDynamicEntryMeta() {
+  const labels = {};
+  const order = {};
+  if (!Object.keys(DYNAMIC_COLLECTIONS).length) return { labels, order };
+  try {
+    const index = await fetch('/api/search').then(r => r.json());
+    for (const [col, config] of Object.entries(DYNAMIC_COLLECTIONS)) {
+      const titleField = config.titleField;
+      const orderField = config.orderField;
+      for (const [key, fields] of Object.entries(index)) {
+        if (!key.startsWith(col + '/') || !Array.isArray(fields)) continue;
+        const title = titleField ? fields.find(f => f.name === titleField)?.value : '';
+        if (title) labels[key] = title;
+        const orderValue = orderField ? fields.find(f => f.name === orderField)?.value : '';
+        const n = parseFloat(String(orderValue).replace(/[$,\s]/g, ''));
+        if (Number.isFinite(n)) order[key] = n;
+      }
+    }
+  } catch (_) {
+    // Sidebar labels fall back to static page labels or humanized slugs.
+  }
+  return { labels, order };
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────
@@ -878,6 +920,38 @@ function buildNavItem(key, sub, label) {
   item.textContent = label;
   item.addEventListener('click', () => openPage(key));
   return item;
+}
+
+function buildDynamicNewItem(col, sub) {
+  const { label } = DYNAMIC_COLLECTIONS[col];
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = 'nav-item nav-item-button' + (sub ? ' nav-sub' : '');
+  item.textContent = `+ New ${label}`;
+  item.title = `Add a new ${label}`;
+  item.addEventListener('click', () => openPage(col + '/new'));
+  return item;
+}
+
+function buildDynamicEntries(col, slugs, { sub = false } = {}) {
+  const frag = document.createDocumentFragment();
+  for (const slug of sortedDynamicSlugs(col, slugs)) {
+    const key = col + '/' + slug;
+    frag.appendChild(buildNavItem(key, sub, DYNAMIC_ENTRY_LABELS[key] || PAGE_LABELS[key] || humanizeSlug(slug)));
+  }
+  frag.appendChild(buildDynamicNewItem(col, sub));
+  return frag;
+}
+
+function sortedDynamicSlugs(col, slugs) {
+  if (!DYNAMIC_COLLECTIONS[col]?.orderField) return slugs;
+  return [...slugs].sort((a, b) => {
+    const ak = col + '/' + a;
+    const bk = col + '/' + b;
+    const ao = DYNAMIC_ENTRY_ORDER[ak] ?? Number.POSITIVE_INFINITY;
+    const bo = DYNAMIC_ENTRY_ORDER[bk] ?? Number.POSITIVE_INFINITY;
+    return ao - bo || a.localeCompare(b);
+  });
 }
 
 // A dynamic-collection section renders its entries straight from the files
@@ -897,14 +971,15 @@ function buildDynamicSection(col, slugs) {
   newBtn.addEventListener('click', () => openPage(col + '/new'));
   hdr.appendChild(newBtn);
   sec.appendChild(hdr);
-  for (const slug of slugs) {
-    sec.appendChild(buildNavItem(col + '/' + slug, false, PAGE_LABELS[col + '/' + slug] || humanizeSlug(slug)));
-  }
+  for (const slug of sortedDynamicSlugs(col, slugs)) sec.appendChild(buildNavItem(col + '/' + slug, false, DYNAMIC_ENTRY_LABELS[col + '/' + slug] || PAGE_LABELS[col + '/' + slug] || humanizeSlug(slug)));
   return sec;
 }
 
 async function loadSidebar() {
   const tree = await fetch('/api/content').then(r => r.json());
+  const dynamicEntryMeta = await loadDynamicEntryMeta();
+  DYNAMIC_ENTRY_LABELS = dynamicEntryMeta.labels;
+  DYNAMIC_ENTRY_ORDER = dynamicEntryMeta.order;
   const nav  = $('nav-tree');
   nav.innerHTML = '';
 
@@ -920,18 +995,26 @@ async function loadSidebar() {
     ? [...NAV_STRUCTURE, { label: 'Other', items: orphans }]
     : NAV_STRUCTURE;
 
+  const mountedDynamic = new Set();
   for (const section of sections) {
     const sec = document.createElement('div');
     sec.className = 'nav-section';
     sec.innerHTML = `<div class="nav-section-label">${section.label}</div>`;
-    for (const { key, sub } of section.items) {
+    for (const { key, sub, dynamic } of section.items) {
+      if (dynamic) {
+        if (DYNAMIC_COLLECTIONS[dynamic]) {
+          mountedDynamic.add(dynamic);
+          sec.appendChild(buildDynamicEntries(dynamic, tree[dynamic] || [], { sub }));
+        }
+        continue;
+      }
       sec.appendChild(buildNavItem(key, sub, PAGE_LABELS[key] || key.split('/').pop()));
     }
     nav.appendChild(sec);
   }
 
   for (const [col, slugs] of Object.entries(tree)) {
-    if (DYNAMIC_COLLECTIONS[col]) nav.appendChild(buildDynamicSection(col, slugs));
+    if (DYNAMIC_COLLECTIONS[col] && !mountedDynamic.has(col)) nav.appendChild(buildDynamicSection(col, slugs));
   }
 }
 
