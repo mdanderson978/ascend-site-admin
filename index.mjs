@@ -22,19 +22,25 @@
  *   sections        SECTIONS map: collection → field-name → {label, hint}.
  *   pageLabels      '<collection>/<slug>' → friendly page name.
  *   navStructure    sidebar groups mirroring the live site's menu:
- *                   [{ label, breadcrumb?: false, items: [{ key, sub? }] }].
+ *                   [{ label, breadcrumb?: false, items: [{ key, sub? } |
+ *                   { dynamic: '<collection>', sub? }] }].
  *                   breadcrumb:false omits that group's label from the top-bar
- *                   trail (use it on the main "Website Pages" group).
+ *                   trail (use it on the main "Website Pages" group). A
+ *                   dynamic item mounts that collection's entries and "+ New"
+ *                   control at that point in the sidebar; unmounted dynamic
+ *                   collections still render as their own sections.
  *   dynamicCollections   optional; collections the client can add/delete
  *                   entries in from the admin UI, keyed by collection name:
- *                     { <collection>: { fields, titleField, label } }
+ *                     { <collection>: { fields, titleField, label, orderField? } }
  *                   `fields` is the FIELDS-style array applied to every entry
  *                   in that collection (existing and new — there is no
  *                   static per-slug FIELDS entry for a dynamic collection,
  *                   since slugs don't exist ahead of time). `titleField`
  *                   names which submitted field is slugified for the new
  *                   file's filename. `label` is the singular noun shown in
- *                   UI copy ("+ New <label>", "Delete this <label>?"). A
+ *                   UI copy ("+ New <label>", "Delete this <label>?").
+ *                   `orderField`, when provided, names a numeric field used
+ *                   to sort that collection's sidebar entries. A
  *                   collection not listed here keeps today's behavior
  *                   exactly: a fixed, developer-defined set of entries that
  *                   can never be added to or deleted via the admin.
@@ -396,7 +402,7 @@ export function startAdmin(config) {
           pageLabels:       config.pageLabels   || {},
           navStructure:     config.navStructure || [],
           dynamicCollections: Object.fromEntries(
-            Object.entries(DYNAMIC).map(([col, d]) => [col, { label: d.label }])
+            Object.entries(DYNAMIC).map(([col, d]) => [col, { label: d.label, titleField: d.titleField, orderField: d.orderField }])
           ),
           tasks:            config.tasks        || [],
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
