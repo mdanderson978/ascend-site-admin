@@ -21,6 +21,7 @@ export async function verifySite(config, { root, port = 4399 } = {}) {
     root: resolvedRoot,
     port,
     pullOnStart: false,
+    openBrowserOnStart: false,
   });
 
   try {
