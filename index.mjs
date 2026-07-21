@@ -50,10 +50,25 @@
  *   browserTitle    optional browser-tab title, default '<siteTitle> — Content Admin'.
  *   altPlaceholder  optional example text for single-image description inputs.
  *   port            default port (env ADMIN_PORT always wins), default 4322.
+ *                   ADMIN_PORT signals "an OS launcher script already picked
+ *                   a free port and will open the browser itself" (the
+ *                   existing Start Admin.bat/run-admin.bat pair) - the engine
+ *                   makes a single bind attempt at exactly that port and does
+ *                   NOT auto-open a browser, preserving that pair's behavior
+ *                   byte-for-byte regardless of engine version. When
+ *                   ADMIN_PORT is unset, the engine retries the next port up
+ *                   to +10 on conflict and opens the browser itself once
+ *                   bound - for thinner launchers (e.g. a Mac Start
+ *                   Admin.command) that don't want to duplicate that logic
+ *                   in shell script.
  *   gitIdentity     { name, email } used only when the machine has no git
  *                   identity at all; defaults to Website Admin <developerEmail>.
  *   pullOnStart     optional; false disables the best-effort startup pull
  *                   for CI and read-only verification. Defaults to true.
+ *   openBrowserOnStart   optional; false disables the auto-open-browser
+ *                   behavior (see `port` above) for CI and read-only
+ *                   verification. Defaults to true. Has no effect when
+ *                   ADMIN_PORT is set, since that path never auto-opens.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, and history/restore live here. The admin UI (admin.html,
@@ -65,7 +80,7 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
+import { execFileSync, exec } from 'child_process';
 import matter from 'gray-matter';
 import sharp from 'sharp';
 import Busboy from 'busboy';
@@ -92,7 +107,13 @@ export function startAdmin(config) {
   const UPLOADS  = path.join(ROOT, 'src', 'assets', 'uploads');
   const ASSETS   = path.join(ROOT, 'src', 'assets');
   const DOCS     = path.join(ROOT, 'public', 'documents');
-  const PORT     = parseInt(process.env.ADMIN_PORT || String(config.port || 4322), 10);
+  const EXPLICIT_PORT = process.env.ADMIN_PORT;
+  const BASE_PORT     = parseInt(EXPLICIT_PORT || String(config.port || 4322), 10);
+  const MAX_PORT      = BASE_PORT + 10;
+  // Mutated during the retry-on-conflict loop below (only when EXPLICIT_PORT
+  // is unset) - requests can only arrive after 'listening' fires, by which
+  // point this holds whichever port actually got bound.
+  let boundPort = BASE_PORT;
 
   const FIELDS   = config.fields;
   const SECTIONS = config.sections || {};
@@ -359,12 +380,12 @@ export function startAdmin(config) {
   // ── HTTP Server ──────────────────────────────────────────────────────────
 
   const server = http.createServer(async (req, res) => {
-    const url   = new URL(req.url, 'http://localhost:' + PORT);
+    const url   = new URL(req.url, 'http://localhost:' + boundPort);
     const path_ = url.pathname;
 
     const allowedOrigins = new Set([
-      `http://localhost:${PORT}`,
-      `http://127.0.0.1:${PORT}`,
+      `http://localhost:${boundPort}`,
+      `http://127.0.0.1:${boundPort}`,
     ]);
     const origin = req.headers.origin;
     const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method || 'GET');
@@ -716,11 +737,9 @@ export function startAdmin(config) {
     }
   });
 
-  // Bind to localhost only — this tool has no auth; it must never be
-  // reachable from the network.
-  server.listen(PORT, '127.0.0.1', () => {
+  server.on('listening', () => {
     console.log('\n  ' + siteTitle + ' Content Admin');
-    console.log('  ->  http://localhost:' + PORT);
+    console.log('  ->  http://localhost:' + boundPort);
     console.log('  ->  Make changes -> Save Draft -> Publish Changes -> site rebuilds automatically\n');
 
     ensureGitIdentity();
@@ -731,7 +750,45 @@ export function startAdmin(config) {
       try { git(['pull', '--no-rebase', '--no-edit']); }
       catch (_) { /* non-fatal — the pull-before-push in /api/git/push still protects publishing */ }
     }
+
+    // Only auto-open when the caller didn't already pick a specific port: an
+    // explicit ADMIN_PORT means an OS launcher script (Start Admin.bat, etc.)
+    // already found a free port itself and opens the browser itself -
+    // auto-opening here too would open a second tab. Existing launcher
+    // scripts are never touched by an engine version bump, so this stays
+    // conditional on that signal rather than a version/config flag.
+    if (!EXPLICIT_PORT && config.openBrowserOnStart !== false) openBrowser('http://localhost:' + boundPort);
   });
 
+  if (!EXPLICIT_PORT) {
+    // No launcher-provided port: retry the next port up on conflict, up to
+    // MAX_PORT, mirroring what run-admin.bat's shell-level port scan already
+    // does for sites still on the older launcher pair.
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE' && boundPort < MAX_PORT) {
+        boundPort += 1;
+        server.listen(boundPort, '127.0.0.1');
+      } else {
+        throw err;
+      }
+    });
+  }
+
+  // Bind to localhost only — this tool has no auth; it must never be
+  // reachable from the network.
+  server.listen(boundPort, '127.0.0.1');
+
   return server;
+}
+
+// Best-effort cross-platform "open the default browser" - never fatal if it
+// fails (e.g. a headless/CI environment), since this is only ever a
+// convenience for a human sitting at the machine running the admin.
+function openBrowser(url) {
+  const cmd = process.platform === 'win32'
+    ? `start "" "${url}"`
+    : process.platform === 'darwin'
+      ? `open "${url}"`
+      : `xdg-open "${url}"`;
+  exec(cmd, () => { /* ignore failures - not fatal */ });
 }
