@@ -280,6 +280,97 @@ textarea { min-height: 90px; resize: vertical; }
 /* ── Markdown ── */
 .markdown-wrap { display: flex; flex-direction: column; gap: .5rem; }
 textarea.markdown { min-height: 240px; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.6; }
+textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px rgba(45,158,94,.18); }
+
+.md-toolbar { display: flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
+.md-toolbar button {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: 6px;
+  padding: .35rem .65rem;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+}
+.md-toolbar button:hover { background: rgba(45,158,94,.08); border-color: var(--canopy); }
+.md-toolbar button.md-tb-photo { font-weight: 600; color: var(--canopy); }
+.md-toolbar .md-tb-spacer { flex: 1; }
+.md-toolbar button.md-tb-preview.active { background: var(--canopy); border-color: var(--canopy); color: #fff; }
+
+/* Rendered preview pane — swaps in for the textarea so the editor can see
+   real photos and headings instead of raw markdown syntax. */
+.md-preview {
+  display: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  background: #fff;
+  font-size: 14px;
+  line-height: 1.65;
+  min-height: 240px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.md-preview.open { display: block; }
+.md-preview h2, .md-preview h3, .md-preview h4, .md-preview h5 { margin: 1.1em 0 .4em; line-height: 1.3; }
+.md-preview h2 { font-size: 20px; }
+.md-preview h3 { font-size: 17px; }
+.md-preview h4, .md-preview h5 { font-size: 15px; }
+.md-preview p, .md-preview ul, .md-preview ol { margin: 0 0 .8em; }
+.md-preview ul, .md-preview ol { padding-left: 1.4em; }
+.md-preview blockquote { margin: 0 0 .8em; padding: .4em .9em; border-left: 3px solid var(--canopy); background: rgba(45,158,94,.05); border-radius: 0 4px 4px 0; }
+.md-preview img { display: block; max-width: min(100%, 420px); height: auto; border-radius: 6px; margin: .6em 0; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.md-preview a { color: var(--canopy); text-decoration: underline; }
+
+/* Post-upload photo details modal (description + tooltip before insert).
+   A modal rather than an inline panel so it's always on screen no matter how
+   far down a long article body the editor was working. */
+.md-photo-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(20,30,25,.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+.md-photo-panel {
+  display: flex;
+  gap: 1rem;
+  padding: 1.1rem;
+  border: none;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  width: min(560px, 100%);
+}
+.md-photo-panel > img { width: 130px; height: 130px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+.md-photo-fields { display: flex; flex-direction: column; gap: .55rem; flex: 1; min-width: 0; }
+.md-photo-fields label { display: flex; flex-direction: column; gap: .25rem; font-size: 12.5px; font-weight: 600; }
+.md-photo-req { font-weight: 400; color: var(--muted); }
+.md-photo-fields input { font-size: 13px; }
+.md-photo-actions { display: flex; gap: .5rem; margin-top: .15rem; }
+.md-photo-insert {
+  background: var(--canopy);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: .45rem .9rem;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.md-photo-insert:disabled { opacity: .45; cursor: not-allowed; }
+.md-photo-cancel {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .45rem .9rem;
+  font-size: 13px;
+  cursor: pointer;
+}
 
 .md-guide {
   border: 1px solid var(--line);
@@ -1183,6 +1274,12 @@ function renderText(f) {
 }
 
 // ── Markdown ──────────────────────────────────────────────────────────────
+// The body editor is a textarea plus three affordances that keep non-technical
+// editors out of raw syntax: a formatting toolbar (wraps the selection), an
+// Insert-photo button + drag-drop (uploads through the same sharp pipeline as
+// image fields, then inserts the ![…](…) line with its description
+// pre-selected so typing replaces it), and a Preview toggle that renders the
+// markdown with real photos resolved through /api/preview.
 function renderMarkdown(f) {
   const wrap = document.createElement('div');
   wrap.className = 'markdown-wrap';
@@ -1191,6 +1288,227 @@ function renderMarkdown(f) {
   ta.className = 'markdown';
   ta.value     = currentBody;
   ta.addEventListener('input', () => { currentBody = ta.value; markDirty(); });
+
+  // Insert text at the caret via execCommand so the browser's native
+  // undo/redo stack keeps working (setRangeText/value-splicing breaks it).
+  function insertText(text) {
+    ta.focus();
+    if (!document.execCommand('insertText', false, text)) {
+      const { selectionStart: s, selectionEnd: e } = ta;
+      ta.setRangeText(text, s, e, 'end');
+    }
+    currentBody = ta.value;
+    markDirty();
+  }
+
+  function wrapSelection(before, after, placeholder) {
+    const { selectionStart: s, selectionEnd: e } = ta;
+    const sel = ta.value.slice(s, e) || placeholder;
+    insertText(before + sel + after);
+    // Leave the (possibly placeholder) text selected so typing replaces it.
+    ta.setSelectionRange(s + before.length, s + before.length + sel.length);
+  }
+
+  // Toggle a prefix (e.g. "## ") on the line the caret is on.
+  function prefixLine(prefix) {
+    const s = ta.value.lastIndexOf('\n', ta.selectionStart - 1) + 1;
+    let e = ta.value.indexOf('\n', s);
+    if (e === -1) e = ta.value.length;
+    const line = ta.value.slice(s, e);
+    const stripped = line.replace(/^#{1,6} /, '');
+    const next = line.startsWith(prefix) ? stripped : prefix + stripped;
+    ta.setSelectionRange(s, e);
+    insertText(next);
+  }
+
+  async function uploadAndInsertPhoto(file) {
+    const check = await checkImageSize(file, 'gallery');
+    if (!check.ok) { setStatus(check.msg, 'err'); return; }
+    setStatus('Converting and uploading photo…');
+    // Remember where the photo should go — focus moves to the details panel.
+    const insertAt = ta.selectionStart;
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('imageType', 'gallery');
+    const json = await fetch('/api/upload/image', { method: 'POST', body: fd }).then(r => r.json());
+    if (json.error) { setStatus('Upload failed: ' + json.error, 'err'); return; }
+    showPhotoPanel(json, insertAt);
+  }
+
+  // Post-upload details modal: a thumbnail plus labelled Description (alt
+  // text, required) and Tooltip (title, optional) fields — the editor fills
+  // in words, the modal assembles the ![alt](src "title") syntax. Far more
+  // discoverable than expecting anyone to know the markdown title form, and
+  // centered on screen so it's visible however far down the body they were.
+  function showPhotoPanel(json, insertAt) {
+    document.querySelector('.md-photo-backdrop')?.remove();
+    const backdrop = document.createElement('div');
+    backdrop.className = 'md-photo-backdrop';
+    const panel = document.createElement('div');
+    panel.className = 'md-photo-panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', 'Describe this photo');
+    panel.innerHTML = `
+      <img src="${json.preview}" alt="">
+      <div class="md-photo-fields">
+        <label>Photo description <span class="md-photo-req">(required — shows to Google &amp; screen readers)</span>
+          <input type="text" class="md-photo-alt" placeholder="e.g. Fully tiled pool renovation in Hampton">
+        </label>
+        <label>Tooltip <span class="md-photo-req">(optional — appears when a visitor hovers the photo)</span>
+          <input type="text" class="md-photo-title" placeholder="e.g. Completed in 3 weeks — call us for a quote">
+        </label>
+        <div class="md-photo-actions">
+          <button type="button" class="md-photo-insert" disabled>Add photo to page</button>
+          <button type="button" class="md-photo-cancel">Cancel</button>
+        </div>
+      </div>`;
+    const altIn   = panel.querySelector('.md-photo-alt');
+    const titleIn = panel.querySelector('.md-photo-title');
+    const insBtn  = panel.querySelector('.md-photo-insert');
+    function close(msg, type) {
+      backdrop.remove();
+      document.removeEventListener('keydown', onKey);
+      ta.focus();
+      if (msg) setStatus(msg, type);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') close('Photo not added (the upload is kept — unused photos are cleaned up at publish)', '');
+    }
+    altIn.addEventListener('input', () => { insBtn.disabled = !altIn.value.trim(); });
+    // Enter in either field = insert (when a description exists).
+    [altIn, titleIn].forEach(inp => inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !insBtn.disabled) { e.preventDefault(); insBtn.click(); }
+    }));
+    panel.querySelector('.md-photo-cancel').addEventListener('click', () =>
+      close('Photo not added (the upload is kept — unused photos are cleaned up at publish)', ''));
+    backdrop.addEventListener('click', e => {
+      if (e.target === backdrop) close('Photo not added (the upload is kept — unused photos are cleaned up at publish)', '');
+    });
+    document.addEventListener('keydown', onKey);
+    insBtn.addEventListener('click', () => {
+      const alt   = altIn.value.trim();
+      const title = titleIn.value.trim();
+      const snippet = '![' + alt + '](' + json.path + (title ? ' "' + title.replace(/"/g, "'") + '"' : '') + ')';
+      // Images are block-level in page bodies: pad with blank lines so the
+      // snippet never glues onto a paragraph.
+      const before = ta.value.slice(0, insertAt);
+      const pad    = before === '' || /\n\n$/.test(before) ? '' : (/\n$/.test(before) ? '\n' : '\n\n');
+      close();
+      ta.setSelectionRange(insertAt, insertAt);
+      insertText(pad + snippet + '\n');
+      setStatus('Photo added to the page ✓', 'ok');
+    });
+    backdrop.appendChild(panel);
+    document.body.appendChild(backdrop);
+    altIn.focus();
+  }
+
+  const photoInput = document.createElement('input');
+  photoInput.type = 'file';
+  photoInput.accept = 'image/*';
+  photoInput.style.display = 'none';
+  photoInput.addEventListener('change', e => {
+    if (e.target.files[0]) uploadAndInsertPhoto(e.target.files[0]);
+    photoInput.value = '';
+  });
+
+  // Dropping a photo straight onto the text box inserts it at the caret.
+  ta.addEventListener('dragover', e => { e.preventDefault(); ta.classList.add('drag-over'); });
+  ta.addEventListener('dragleave', () => ta.classList.remove('drag-over'));
+  ta.addEventListener('drop', e => {
+    const file = e.dataTransfer?.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      e.preventDefault();
+      ta.classList.remove('drag-over');
+      uploadAndInsertPhoto(file);
+    } else {
+      ta.classList.remove('drag-over');
+    }
+  });
+
+  // ── Preview ──
+  // Minimal markdown renderer covering exactly the constructs the guide
+  // documents (plus images and any deliberate raw HTML in the body, which is
+  // trusted local content). It is a *preview*, not the site's renderer — the
+  // real build uses Astro's full pipeline; this only has to be close enough
+  // that the editor can recognise their page and see their photos.
+  function inlineMd(text) {
+    return text
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (_, alt, src, title) => {
+        const local = src.replace(/^(\.\.\/)+assets\//, '');
+        const resolved = /^(https?:)?\/\//.test(src)
+          ? src
+          : '/api/preview?p=' + encodeURIComponent('src/assets/' + local);
+        return '<img src="' + resolved + '" alt="' + alt + '"' + (title ? ' title="' + title + '"' : '') + ' loading="lazy">';
+      })
+      .replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, '<a href="$2" onclick="return false">$1</a>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[\s(])_([^_]+)_(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>')
+      .replace(/(^|[\s(])\*([^*]+)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+  }
+
+  function mdToHtml(src) {
+    const out = [];
+    const lines = src.split(/\r?\n/);
+    let para = [], list = null;
+    const flushPara = () => { if (para.length) { out.push('<p>' + inlineMd(para.join(' ')) + '</p>'); para = []; } };
+    const flushList = () => { if (list) { out.push('<' + list.tag + '>' + list.items.map(i => '<li>' + inlineMd(i) + '</li>').join('') + '</' + list.tag + '>'); list = null; } };
+    for (const raw of lines) {
+      const line = raw.trimEnd();
+      const h = line.match(/^(#{1,6}) (.*)/);
+      const li = line.match(/^[-*] (.*)/);
+      const oli = line.match(/^\d+\. (.*)/);
+      if (line === '') { flushPara(); flushList(); }
+      else if (/^(-{3,}|_{3,}|\*{3,})$/.test(line)) { flushPara(); flushList(); out.push('<hr>'); }
+      else if (h) { flushPara(); flushList(); const lvl = Math.max(2, h[1].length); out.push('<h' + lvl + '>' + inlineMd(h[2]) + '</h' + lvl + '>'); }
+      else if (line.startsWith('> ')) { flushPara(); flushList(); out.push('<blockquote>' + inlineMd(line.slice(2)) + '</blockquote>'); }
+      else if (li) { flushPara(); if (!list || list.tag !== 'ul') { flushList(); list = { tag: 'ul', items: [] }; } list.items.push(li[1]); }
+      else if (oli) { flushPara(); if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [] }; } list.items.push(oli[1]); }
+      else if (/^<.+>$/.test(line)) { flushPara(); flushList(); out.push(line); }
+      else para.push(line);
+    }
+    flushPara(); flushList();
+    return out.join('\n');
+  }
+
+  const preview = document.createElement('div');
+  preview.className = 'md-preview';
+
+  // ── Toolbar ──
+  const bar = document.createElement('div');
+  bar.className = 'md-toolbar';
+  const btn = (label, title, fn, cls) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = label;
+    b.title = title;
+    if (cls) b.className = cls;
+    b.addEventListener('click', fn);
+    bar.appendChild(b);
+    return b;
+  };
+  btn('<strong>B</strong>', 'Bold the selected text', () => wrapSelection('**', '**', 'bold text'));
+  btn('Heading', 'Turn this line into a section heading', () => prefixLine('## '));
+  btn('Sub-heading', 'Turn this line into a smaller heading', () => prefixLine('### '));
+  btn('Link', 'Turn the selected text into a link', () => {
+    const { selectionStart: s, selectionEnd: e } = ta;
+    const sel = ta.value.slice(s, e) || 'link text';
+    insertText('[' + sel + '](https://)');
+    // Park the caret inside the (), ready for the address to be pasted.
+    ta.setSelectionRange(s + sel.length + 3 + 8, s + sel.length + 3 + 8);
+  });
+  btn('📷 Insert photo', 'Upload a photo and place it here in the page', () => photoInput.click(), 'md-tb-photo');
+  const spacer = document.createElement('div');
+  spacer.className = 'md-tb-spacer';
+  bar.appendChild(spacer);
+  const previewBtn = btn('👁 Preview', 'See the page content with photos and headings, instead of the editing codes', () => {
+    const open = !preview.classList.contains('open');
+    if (open) preview.innerHTML = mdToHtml(currentBody);
+    preview.classList.toggle('open', open);
+    ta.style.display = open ? 'none' : '';
+    previewBtn.classList.toggle('active', open);
+    previewBtn.innerHTML = open ? '✏️ Back to editing' : '👁 Preview';
+  }, 'md-tb-preview');
 
   // Collapsible syntax guide
   const guide = document.createElement('div');
@@ -1213,9 +1531,13 @@ function renderMarkdown(f) {
       <tr><td><code>1. First item</code></td><td>Numbered list item</td></tr>
       <tr><td><code>[Link label](https://…)</code></td><td>Clickable link</td></tr>
       <tr><td><code>&gt; A quote or callout</code></td><td>Indented block quote</td></tr>
+      <tr><td><code>![Photo description](…)</code></td><td>A photo in the page — use the <strong>📷 Insert photo</strong> button above and this is filled in for you</td></tr>
+      <tr><td><code>![Description](… "Tooltip")</code></td><td>A photo with hover tooltip text — the Insert photo button asks for both</td></tr>
     </table>
     <div class="md-guide-note">
       💡 <strong>Tips:</strong> Leave a blank line between paragraphs. Don't use <code># Heading 1</code> — each page already has one automatically.
+      To add a photo, click <strong>📷 Insert photo</strong> (or drag a photo straight into the text box) — then type a few words describing it over the highlighted text.
+      To remove a photo, delete its whole <code>![…](…)</code> line. Use <strong>👁 Preview</strong> any time to see the real photos and headings.
     </div>`;
 
   toggle.addEventListener('click', () => {
@@ -1226,7 +1548,10 @@ function renderMarkdown(f) {
   guide.appendChild(toggle);
   guide.appendChild(body);
 
+  wrap.appendChild(bar);
+  wrap.appendChild(photoInput);
   wrap.appendChild(ta);
+  wrap.appendChild(preview);
   wrap.appendChild(guide);
   return wrap;
 }
