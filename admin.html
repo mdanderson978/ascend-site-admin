@@ -1480,6 +1480,76 @@ function renderMarkdown(f) {
     showPhotoPanel(json, insertAt);
   }
 
+  // Insert a block-level snippet (a paragraph or two, never inline text) at
+  // a remembered caret position, padded with blank lines so it never glues
+  // onto whatever paragraph is already there. Shared by every toolbar
+  // action that inserts more than a single inline token.
+  function insertBlockAt(insertAt, snippet) {
+    const before = ta.value.slice(0, insertAt);
+    const pad = before === '' || /\n\n$/.test(before) ? '' : (/\n$/.test(before) ? '\n' : '\n\n');
+    ta.setSelectionRange(insertAt, insertAt);
+    insertText(pad + snippet + '\n');
+  }
+
+  // Generic small modal for toolbar actions that need a couple of typed
+  // fields before inserting a snippet — same visual language and
+  // focus/escape handling as showPhotoPanel, without its photo-upload flow.
+  // fields: [{ label, hint, required, type: 'text'|'textarea', rows,
+  //            placeholder, value }]. onSubmit gets the trimmed values in
+  // the same order as `fields`.
+  function showFieldPanel({ ariaLabel, fields, submitLabel, cancelMsg, onSubmit }) {
+    document.querySelector('.md-photo-backdrop')?.remove();
+    const backdrop = document.createElement('div');
+    backdrop.className = 'md-photo-backdrop';
+    const panel = document.createElement('div');
+    panel.className = 'md-photo-panel md-field-panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', ariaLabel);
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const fieldsHtml = fields.map((f, i) => `
+      <label>${esc(f.label)} ${f.required ? '<span class="md-photo-req">(required)</span>' : (f.hint ? `<span class="md-photo-req">${esc(f.hint)}</span>` : (f.hint === '' ? '' : '<span class="md-photo-req">(optional)</span>'))}
+        ${f.type === 'textarea'
+          ? `<textarea class="md-field-input" data-i="${i}" rows="${f.rows || 3}" placeholder="${esc(f.placeholder)}">${esc(f.value)}</textarea>`
+          : `<input type="text" class="md-field-input" data-i="${i}" placeholder="${esc(f.placeholder)}" value="${esc(f.value)}">`}
+      </label>`).join('');
+    panel.innerHTML = `
+      <div class="md-photo-fields">
+        ${fieldsHtml}
+        <div class="md-photo-actions">
+          <button type="button" class="md-photo-insert" disabled>${esc(submitLabel)}</button>
+          <button type="button" class="md-photo-cancel">Cancel</button>
+        </div>
+      </div>`;
+    const inputs = Array.from(panel.querySelectorAll('.md-field-input'));
+    const insBtn = panel.querySelector('.md-photo-insert');
+    function close(msg, type) {
+      backdrop.remove();
+      document.removeEventListener('keydown', onKey);
+      ta.focus();
+      if (msg) setStatus(msg, type);
+    }
+    function onKey(e) { if (e.key === 'Escape') close(cancelMsg ?? '', ''); }
+    function refreshEnabled() {
+      insBtn.disabled = fields.some((f, i) => f.required && !inputs[i].value.trim());
+    }
+    inputs.forEach((inp) => inp.addEventListener('input', refreshEnabled));
+    inputs.forEach((inp) => inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && inp.tagName !== 'TEXTAREA' && !insBtn.disabled) { e.preventDefault(); insBtn.click(); }
+    }));
+    panel.querySelector('.md-photo-cancel').addEventListener('click', () => close(cancelMsg ?? '', ''));
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(cancelMsg ?? '', ''); });
+    document.addEventListener('keydown', onKey);
+    insBtn.addEventListener('click', () => {
+      const values = inputs.map((inp) => inp.value.trim());
+      close();
+      onSubmit(values);
+    });
+    backdrop.appendChild(panel);
+    document.body.appendChild(backdrop);
+    refreshEnabled();
+    inputs[0]?.focus();
+  }
+
   // Post-upload details modal: a thumbnail plus labelled Description (alt
   // text, required) and Tooltip (title, optional) fields — the editor fills
   // in words, the modal assembles the ![alt](src "title") syntax. Far more
@@ -1510,16 +1580,20 @@ function renderMarkdown(f) {
         </label>` : `
         <label>Tooltip <span class="md-photo-req">(optional — appears when a visitor hovers the photo)</span>
           <input type="text" class="md-photo-title" placeholder="e.g. Completed in 3 weeks — call us for a quote">
+        </label>
+        <label>Caption <span class="md-photo-req">(optional — short line shown under the photo, e.g. "Before renovation")</span>
+          <input type="text" class="md-photo-caption" placeholder="e.g. Before renovation">
         </label>`}
         <div class="md-photo-actions">
           <button type="button" class="md-photo-insert" disabled>${linked ? 'Add thumbnail to page' : 'Add photo to page'}</button>
           <button type="button" class="md-photo-cancel">Cancel</button>
         </div>
       </div>`;
-    const altIn   = panel.querySelector('.md-photo-alt');
-    const titleIn = panel.querySelector('.md-photo-title');
-    const linkIn  = panel.querySelector('.md-photo-link');
-    const insBtn  = panel.querySelector('.md-photo-insert');
+    const altIn     = panel.querySelector('.md-photo-alt');
+    const titleIn   = panel.querySelector('.md-photo-title');
+    const linkIn    = panel.querySelector('.md-photo-link');
+    const captionIn = panel.querySelector('.md-photo-caption');
+    const insBtn    = panel.querySelector('.md-photo-insert');
     function close(msg, type) {
       backdrop.remove();
       document.removeEventListener('keydown', onKey);
@@ -1535,7 +1609,7 @@ function renderMarkdown(f) {
     altIn.addEventListener('input', refreshEnabled);
     if (linked) linkIn.addEventListener('input', refreshEnabled);
     // Enter in any field = insert (when required fields are filled).
-    [altIn, titleIn, linkIn].filter(Boolean).forEach(inp => inp.addEventListener('keydown', e => {
+    [altIn, titleIn, linkIn, captionIn].filter(Boolean).forEach(inp => inp.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !insBtn.disabled) { e.preventDefault(); insBtn.click(); }
     }));
     panel.querySelector('.md-photo-cancel').addEventListener('click', () =>
@@ -1551,16 +1625,15 @@ function renderMarkdown(f) {
         const url = linkIn.value.trim();
         snippet = '[![' + alt + '](' + json.path + ')](' + url + ')';
       } else {
-        const title = titleIn.value.trim();
+        const title   = titleIn.value.trim();
+        const caption = captionIn.value.trim();
         snippet = '![' + alt + '](' + json.path + (title ? ' "' + title.replace(/"/g, "'") + '"' : '') + ')';
+        // A caption is its own paragraph directly under the photo — the
+        // site styles a paragraph containing only italic text as a caption.
+        if (caption) snippet += '\n\n*' + caption.replace(/\*/g, '') + '*';
       }
-      // Images are block-level in page bodies: pad with blank lines so the
-      // snippet never glues onto a paragraph.
-      const before = ta.value.slice(0, insertAt);
-      const pad    = before === '' || /\n\n$/.test(before) ? '' : (/\n$/.test(before) ? '\n' : '\n\n');
       close();
-      ta.setSelectionRange(insertAt, insertAt);
-      insertText(pad + snippet + '\n');
+      insertBlockAt(insertAt, snippet);
       setStatus((linked ? 'Thumbnail' : 'Photo') + ' added to the page ✓', 'ok');
     });
     backdrop.appendChild(panel);
@@ -1677,6 +1750,109 @@ function renderMarkdown(f) {
     const at = ta.selectionStart;
     openPhotoPicker(json => showPhotoPanel(json, at, { linked: true }));
   }, 'md-tb-photo');
+  // A YouTube link on its own line becomes an embedded video player (where
+  // the site supports it) — this panel builds that line so nobody needs to
+  // know the "paste it alone on its own line" rule.
+  btn('🎬 YouTube video', 'Add a YouTube video that plays right on the page', () => {
+    const at = ta.selectionStart;
+    showFieldPanel({
+      ariaLabel: 'Add a YouTube video',
+      submitLabel: 'Add video to page',
+      cancelMsg: 'Video not added',
+      fields: [
+        { label: 'YouTube video link', required: true, placeholder: 'https://www.youtube.com/watch?v=…' },
+        { label: 'Video title', hint: 'optional — helps screen readers; a generic title is used if left blank', placeholder: 'e.g. Pool Renovation Timelapse' },
+      ],
+      onSubmit: ([url, title]) => {
+        if (!url) return;
+        insertBlockAt(at, '[' + (title || 'YouTube video') + '](' + url + ')');
+        setStatus('Video added to the page ✓', 'ok');
+      },
+    });
+  }, 'md-tb-photo');
+  // The channel link is remembered for the rest of this editing session so
+  // repeat use (a Subscribe button under every video on a page) is a single
+  // click after the first time.
+  let lastYoutubeChannel = '';
+  btn('🔴 Subscribe button', 'Add a "Subscribe on YouTube" button', () => {
+    const at = ta.selectionStart;
+    showFieldPanel({
+      ariaLabel: 'Add a Subscribe on YouTube button',
+      submitLabel: 'Add button to page',
+      cancelMsg: 'Button not added',
+      fields: [
+        { label: 'Your YouTube channel link', required: true, placeholder: 'https://www.youtube.com/@yourchannel', value: lastYoutubeChannel },
+      ],
+      onSubmit: ([channel]) => {
+        if (!channel) return;
+        lastYoutubeChannel = channel;
+        const url = channel + (/[?&]sub_confirmation=1/.test(channel) ? '' : (channel.includes('?') ? '&' : '?') + 'sub_confirmation=1');
+        insertBlockAt(at, '[Subscribe on YouTube](' + url + ')');
+        setStatus('Subscribe button added ✓', 'ok');
+      },
+    });
+  }, 'md-tb-photo');
+  // Andrew's own workaround for this (typing "Price does not include pool
+  // tiling." as a body paragraph) was the reason a real price_note field
+  // got added — this button is for the OTHER thing he kept typing by hand:
+  // a standalone "Call: 0407 666 999" line as a phone call-to-action. Both
+  // values are remembered for the rest of the session.
+  let lastPhoneDisplay = '';
+  let lastPhoneTel = '';
+  btn('☎️ Call-to-action', 'Add a "Call now" phone prompt', () => {
+    const at = ta.selectionStart;
+    showFieldPanel({
+      ariaLabel: 'Add a call-to-action',
+      submitLabel: 'Add to page',
+      cancelMsg: 'Call-to-action not added',
+      fields: [
+        { label: 'Phone number to display', required: true, placeholder: 'e.g. 0407 666 999', value: lastPhoneDisplay },
+        { label: 'Phone link', required: true, hint: 'starts with tel: — copy this from Settings so it matches exactly', placeholder: 'e.g. tel:+610407666999', value: lastPhoneTel },
+      ],
+      onSubmit: ([display, tel]) => {
+        if (!display || !tel) return;
+        lastPhoneDisplay = display;
+        lastPhoneTel = tel;
+        insertBlockAt(at, 'Call: [' + display + '](' + tel + ')');
+        setStatus('Call-to-action added ✓', 'ok');
+      },
+    });
+  }, 'md-tb-photo');
+  // A quote ("> ...") is plain Markdown already covered by the guide, but
+  // the star-rating + attribution line is fiddly to type correctly by hand
+  // (it's easy to drop the leading "> " on the attribution line, which
+  // silently knocks it out of the styled quote box — this button can't get
+  // that wrong).
+  btn('💬 Customer testimonial', 'Add a customer quote with a star rating', () => {
+    const at = ta.selectionStart;
+    showFieldPanel({
+      ariaLabel: 'Add a customer testimonial',
+      submitLabel: 'Add testimonial to page',
+      cancelMsg: 'Testimonial not added',
+      fields: [
+        { label: 'What the customer said', type: 'textarea', rows: 4, required: true, placeholder: 'Paste or type the review here…' },
+        { label: 'Customer name', required: true, placeholder: 'e.g. Kath' },
+        { label: 'Suburb', placeholder: 'e.g. Rowville' },
+        { label: 'Star rating', placeholder: '1-5', value: '5' },
+        { label: 'Link to their full review', hint: 'optional — e.g. a Google review link', placeholder: 'https://…' },
+      ],
+      onSubmit: ([quote, name, suburb, ratingRaw, link]) => {
+        if (!quote || !name) return;
+        const rating = Math.min(5, Math.max(1, parseInt(ratingRaw, 10) || 5));
+        const stars  = '★'.repeat(rating) + '☆'.repeat(5 - rating);
+        const who    = name + (suburb ? ', ' + suburb : '');
+        const linkPart = link ? ' — [Read our Google reviews](' + link + ')' : '';
+        const paragraphs = quote.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+        if (!paragraphs.length) paragraphs.push(quote.trim());
+        const quoteLines = paragraphs
+          .map((p, i) => (i === 0 ? '> "' : '> ') + p + (i === paragraphs.length - 1 ? '"' : ''))
+          .join('\n>\n');
+        const snippet = quoteLines + '\n>\n> — **' + who + '** ' + stars + linkPart;
+        insertBlockAt(at, snippet);
+        setStatus('Testimonial added to the page ✓', 'ok');
+      },
+    });
+  }, 'md-tb-photo');
   const spacer = document.createElement('div');
   spacer.className = 'md-tb-spacer';
   bar.appendChild(spacer);
@@ -1712,9 +1888,13 @@ function renderMarkdown(f) {
       <tr><td><code>&gt; A quote or callout</code></td><td>Indented block quote</td></tr>
       <tr><td><code>![Photo description](…)</code></td><td>A photo in the page — use the <strong>📷 Insert photo</strong> button above and this is filled in for you</td></tr>
       <tr><td><code>![Description](… "Tooltip")</code></td><td>A photo with hover tooltip text — the Insert photo button asks for both</td></tr>
-      <tr><td><code>[Video title](YouTube link)</code></td><td>A YouTube link pasted on its own line becomes an embedded video player (where the website supports it)</td></tr>
+      <tr><td><code>*Caption text*</code></td><td>A short caption line under a photo — the <strong>📷 Insert photo</strong> button has an optional Caption field that fills this in for you</td></tr>
+      <tr><td><code>[Video title](YouTube link)</code></td><td>A YouTube link pasted on its own line becomes an embedded video player (where the website supports it) — use the <strong>🎬 YouTube video</strong> button above</td></tr>
       <tr><td><code>**[Button label](link)**</code></td><td>A <strong>bold</strong> link on its own line becomes a styled button — put several on consecutive lines for a row of buttons (where the website supports it)</td></tr>
       <tr><td><code>[![Photo description](…)](link)</code></td><td>A small clickable thumbnail — use the <strong>🔗 Thumbnail link</strong> button above and this is filled in for you. Put several on consecutive lines for a row of thumbnails (where the website supports it)</td></tr>
+      <tr><td><code>[Subscribe on YouTube](channel link)</code></td><td>A "Subscribe on YouTube" button — use the <strong>🔴 Subscribe button</strong> above (where the website supports it)</td></tr>
+      <tr><td><code>Call: [number](tel:…)</code></td><td>A phone call-to-action — use the <strong>☎️ Call-to-action</strong> button above so the phone link is always typed correctly (where the website supports it)</td></tr>
+      <tr><td><code>&gt; "Quote" … &gt; — **Name** ★★★★★</code></td><td>A customer testimonial with star rating — use the <strong>💬 Customer testimonial</strong> button above rather than typing this by hand (easy to get the quote marks or star count wrong)</td></tr>
     </table>
     <div class="md-guide-note">
       💡 <strong>Tips:</strong> Leave a blank line between paragraphs. Don't use <code># Heading 1</code> — each page already has one automatically.
