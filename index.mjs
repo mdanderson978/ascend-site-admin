@@ -645,6 +645,23 @@ export function startAdmin(config) {
         return;
       }
 
+      // Every image already in uploads/, newest first — powers the "choose an
+      // existing photo" picker so editors can reuse a photo that only exists
+      // in the CMS without re-uploading it from their device.
+      if (path_ === '/api/uploads' && req.method === 'GET') {
+        const files = fs.readdirSync(UPLOADS)
+          .filter(n => /\.(webp|jpe?g|png|gif|avif)$/i.test(n))
+          .map(n => ({ n, m: fs.statSync(path.join(UPLOADS, n)).mtimeMs }))
+          .sort((a, b) => b.m - a.m)
+          .map(({ n }) => ({
+            name:    n,
+            path:    '../../assets/uploads/' + n,
+            preview: '/api/preview?p=' + encodeURIComponent('src/assets/uploads/' + n),
+          }));
+        jsonResp(res, 200, { files });
+        return;
+      }
+
       if (path_ === '/api/preview' && req.method === 'GET') {
         const p = url.searchParams.get('p') || '';
         const abs = path.resolve(ROOT, p);
