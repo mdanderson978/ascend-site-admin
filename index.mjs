@@ -45,6 +45,17 @@
  *                   exactly: a fixed, developer-defined set of entries that
  *                   can never be added to or deleted via the admin.
  *   tasks           start-screen shortcuts: [{ goto, field?, label }].
+ *   shortcodes      optional; controls which "advanced content" toolbar
+ *                   buttons appear in every markdown body editor:
+ *                     { include?: string[], custom?: [...] }
+ *                   `include` lists built-in shortcode ids (see admin.html's
+ *                   BUILTIN_SHORTCODES catalog) to show, REPLACING the
+ *                   default set — omit `shortcodes` entirely to keep
+ *                   today's default 6 advanced buttons unchanged. `custom`
+ *                   lists site-specific declarative entries appended after
+ *                   the built-ins (no functions — this crosses the JSON
+ *                   wire to the browser, see the contract comment in
+ *                   references/admin.config.mjs).
  *   startScreenIntro / startScreenNote   optional start-screen copy
  *                   (note may contain simple HTML: <br>, <strong>).
  *   browserTitle    optional browser-tab title, default '<siteTitle> — Content Admin'.
@@ -405,6 +416,7 @@ export function startAdmin(config) {
             Object.entries(DYNAMIC).map(([col, d]) => [col, { label: d.label, titleField: d.titleField, orderField: d.orderField }])
           ),
           tasks:            config.tasks        || [],
+          shortcodes:       config.shortcodes   || {},
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
           altPlaceholder:   config.altPlaceholder   || 'e.g. "Guests dining in the main dining room"',

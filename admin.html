@@ -322,6 +322,14 @@ textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px
 .md-preview blockquote { margin: 0 0 .8em; padding: .4em .9em; border-left: 3px solid var(--canopy); background: rgba(45,158,94,.05); border-radius: 0 4px 4px 0; }
 .md-preview img { display: block; max-width: min(100%, 420px); height: auto; border-radius: 6px; margin: .6em 0; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
 .md-preview a { color: var(--canopy); text-decoration: underline; }
+.md-preview-shortcode {
+  background: rgba(244,162,97,.12);
+  border: 1px dashed var(--amber);
+  border-radius: 6px;
+  padding: .6em .9em;
+  font-style: italic;
+  color: var(--muted);
+}
 
 /* Post-upload photo details modal (description + tooltip before insert).
    A modal rather than an inline panel so it's always on screen no matter how
@@ -350,8 +358,46 @@ textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px
 .md-photo-fields { display: flex; flex-direction: column; gap: .55rem; flex: 1; min-width: 0; }
 .md-photo-fields label { display: flex; flex-direction: column; gap: .25rem; font-size: 12.5px; font-weight: 600; }
 .md-photo-req { font-weight: 400; color: var(--muted); }
-.md-photo-fields input { font-size: 13px; }
+.md-photo-fields input, .md-photo-fields select { font-size: 13px; }
 .md-photo-actions { display: flex; gap: .5rem; margin-top: .15rem; }
+/* Wide variant for panels with a repeatable group field (grids, FAQs) —
+   plain fields/photo panels stay at the original 560px width. */
+.md-field-panel.md-field-panel--wide { width: min(680px, 100%); max-height: 80vh; overflow-y: auto; }
+.md-field-group { display: flex; flex-direction: column; gap: .4rem; }
+.md-field-group > label { font-size: 12.5px; font-weight: 600; }
+.md-field-group-rows { display: flex; flex-direction: column; gap: .5rem; }
+.md-field-group-row {
+  display: flex;
+  gap: .5rem;
+  align-items: flex-end;
+  padding: .5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--cream);
+}
+.md-field-group-item { flex: 1; display: flex; flex-direction: column; gap: .2rem; font-size: 12px; font-weight: 600; min-width: 0; }
+.md-field-group-remove {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .4rem .6rem;
+  font-size: 12px;
+  color: var(--danger);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.md-field-group-remove:disabled { opacity: .4; cursor: not-allowed; }
+.md-field-group-add {
+  align-self: flex-start;
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  padding: .4rem .8rem;
+  font-size: 12.5px;
+  color: var(--canopy);
+  cursor: pointer;
+}
+.md-field-group-add:disabled { opacity: .4; cursor: not-allowed; }
 .md-photo-insert {
   background: var(--canopy);
   color: #fff;
@@ -1016,6 +1062,215 @@ function checkImageSize(file, sizeType) {
 // that only exists in the CMS without re-uploading it from their device.
 // onPick receives { path, preview } — either an existing upload straight from
 // /api/uploads, or a fresh file pushed through the normal upload pipeline.
+// ── Shortcode catalog ────────────────────────────────────────────────────
+// The markdown toolbar's "advanced content" buttons (everything past Bold/
+// Heading/Sub-heading/Link/Button link, which are plain selection-editing
+// primitives with nothing to register here). Each entry is either:
+//   - a `photo` panel: a thin wrapper around the existing openPhotoPicker ->
+//     showPhotoPanel flow (Insert photo, Thumbnail link) — that UI has a
+//     live thumbnail preview and fields that don't fit a flat array, so it
+//     isn't forced into the fields shape below.
+//   - a `fields` panel: showFieldPanel() collects a few typed values, then
+//     `build(values)` turns them into `{ snippet, status }` (or `null` to
+//     silently no-op, e.g. a field that's blank after trimming). `build` is
+//     real code, not a template string, because several of these need real
+//     logic (Subscribe's conditional query param, Testimonial's paragraph
+//     splitting + star-rating clamp) — a template can't express that.
+//     Fields marked `remember: true` are pre-filled from `rememberedValues`
+//     (see resolveShortcodes()) so repeat use within one editing session
+//     doesn't require re-typing a phone number or channel link every time.
+//
+// Every entry also carries `guide: { example, description, justification? }`
+// — the ONLY copy of that button's formatting-guide row; buildGuideTable()
+// generates the table from this same list, so the guide text can never
+// drift from the button's own icon/label the way hand-duplicated HTML could.
+//
+// A site opts into a subset (or none) of these via config.shortcodes —
+// see resolveShortcodes() and the contract comment in
+// references/admin.config.mjs. No site-facing "custom" entry may declare a
+// `build` function: config crosses a JSON.stringify wire (GET /api/config)
+// on its way to the browser, so only declarative shapes survive. Genuinely
+// new *logic* can only be contributed here, as a new built-in entry.
+const BUILTIN_SHORTCODES = [
+  {
+    id: 'insert-photo',
+    icon: '📷',
+    label: 'Insert photo',
+    tooltip: 'Add a photo here — upload a new one or reuse one already on the site',
+    toolbarClass: 'md-tb-photo',
+    panel: { kind: 'photo', linked: false },
+    // No `guide` entry — the formatting guide's hand-written "basic" rows
+    // already cover ![Photo description](…), the optional tooltip form,
+    // and the *Caption* convention together in one place.
+  },
+  {
+    id: 'thumbnail-link',
+    icon: '🔗',
+    label: 'Thumbnail link',
+    tooltip: 'Add a small clickable thumbnail that links to another page (put several together for a row)',
+    toolbarClass: 'md-tb-photo',
+    panel: { kind: 'photo', linked: true },
+    guide: {
+      example: '[![Photo description](…)](link)',
+      description: 'A small clickable thumbnail — use the 🔗 Thumbnail link button above and this is filled in for you. Put several on consecutive lines for a row of thumbnails',
+      justification: 'where the website supports it',
+    },
+  },
+  {
+    id: 'youtube-video',
+    icon: '🎬',
+    label: 'YouTube video',
+    tooltip: 'Add a YouTube video that plays right on the page',
+    toolbarClass: 'md-tb-photo',
+    panel: {
+      kind: 'fields',
+      ariaLabel: 'Add a YouTube video',
+      submitLabel: 'Add video to page',
+      cancelMsg: 'Video not added',
+      fields: [
+        { label: 'YouTube video link', required: true, placeholder: 'https://www.youtube.com/watch?v=…' },
+        { label: 'Video title', hint: 'optional — helps screen readers; a generic title is used if left blank', placeholder: 'e.g. Pool Renovation Timelapse' },
+      ],
+    },
+    build: ([url, title]) => {
+      if (!url) return null;
+      return { snippet: '[' + (title || 'YouTube video') + '](' + url + ')', status: 'Video added to the page ✓' };
+    },
+    guide: {
+      example: '[Video title](YouTube link)',
+      description: 'A YouTube link pasted on its own line becomes an embedded video player (where the website supports it) — use the 🎬 YouTube video button above',
+    },
+  },
+  {
+    id: 'subscribe-button',
+    icon: '🔴',
+    label: 'Subscribe button',
+    tooltip: 'Add a "Subscribe on YouTube" button',
+    toolbarClass: 'md-tb-photo',
+    panel: {
+      kind: 'fields',
+      ariaLabel: 'Add a Subscribe on YouTube button',
+      submitLabel: 'Add button to page',
+      cancelMsg: 'Button not added',
+      fields: [
+        { label: 'Your YouTube channel link', required: true, placeholder: 'https://www.youtube.com/@yourchannel', remember: true },
+      ],
+    },
+    build: ([channel]) => {
+      if (!channel) return null;
+      const url = channel + (/[?&]sub_confirmation=1/.test(channel) ? '' : (channel.includes('?') ? '&' : '?') + 'sub_confirmation=1');
+      return { snippet: '[Subscribe on YouTube](' + url + ')', status: 'Subscribe button added ✓' };
+    },
+    guide: {
+      example: '[Subscribe on YouTube](channel link)',
+      description: 'A "Subscribe on YouTube" button — use the 🔴 Subscribe button above',
+      justification: 'where the website supports it',
+    },
+  },
+  {
+    id: 'call-to-action',
+    icon: '☎️',
+    label: 'Call-to-action',
+    tooltip: 'Add a "Call now" phone prompt',
+    toolbarClass: 'md-tb-photo',
+    panel: {
+      kind: 'fields',
+      ariaLabel: 'Add a call-to-action',
+      submitLabel: 'Add to page',
+      cancelMsg: 'Call-to-action not added',
+      fields: [
+        { label: 'Phone number to display', required: true, placeholder: 'e.g. 0407 666 999', remember: true },
+        { label: 'Phone link', required: true, hint: 'starts with tel: — copy this from Settings so it matches exactly', placeholder: 'e.g. tel:+610407666999', remember: true },
+      ],
+    },
+    build: ([display, tel]) => {
+      if (!display || !tel) return null;
+      return { snippet: 'Call: [' + display + '](' + tel + ')', status: 'Call-to-action added ✓' };
+    },
+    guide: {
+      example: 'Call: [number](tel:…)',
+      description: 'A phone call-to-action — use the ☎️ Call-to-action button above so the phone link is always typed correctly',
+      justification: 'where the website supports it',
+    },
+  },
+  {
+    id: 'customer-testimonial',
+    icon: '💬',
+    label: 'Customer testimonial',
+    tooltip: 'Add a customer quote with a star rating',
+    toolbarClass: 'md-tb-photo',
+    panel: {
+      kind: 'fields',
+      ariaLabel: 'Add a customer testimonial',
+      submitLabel: 'Add testimonial to page',
+      cancelMsg: 'Testimonial not added',
+      fields: [
+        { label: 'What the customer said', type: 'textarea', rows: 4, required: true, placeholder: 'Paste or type the review here…' },
+        { label: 'Customer name', required: true, placeholder: 'e.g. Kath' },
+        { label: 'Suburb', placeholder: 'e.g. Rowville' },
+        { label: 'Star rating', placeholder: '1-5', value: '5' },
+        { label: 'Link to their full review', hint: 'optional — e.g. a Google review link', placeholder: 'https://…' },
+      ],
+    },
+    build: ([quote, name, suburb, ratingRaw, link]) => {
+      if (!quote || !name) return null;
+      const rating = Math.min(5, Math.max(1, parseInt(ratingRaw, 10) || 5));
+      const stars  = '★'.repeat(rating) + '☆'.repeat(5 - rating);
+      const who    = name + (suburb ? ', ' + suburb : '');
+      const linkPart = link ? ' — [Read our Google reviews](' + link + ')' : '';
+      const paragraphs = quote.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+      if (!paragraphs.length) paragraphs.push(quote.trim());
+      const quoteLines = paragraphs
+        .map((p, i) => (i === 0 ? '> "' : '> ') + p + (i === paragraphs.length - 1 ? '"' : ''))
+        .join('\n>\n');
+      return { snippet: quoteLines + '\n>\n> — **' + who + '** ' + stars + linkPart, status: 'Testimonial added to the page ✓' };
+    },
+    guide: {
+      example: '> "Quote" … > — **Name** ★★★★★',
+      description: 'A customer testimonial with star rating — use the 💬 Customer testimonial button above rather than typing this by hand',
+      justification: 'easy to get the quote marks or star count wrong',
+    },
+  },
+];
+const BUILTIN_SHORTCODE_IDS = BUILTIN_SHORTCODES.map((e) => e.id);
+const DEFAULT_SHORTCODE_IDS = ['insert-photo', 'thumbnail-link', 'youtube-video', 'subscribe-button', 'call-to-action', 'customer-testimonial'];
+
+// Resolves a site's config.shortcodes (from GET /api/config) against the
+// built-in catalog above. No `shortcodes` key at all -> the classic default
+// 6, unchanged for every site that hasn't opted into anything (this is the
+// backward-compatibility guarantee). `include` REPLACES the default set
+// (not additive) so a site can trim down to fewer built-ins if it wants.
+// `custom` entries are appended after, declarative-only (see the comment on
+// BUILTIN_SHORTCODES above for why `build` can't appear in site config).
+function resolveShortcodes(shortcodesConfig) {
+  const cfg = shortcodesConfig || {};
+  const ids = Array.isArray(cfg.include) ? cfg.include : DEFAULT_SHORTCODE_IDS;
+  const builtins = BUILTIN_SHORTCODES.filter((e) => ids.includes(e.id));
+  const custom = (Array.isArray(cfg.custom) ? cfg.custom : []).map((e) => ({
+    ...e,
+    build: (values) => buildDirectiveSnippet(e, values),
+  }));
+  return [...builtins, ...custom];
+}
+
+// Assembles a `:::name{attr="val"}\ncontent\n:::` (or `::name{...}` for a
+// leaf directive) from a site's declarative `directive` shape — the only
+// per-site customization mechanism available for genuinely new shortcodes,
+// since site config can't ship a real build() function (see above). Content
+// itself is filled from `values[entry.directive.contentField]`, if given.
+function buildDirectiveSnippet(entry, values) {
+  const d = entry.directive || {};
+  const fence = d.kind === 'leaf' ? '::' : ':::';
+  const attrs = Object.entries(d.attrs || {})
+    .map(([key, fieldIndex]) => (typeof fieldIndex === 'number' ? values[fieldIndex] : fieldIndex) ? key + '="' + String(typeof fieldIndex === 'number' ? values[fieldIndex] : fieldIndex).replace(/"/g, "'") + '"' : null)
+    .filter(Boolean)
+    .join(' ');
+  const attrPart = attrs ? '{' + attrs + '}' : '';
+  const content = typeof d.contentField === 'number' ? (values[d.contentField] || '') : '';
+  if (d.kind === 'leaf') return { snippet: fence + d.name + attrPart, status: entry.label + ' added to the page ✓' };
+  return { snippet: fence + d.name + attrPart + '\n' + content + '\n' + fence, status: entry.label + ' added to the page ✓' };
+}
+
 function openPhotoPicker(onPick, opts = {}) {
   document.querySelector('.md-photo-backdrop')?.remove();
   const backdrop = document.createElement('div');
@@ -1497,20 +1752,49 @@ function renderMarkdown(f) {
   // fields: [{ label, hint, required, type: 'text'|'textarea', rows,
   //            placeholder, value }]. onSubmit gets the trimmed values in
   // the same order as `fields`.
+  // field.type: 'text' (default) | 'textarea' | 'select' | 'group'.
+  //   select: { type: 'select', options: [{ value, label }], value? }
+  //   group:  a bounded, repeatable set of rows (e.g. grid items, FAQ
+  //           questions) — { type: 'group', min, max, addLabel, itemFields }
+  //           where itemFields is its own small fields array (text/textarea/
+  //           select only — no nesting). Submits as Array<string[]>, one
+  //           entry per row, each row's values in itemFields order.
   function showFieldPanel({ ariaLabel, fields, submitLabel, cancelMsg, onSubmit }) {
     document.querySelector('.md-photo-backdrop')?.remove();
     const backdrop = document.createElement('div');
     backdrop.className = 'md-photo-backdrop';
     const panel = document.createElement('div');
     panel.className = 'md-photo-panel md-field-panel';
+    if (fields.some((f) => f.type === 'group')) panel.classList.add('md-field-panel--wide');
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', ariaLabel);
     const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-    const fieldsHtml = fields.map((f, i) => `
-      <label>${esc(f.label)} ${f.required ? '<span class="md-photo-req">(required)</span>' : (f.hint ? `<span class="md-photo-req">${esc(f.hint)}</span>` : (f.hint === '' ? '' : '<span class="md-photo-req">(optional)</span>'))}
-        ${f.type === 'textarea'
-          ? `<textarea class="md-field-input" data-i="${i}" rows="${f.rows || 3}" placeholder="${esc(f.placeholder)}">${esc(f.value)}</textarea>`
-          : `<input type="text" class="md-field-input" data-i="${i}" placeholder="${esc(f.placeholder)}" value="${esc(f.value)}">`}
+    const reqSpan = (f) => f.required ? '<span class="md-photo-req">(required)</span>' : (f.hint ? `<span class="md-photo-req">${esc(f.hint)}</span>` : (f.hint === '' ? '' : '<span class="md-photo-req">(optional)</span>'));
+    const inputHtml = (f, i) => f.type === 'textarea'
+      ? `<textarea class="md-field-input" data-i="${i}" rows="${f.rows || 3}" placeholder="${esc(f.placeholder)}">${esc(f.value)}</textarea>`
+      : f.type === 'select'
+      ? `<select class="md-field-input" data-i="${i}">${(f.options || []).map((o) => `<option value="${esc(o.value)}"${o.value === f.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`
+      : `<input type="text" class="md-field-input" data-i="${i}" placeholder="${esc(f.placeholder)}" value="${esc(f.value)}">`;
+    const groupRowHtml = (f, i) => `
+      <div class="md-field-group-row">
+        ${f.itemFields.map((itemF, j) => `
+          <label class="md-field-group-item">${esc(itemF.label)}
+            ${itemF.type === 'textarea'
+              ? `<textarea class="md-field-group-input" data-item="${j}" rows="${itemF.rows || 2}" placeholder="${esc(itemF.placeholder)}"></textarea>`
+              : `<input type="text" class="md-field-group-input" data-item="${j}" placeholder="${esc(itemF.placeholder)}">`}
+          </label>`).join('')}
+        <button type="button" class="md-field-group-remove" title="Remove this item">Remove</button>
+      </div>`;
+    const fieldsHtml = fields.map((f, i) => f.type === 'group'
+      ? `
+      <div class="md-field-group" data-i="${i}" data-min="${f.min || 1}" data-max="${f.max || 8}">
+        <label>${esc(f.label)} ${reqSpan(f)}</label>
+        <div class="md-field-group-rows">${Array.from({ length: f.min || 1 }, () => groupRowHtml(f)).join('')}</div>
+        <button type="button" class="md-field-group-add">${esc(f.addLabel || '+ Add another')}</button>
+      </div>`
+      : `
+      <label>${esc(f.label)} ${reqSpan(f)}
+        ${inputHtml(f, i)}
       </label>`).join('');
     panel.innerHTML = `
       <div class="md-photo-fields">
@@ -1520,8 +1804,61 @@ function renderMarkdown(f) {
           <button type="button" class="md-photo-cancel">Cancel</button>
         </div>
       </div>`;
-    const inputs = Array.from(panel.querySelectorAll('.md-field-input'));
     const insBtn = panel.querySelector('.md-photo-insert');
+
+    // Group rows: delegated add/remove so newly-added rows need no rebinding.
+    panel.querySelectorAll('.md-field-group').forEach((groupEl) => {
+      const min = Number(groupEl.dataset.min);
+      const max = Number(groupEl.dataset.max);
+      const fieldIndex = Number(groupEl.dataset.i);
+      const f = fields[fieldIndex];
+      const rowsEl = groupEl.querySelector('.md-field-group-rows');
+      const addBtn = groupEl.querySelector('.md-field-group-add');
+      function refreshRowButtons() {
+        const rows = rowsEl.querySelectorAll('.md-field-group-row');
+        rows.forEach((row) => { row.querySelector('.md-field-group-remove').disabled = rows.length <= min; });
+        addBtn.disabled = rows.length >= max;
+      }
+      addBtn.addEventListener('click', () => {
+        if (rowsEl.querySelectorAll('.md-field-group-row').length >= max) return;
+        const wrap = document.createElement('div');
+        wrap.innerHTML = groupRowHtml(f, fieldIndex);
+        const row = wrap.firstElementChild;
+        rowsEl.appendChild(row);
+        refreshRowButtons();
+        row.querySelector('input, textarea')?.focus();
+      });
+      rowsEl.addEventListener('click', (e) => {
+        if (!e.target.classList.contains('md-field-group-remove')) return;
+        if (rowsEl.querySelectorAll('.md-field-group-row').length <= min) return;
+        e.target.closest('.md-field-group-row').remove();
+        refreshRowButtons();
+      });
+      refreshRowButtons();
+    });
+
+    function collectValue(f, i) {
+      if (f.type === 'group') {
+        const groupEl = panel.querySelector(`.md-field-group[data-i="${i}"]`);
+        return Array.from(groupEl.querySelectorAll('.md-field-group-row')).map((row) =>
+          Array.from(row.querySelectorAll('.md-field-group-input')).map((inp) => inp.value.trim()));
+      }
+      const el = panel.querySelector(`.md-field-input[data-i="${i}"]`);
+      return el ? el.value.trim() : '';
+    }
+    function fieldSatisfiesRequired(f, i) {
+      if (!f.required) return true;
+      const v = collectValue(f, i);
+      if (f.type === 'group') return v.every((row) => row.every((cell, j) => !f.itemFields[j]?.required || cell));
+      return !!v;
+    }
+    function refreshEnabled() {
+      insBtn.disabled = fields.some((f, i) => !fieldSatisfiesRequired(f, i));
+    }
+    panel.addEventListener('input', refreshEnabled);
+    panel.querySelectorAll('.md-field-input').forEach((inp) => inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && inp.tagName !== 'TEXTAREA' && !insBtn.disabled) { e.preventDefault(); insBtn.click(); }
+    }));
     function close(msg, type) {
       backdrop.remove();
       document.removeEventListener('keydown', onKey);
@@ -1529,25 +1866,18 @@ function renderMarkdown(f) {
       if (msg) setStatus(msg, type);
     }
     function onKey(e) { if (e.key === 'Escape') close(cancelMsg ?? '', ''); }
-    function refreshEnabled() {
-      insBtn.disabled = fields.some((f, i) => f.required && !inputs[i].value.trim());
-    }
-    inputs.forEach((inp) => inp.addEventListener('input', refreshEnabled));
-    inputs.forEach((inp) => inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && inp.tagName !== 'TEXTAREA' && !insBtn.disabled) { e.preventDefault(); insBtn.click(); }
-    }));
     panel.querySelector('.md-photo-cancel').addEventListener('click', () => close(cancelMsg ?? '', ''));
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(cancelMsg ?? '', ''); });
     document.addEventListener('keydown', onKey);
     insBtn.addEventListener('click', () => {
-      const values = inputs.map((inp) => inp.value.trim());
+      const values = fields.map((f, i) => collectValue(f, i));
       close();
       onSubmit(values);
     });
     backdrop.appendChild(panel);
     document.body.appendChild(backdrop);
     refreshEnabled();
-    inputs[0]?.focus();
+    panel.querySelector('.md-field-input, .md-field-group-input')?.focus();
   }
 
   // Post-upload details modal: a thumbnail plus labelled Description (alt
@@ -1682,12 +2012,27 @@ function renderMarkdown(f) {
     let para = [], list = null;
     const flushPara = () => { if (para.length) { out.push('<p>' + inlineMd(para.join(' ')) + '</p>'); para = []; } };
     const flushList = () => { if (list) { out.push('<' + list.tag + '>' + list.items.map(i => '<li>' + inlineMd(i) + '</li>').join('') + '</' + list.tag + '>'); list = null; } };
-    for (const raw of lines) {
-      const line = raw.trimEnd();
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trimEnd();
       const h = line.match(/^(#{1,6}) (.*)/);
       const li = line.match(/^[-*] (.*)/);
       const oli = line.match(/^\d+\. (.*)/);
+      const dOpen = line.match(/^:::([\w-]+)/);
       if (line === '') { flushPara(); flushList(); }
+      // Container-directive shortcodes (grids, callouts, etc. — see
+      // remark-directive in the site's build pipeline) aren't something this
+      // deliberately minimal preview parser attempts to render visually —
+      // same precedent as a bold-link button not previewing as a real
+      // button. Skip past the whole fenced block and show a labeled
+      // placeholder instead of letting the raw ::: syntax collapse into one
+      // garbled paragraph.
+      else if (dOpen) {
+        flushPara(); flushList();
+        i += 1;
+        while (i < lines.length && lines[i].trim() !== ':::') i += 1;
+        const entry = resolvedShortcodes.find((e) => e.directive?.name === dOpen[1]);
+        out.push('<p class="md-preview-shortcode">🧩 ' + (entry?.label || dOpen[1]) + ' — see the live site for the real layout</p>');
+      }
       else if (/^(-{3,}|_{3,}|\*{3,})$/.test(line)) { flushPara(); flushList(); out.push('<hr>'); }
       else if (h) { flushPara(); flushList(); const lvl = Math.max(2, h[1].length); out.push('<h' + lvl + '>' + inlineMd(h[2]) + '</h' + lvl + '>'); }
       else if (line.startsWith('> ')) { flushPara(); flushList(); out.push('<blockquote>' + inlineMd(line.slice(2)) + '</blockquote>'); }
@@ -1739,120 +2084,38 @@ function renderMarkdown(f) {
     const at = s + pad.length + 3 + sel.length + 2 + 8;
     ta.setSelectionRange(at, at);
   });
-  btn('📷 Insert photo', 'Add a photo here — upload a new one or reuse one already on the site', () => {
-    const at = ta.selectionStart;
-    openPhotoPicker(json => showPhotoPanel(json, at));
-  }, 'md-tb-photo');
-  // Small clickable "project" thumbnail — e.g. Andrew's "Completed
-  // Projects" pair of photos that each link through to a gallery page
-  // (several together become a centered row, where the site supports it).
-  btn('🔗 Thumbnail link', 'Add a small clickable thumbnail that links to another page (put several together for a row)', () => {
-    const at = ta.selectionStart;
-    openPhotoPicker(json => showPhotoPanel(json, at, { linked: true }));
-  }, 'md-tb-photo');
-  // A YouTube link on its own line becomes an embedded video player (where
-  // the site supports it) — this panel builds that line so nobody needs to
-  // know the "paste it alone on its own line" rule.
-  btn('🎬 YouTube video', 'Add a YouTube video that plays right on the page', () => {
-    const at = ta.selectionStart;
-    showFieldPanel({
-      ariaLabel: 'Add a YouTube video',
-      submitLabel: 'Add video to page',
-      cancelMsg: 'Video not added',
-      fields: [
-        { label: 'YouTube video link', required: true, placeholder: 'https://www.youtube.com/watch?v=…' },
-        { label: 'Video title', hint: 'optional — helps screen readers; a generic title is used if left blank', placeholder: 'e.g. Pool Renovation Timelapse' },
-      ],
-      onSubmit: ([url, title]) => {
-        if (!url) return;
-        insertBlockAt(at, '[' + (title || 'YouTube video') + '](' + url + ')');
-        setStatus('Video added to the page ✓', 'ok');
-      },
-    });
-  }, 'md-tb-photo');
-  // The channel link is remembered for the rest of this editing session so
-  // repeat use (a Subscribe button under every video on a page) is a single
-  // click after the first time.
-  let lastYoutubeChannel = '';
-  btn('🔴 Subscribe button', 'Add a "Subscribe on YouTube" button', () => {
-    const at = ta.selectionStart;
-    showFieldPanel({
-      ariaLabel: 'Add a Subscribe on YouTube button',
-      submitLabel: 'Add button to page',
-      cancelMsg: 'Button not added',
-      fields: [
-        { label: 'Your YouTube channel link', required: true, placeholder: 'https://www.youtube.com/@yourchannel', value: lastYoutubeChannel },
-      ],
-      onSubmit: ([channel]) => {
-        if (!channel) return;
-        lastYoutubeChannel = channel;
-        const url = channel + (/[?&]sub_confirmation=1/.test(channel) ? '' : (channel.includes('?') ? '&' : '?') + 'sub_confirmation=1');
-        insertBlockAt(at, '[Subscribe on YouTube](' + url + ')');
-        setStatus('Subscribe button added ✓', 'ok');
-      },
-    });
-  }, 'md-tb-photo');
-  // Andrew's own workaround for this (typing "Price does not include pool
-  // tiling." as a body paragraph) was the reason a real price_note field
-  // got added — this button is for the OTHER thing he kept typing by hand:
-  // a standalone "Call: 0407 666 999" line as a phone call-to-action. Both
-  // values are remembered for the rest of the session.
-  let lastPhoneDisplay = '';
-  let lastPhoneTel = '';
-  btn('☎️ Call-to-action', 'Add a "Call now" phone prompt', () => {
-    const at = ta.selectionStart;
-    showFieldPanel({
-      ariaLabel: 'Add a call-to-action',
-      submitLabel: 'Add to page',
-      cancelMsg: 'Call-to-action not added',
-      fields: [
-        { label: 'Phone number to display', required: true, placeholder: 'e.g. 0407 666 999', value: lastPhoneDisplay },
-        { label: 'Phone link', required: true, hint: 'starts with tel: — copy this from Settings so it matches exactly', placeholder: 'e.g. tel:+610407666999', value: lastPhoneTel },
-      ],
-      onSubmit: ([display, tel]) => {
-        if (!display || !tel) return;
-        lastPhoneDisplay = display;
-        lastPhoneTel = tel;
-        insertBlockAt(at, 'Call: [' + display + '](' + tel + ')');
-        setStatus('Call-to-action added ✓', 'ok');
-      },
-    });
-  }, 'md-tb-photo');
-  // A quote ("> ...") is plain Markdown already covered by the guide, but
-  // the star-rating + attribution line is fiddly to type correctly by hand
-  // (it's easy to drop the leading "> " on the attribution line, which
-  // silently knocks it out of the styled quote box — this button can't get
-  // that wrong).
-  btn('💬 Customer testimonial', 'Add a customer quote with a star rating', () => {
-    const at = ta.selectionStart;
-    showFieldPanel({
-      ariaLabel: 'Add a customer testimonial',
-      submitLabel: 'Add testimonial to page',
-      cancelMsg: 'Testimonial not added',
-      fields: [
-        { label: 'What the customer said', type: 'textarea', rows: 4, required: true, placeholder: 'Paste or type the review here…' },
-        { label: 'Customer name', required: true, placeholder: 'e.g. Kath' },
-        { label: 'Suburb', placeholder: 'e.g. Rowville' },
-        { label: 'Star rating', placeholder: '1-5', value: '5' },
-        { label: 'Link to their full review', hint: 'optional — e.g. a Google review link', placeholder: 'https://…' },
-      ],
-      onSubmit: ([quote, name, suburb, ratingRaw, link]) => {
-        if (!quote || !name) return;
-        const rating = Math.min(5, Math.max(1, parseInt(ratingRaw, 10) || 5));
-        const stars  = '★'.repeat(rating) + '☆'.repeat(5 - rating);
-        const who    = name + (suburb ? ', ' + suburb : '');
-        const linkPart = link ? ' — [Read our Google reviews](' + link + ')' : '';
-        const paragraphs = quote.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-        if (!paragraphs.length) paragraphs.push(quote.trim());
-        const quoteLines = paragraphs
-          .map((p, i) => (i === 0 ? '> "' : '> ') + p + (i === paragraphs.length - 1 ? '"' : ''))
-          .join('\n>\n');
-        const snippet = quoteLines + '\n>\n> — **' + who + '** ' + stars + linkPart;
-        insertBlockAt(at, snippet);
-        setStatus('Testimonial added to the page ✓', 'ok');
-      },
-    });
-  }, 'md-tb-photo');
+  // Every "advanced content" button (Insert photo onward) is driven by the
+  // shortcode registry — see BUILTIN_SHORTCODES / resolveShortcodes() above
+  // renderMarkdown. `rememberedValues` replaces the old per-button closure
+  // variables (lastYoutubeChannel etc.) with one generic session-scoped map
+  // keyed by shortcode id, so any field marked `remember: true` pre-fills
+  // from the last successful use of that same button.
+  const resolvedShortcodes = resolveShortcodes(CONFIG.shortcodes);
+  const rememberedValues = new Map();
+  resolvedShortcodes.forEach((entry) => {
+    btn(entry.icon + ' ' + entry.label, entry.tooltip, () => {
+      const at = ta.selectionStart;
+      if (entry.panel.kind === 'photo') {
+        openPhotoPicker(json => showPhotoPanel(json, at, { linked: !!entry.panel.linked }));
+        return;
+      }
+      const remembered = rememberedValues.get(entry.id) || [];
+      const fields = entry.panel.fields.map((f, i) => (f.remember && !f.value ? { ...f, value: remembered[i] || '' } : f));
+      showFieldPanel({
+        ariaLabel: entry.panel.ariaLabel,
+        submitLabel: entry.panel.submitLabel,
+        cancelMsg: entry.panel.cancelMsg,
+        fields,
+        onSubmit: (values) => {
+          const result = entry.build(values);
+          if (!result) return;
+          if (entry.panel.fields.some((f) => f.remember)) rememberedValues.set(entry.id, values);
+          insertBlockAt(at, result.snippet);
+          setStatus(result.status || (entry.label + ' added to the page ✓'), 'ok');
+        },
+      });
+    }, entry.toolbarClass || 'md-tb-photo');
+  });
   const spacer = document.createElement('div');
   spacer.className = 'md-tb-spacer';
   bar.appendChild(spacer);
@@ -1876,8 +2139,12 @@ function renderMarkdown(f) {
 
   const body = document.createElement('div');
   body.className = 'md-guide-body';
-  body.innerHTML = `
-    <table>
+  // The basic rows (plain Markdown with no toolbar button of its own, plus
+  // Insert photo's three variants and Button link) stay hand-written — the
+  // rows below that DO have a matching toolbar button are generated from
+  // resolvedShortcodes' own `guide` field, so this text can never drift
+  // from the button's actual icon/label/id again.
+  const basicRows = `
       <tr><td><code>## Section heading</code></td><td>Large heading</td></tr>
       <tr><td><code>### Sub-heading</code></td><td>Smaller heading</td></tr>
       <tr><td><code>**Bold text**</code></td><td><strong>Bold text</strong></td></tr>
@@ -1889,13 +2156,14 @@ function renderMarkdown(f) {
       <tr><td><code>![Photo description](…)</code></td><td>A photo in the page — use the <strong>📷 Insert photo</strong> button above and this is filled in for you</td></tr>
       <tr><td><code>![Description](… "Tooltip")</code></td><td>A photo with hover tooltip text — the Insert photo button asks for both</td></tr>
       <tr><td><code>*Caption text*</code></td><td>A short caption line under a photo — the <strong>📷 Insert photo</strong> button has an optional Caption field that fills this in for you</td></tr>
-      <tr><td><code>[Video title](YouTube link)</code></td><td>A YouTube link pasted on its own line becomes an embedded video player (where the website supports it) — use the <strong>🎬 YouTube video</strong> button above</td></tr>
-      <tr><td><code>**[Button label](link)**</code></td><td>A <strong>bold</strong> link on its own line becomes a styled button — put several on consecutive lines for a row of buttons (where the website supports it)</td></tr>
-      <tr><td><code>[![Photo description](…)](link)</code></td><td>A small clickable thumbnail — use the <strong>🔗 Thumbnail link</strong> button above and this is filled in for you. Put several on consecutive lines for a row of thumbnails (where the website supports it)</td></tr>
-      <tr><td><code>[Subscribe on YouTube](channel link)</code></td><td>A "Subscribe on YouTube" button — use the <strong>🔴 Subscribe button</strong> above (where the website supports it)</td></tr>
-      <tr><td><code>Call: [number](tel:…)</code></td><td>A phone call-to-action — use the <strong>☎️ Call-to-action</strong> button above so the phone link is always typed correctly (where the website supports it)</td></tr>
-      <tr><td><code>&gt; "Quote" … &gt; — **Name** ★★★★★</code></td><td>A customer testimonial with star rating — use the <strong>💬 Customer testimonial</strong> button above rather than typing this by hand (easy to get the quote marks or star count wrong)</td></tr>
-    </table>
+      <tr><td><code>**[Button label](link)**</code></td><td>A <strong>bold</strong> link on its own line becomes a styled button — put several on consecutive lines for a row of buttons (where the website supports it)</td></tr>`;
+  const shortcodeRows = resolvedShortcodes
+    .filter((e) => e.guide)
+    .map((e) => `
+      <tr><td><code>${e.guide.example}</code></td><td>${e.guide.description}${e.guide.justification ? ' (' + e.guide.justification + ')' : ''}</td></tr>`)
+    .join('');
+  body.innerHTML = `
+    <table>${basicRows}${shortcodeRows}</table>
     <div class="md-guide-note">
       💡 <strong>Tips:</strong> Leave a blank line between paragraphs. Don't use <code># Heading 1</code> — each page already has one automatically.
       To add a photo, click <strong>📷 Insert photo</strong> (or drag a photo straight into the text box) — then type a few words describing it over the highlighted text.
