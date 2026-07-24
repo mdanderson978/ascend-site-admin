@@ -1485,30 +1485,40 @@ function renderMarkdown(f) {
   // in words, the modal assembles the ![alt](src "title") syntax. Far more
   // discoverable than expecting anyone to know the markdown title form, and
   // centered on screen so it's visible however far down the body they were.
-  function showPhotoPanel(json, insertAt) {
+  // opts.linked: true builds a clickable thumbnail — [![alt](src)](url) —
+  // instead of a plain photo, e.g. Andrew's "Completed Projects" thumbnails
+  // that click through to a gallery page (site support for the syntax
+  // varies by site; harmless as a plain linked image elsewhere).
+  function showPhotoPanel(json, insertAt, opts = {}) {
+    const linked = !!opts.linked;
     document.querySelector('.md-photo-backdrop')?.remove();
     const backdrop = document.createElement('div');
     backdrop.className = 'md-photo-backdrop';
     const panel = document.createElement('div');
     panel.className = 'md-photo-panel';
     panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-label', 'Describe this photo');
+    panel.setAttribute('aria-label', linked ? 'Describe this thumbnail' : 'Describe this photo');
     panel.innerHTML = `
       <img src="${json.preview}" alt="">
       <div class="md-photo-fields">
         <label>Photo description <span class="md-photo-req">(required — shows to Google &amp; screen readers)</span>
           <input type="text" class="md-photo-alt" placeholder="e.g. Fully tiled pool renovation in Hampton">
         </label>
+        ${linked ? `
+        <label>Links to <span class="md-photo-req">(required — where clicking the thumbnail sends visitors)</span>
+          <input type="text" class="md-photo-link" placeholder="e.g. /pool-renovation-photo-galleries/hampton-project">
+        </label>` : `
         <label>Tooltip <span class="md-photo-req">(optional — appears when a visitor hovers the photo)</span>
           <input type="text" class="md-photo-title" placeholder="e.g. Completed in 3 weeks — call us for a quote">
-        </label>
+        </label>`}
         <div class="md-photo-actions">
-          <button type="button" class="md-photo-insert" disabled>Add photo to page</button>
+          <button type="button" class="md-photo-insert" disabled>${linked ? 'Add thumbnail to page' : 'Add photo to page'}</button>
           <button type="button" class="md-photo-cancel">Cancel</button>
         </div>
       </div>`;
     const altIn   = panel.querySelector('.md-photo-alt');
     const titleIn = panel.querySelector('.md-photo-title');
+    const linkIn  = panel.querySelector('.md-photo-link');
     const insBtn  = panel.querySelector('.md-photo-insert');
     function close(msg, type) {
       backdrop.remove();
@@ -1517,23 +1527,33 @@ function renderMarkdown(f) {
       if (msg) setStatus(msg, type);
     }
     function onKey(e) {
-      if (e.key === 'Escape') close('Photo not added (the upload is kept — unused photos are cleaned up at publish)', '');
+      if (e.key === 'Escape') close((linked ? 'Thumbnail' : 'Photo') + ' not added (the upload is kept — unused photos are cleaned up at publish)', '');
     }
-    altIn.addEventListener('input', () => { insBtn.disabled = !altIn.value.trim(); });
-    // Enter in either field = insert (when a description exists).
-    [altIn, titleIn].forEach(inp => inp.addEventListener('keydown', e => {
+    function refreshEnabled() {
+      insBtn.disabled = !altIn.value.trim() || (linked && !linkIn.value.trim());
+    }
+    altIn.addEventListener('input', refreshEnabled);
+    if (linked) linkIn.addEventListener('input', refreshEnabled);
+    // Enter in any field = insert (when required fields are filled).
+    [altIn, titleIn, linkIn].filter(Boolean).forEach(inp => inp.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !insBtn.disabled) { e.preventDefault(); insBtn.click(); }
     }));
     panel.querySelector('.md-photo-cancel').addEventListener('click', () =>
-      close('Photo not added (the upload is kept — unused photos are cleaned up at publish)', ''));
+      close((linked ? 'Thumbnail' : 'Photo') + ' not added (the upload is kept — unused photos are cleaned up at publish)', ''));
     backdrop.addEventListener('click', e => {
-      if (e.target === backdrop) close('Photo not added (the upload is kept — unused photos are cleaned up at publish)', '');
+      if (e.target === backdrop) close((linked ? 'Thumbnail' : 'Photo') + ' not added (the upload is kept — unused photos are cleaned up at publish)', '');
     });
     document.addEventListener('keydown', onKey);
     insBtn.addEventListener('click', () => {
-      const alt   = altIn.value.trim();
-      const title = titleIn.value.trim();
-      const snippet = '![' + alt + '](' + json.path + (title ? ' "' + title.replace(/"/g, "'") + '"' : '') + ')';
+      const alt = altIn.value.trim();
+      let snippet;
+      if (linked) {
+        const url = linkIn.value.trim();
+        snippet = '[![' + alt + '](' + json.path + ')](' + url + ')';
+      } else {
+        const title = titleIn.value.trim();
+        snippet = '![' + alt + '](' + json.path + (title ? ' "' + title.replace(/"/g, "'") + '"' : '') + ')';
+      }
       // Images are block-level in page bodies: pad with blank lines so the
       // snippet never glues onto a paragraph.
       const before = ta.value.slice(0, insertAt);
@@ -1541,7 +1561,7 @@ function renderMarkdown(f) {
       close();
       ta.setSelectionRange(insertAt, insertAt);
       insertText(pad + snippet + '\n');
-      setStatus('Photo added to the page ✓', 'ok');
+      setStatus((linked ? 'Thumbnail' : 'Photo') + ' added to the page ✓', 'ok');
     });
     backdrop.appendChild(panel);
     document.body.appendChild(backdrop);
@@ -1650,6 +1670,13 @@ function renderMarkdown(f) {
     const at = ta.selectionStart;
     openPhotoPicker(json => showPhotoPanel(json, at));
   }, 'md-tb-photo');
+  // Small clickable "project" thumbnail — e.g. Andrew's "Completed
+  // Projects" pair of photos that each link through to a gallery page
+  // (several together become a centered row, where the site supports it).
+  btn('🔗 Thumbnail link', 'Add a small clickable thumbnail that links to another page (put several together for a row)', () => {
+    const at = ta.selectionStart;
+    openPhotoPicker(json => showPhotoPanel(json, at, { linked: true }));
+  }, 'md-tb-photo');
   const spacer = document.createElement('div');
   spacer.className = 'md-tb-spacer';
   bar.appendChild(spacer);
@@ -1687,6 +1714,7 @@ function renderMarkdown(f) {
       <tr><td><code>![Description](… "Tooltip")</code></td><td>A photo with hover tooltip text — the Insert photo button asks for both</td></tr>
       <tr><td><code>[Video title](YouTube link)</code></td><td>A YouTube link pasted on its own line becomes an embedded video player (where the website supports it)</td></tr>
       <tr><td><code>**[Button label](link)**</code></td><td>A <strong>bold</strong> link on its own line becomes a styled button — put several on consecutive lines for a row of buttons (where the website supports it)</td></tr>
+      <tr><td><code>[![Photo description](…)](link)</code></td><td>A small clickable thumbnail — use the <strong>🔗 Thumbnail link</strong> button above and this is filled in for you. Put several on consecutive lines for a row of thumbnails (where the website supports it)</td></tr>
     </table>
     <div class="md-guide-note">
       💡 <strong>Tips:</strong> Leave a blank line between paragraphs. Don't use <code># Heading 1</code> — each page already has one automatically.
