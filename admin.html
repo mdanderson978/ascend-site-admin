@@ -1633,6 +1633,19 @@ function renderMarkdown(f) {
     // Park the caret inside the (), ready for the address to be pasted.
     ta.setSelectionRange(s + sel.length + 3 + 8, s + sel.length + 3 + 8);
   });
+  // A bold link on its own line renders as the site's styled button (several
+  // consecutive lines become a button grid) on sites whose markdown pipeline
+  // supports the convention — same syntax is harmless elsewhere (bold link).
+  btn('Button link', 'Insert a styled button link on its own line (put several together for a row of buttons)', () => {
+    const { selectionStart: s, selectionEnd: e } = ta;
+    const sel = ta.value.slice(s, e) || 'Button label';
+    const before = ta.value.slice(0, s);
+    const pad = before === '' || /\n\n$/.test(before) ? '' : (/\n$/.test(before) ? '\n' : '\n\n');
+    insertText(pad + '**[' + sel + '](https://)**');
+    // Park the caret inside the (), ready for the address to be pasted.
+    const at = s + pad.length + 3 + sel.length + 2 + 8;
+    ta.setSelectionRange(at, at);
+  });
   btn('📷 Insert photo', 'Add a photo here — upload a new one or reuse one already on the site', () => {
     const at = ta.selectionStart;
     openPhotoPicker(json => showPhotoPanel(json, at));
@@ -1672,6 +1685,8 @@ function renderMarkdown(f) {
       <tr><td><code>&gt; A quote or callout</code></td><td>Indented block quote</td></tr>
       <tr><td><code>![Photo description](…)</code></td><td>A photo in the page — use the <strong>📷 Insert photo</strong> button above and this is filled in for you</td></tr>
       <tr><td><code>![Description](… "Tooltip")</code></td><td>A photo with hover tooltip text — the Insert photo button asks for both</td></tr>
+      <tr><td><code>[Video title](YouTube link)</code></td><td>A YouTube link pasted on its own line becomes an embedded video player (where the website supports it)</td></tr>
+      <tr><td><code>**[Button label](link)**</code></td><td>A <strong>bold</strong> link on its own line becomes a styled button — put several on consecutive lines for a row of buttons (where the website supports it)</td></tr>
     </table>
     <div class="md-guide-note">
       💡 <strong>Tips:</strong> Leave a blank line between paragraphs. Don't use <code># Heading 1</code> — each page already has one automatically.
