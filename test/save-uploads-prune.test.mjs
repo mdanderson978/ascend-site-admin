@@ -297,7 +297,12 @@ test('mutating requests are refused for foreign or missing Origin', async t => {
 // it the way the browser would.
 test('admin.html embedded script parses', () => {
   const html = fs.readFileSync(new URL('../admin.html', import.meta.url), 'utf-8');
-  const m = html.match(/<script>([\s\S]*)<\/script>/);
-  assert.ok(m, 'admin.html must contain a script block');
-  assert.doesNotThrow(() => new Function(m[1]));
+  // Plain index scan, not a regex tag-filter: this extracts the script block
+  // from our own served file (which is lowercase by construction) — it is
+  // not sanitizing untrusted HTML.
+  const open  = html.indexOf('<script>');
+  const close = html.lastIndexOf('</script>');
+  assert.ok(open !== -1 && close > open, 'admin.html must contain a script block');
+  const js = html.slice(open + '<script>'.length, close);
+  assert.doesNotThrow(() => new Function(js));
 });
