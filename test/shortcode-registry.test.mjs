@@ -86,35 +86,49 @@ test('subscribe-button build() appends ?sub_confirmation=1 only when not already
   assert.equal(entry.build(['https://www.youtube.com/@x?foo=bar']).snippet, '[Subscribe on YouTube](https://www.youtube.com/@x?foo=bar&sub_confirmation=1)');
 });
 
-test('call-to-action build() emits a ::cta directive, not the old plain-prose "Call: [x](y)" pattern', () => {
+// call-to-action's group field submits as values[0] = Array<string[]>, one
+// row per line, each row [lead, label, href, trail, style].
+test('call-to-action build() wraps a single line in a :::cta container with one ::line child', () => {
   const { BUILTIN_SHORTCODES } = loadRegistryModule();
   const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'call-to-action');
+  const result = entry.build([[['Call:', '0407 666 999', 'tel:+610407666999', '', 'brand']]]);
+  assert.equal(result.snippet, ':::cta\n::line{lead="Call:" label="0407 666 999" href="tel:+610407666999" style="brand"}\n:::');
+});
+
+test('call-to-action build() joins multiple lines, each its own ::line, inside one :::cta container', () => {
+  const { BUILTIN_SHORTCODES } = loadRegistryModule();
+  const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'call-to-action');
+  const result = entry.build([[
+    ['Text message to', '0407 666 999', 'tel:+610407666999', 'is the fastest way to reach us.', 'brand'],
+    ['', '', '', 'Telephone calls are the second best way.', 'accent'],
+    ['', '', '', 'Currently there is a wait of up to 3 weeks.', 'muted'],
+  ]]);
   assert.equal(
-    entry.build(['Call Now!', '0407 666 999', 'tel:+610407666999']).snippet,
-    '::cta{text="Call Now!" label="0407 666 999" href="tel:+610407666999"}'
+    result.snippet,
+    ':::cta\n' +
+    '::line{lead="Text message to" label="0407 666 999" href="tel:+610407666999" trail="is the fastest way to reach us." style="brand"}\n' +
+    '::line{trail="Telephone calls are the second best way." style="accent"}\n' +
+    '::line{trail="Currently there is a wait of up to 3 weeks." style="muted"}\n' +
+    ':::'
   );
 });
 
-test('call-to-action build() omits the text attribute entirely when left blank, rather than emitting text=""', () => {
+test('call-to-action build() omits label/href from a line when only one of the pair is filled (never a link with no href)', () => {
   const { BUILTIN_SHORTCODES } = loadRegistryModule();
   const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'call-to-action');
-  assert.equal(entry.build(['', '0407 666 999', 'tel:+610407666999']).snippet, '::cta{label="0407 666 999" href="tel:+610407666999"}');
+  const result = entry.build([[['Some text', '0407 666 999', '', '', 'brand']]]);
+  assert.equal(result.snippet, ':::cta\n::line{lead="Some text" style="brand"}\n:::');
 });
 
-test('call-to-action build() is not phone-specific — any href starting with a recognized scheme works, e.g. a plain page link', () => {
+test('call-to-action build() drops fully-empty rows and returns null if nothing is left', () => {
   const { BUILTIN_SHORTCODES } = loadRegistryModule();
   const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'call-to-action');
-  assert.equal(
-    entry.build(['', 'Get a Free Quote', '/contact']).snippet,
-    '::cta{label="Get a Free Quote" href="/contact"}'
-  );
-});
-
-test('call-to-action build() returns null without a link text or a destination', () => {
-  const { BUILTIN_SHORTCODES } = loadRegistryModule();
-  const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'call-to-action');
-  assert.equal(entry.build(['Call Now!', '', 'tel:+610407666999']), null);
-  assert.equal(entry.build(['Call Now!', '0407 666 999', '']), null);
+  assert.equal(entry.build([[['', '', '', '', 'brand']]]), null);
+  const result = entry.build([[
+    ['', '', '', '', 'brand'],
+    ['Only this line', '', '', '', 'brand'],
+  ]]);
+  assert.equal(result.snippet, ':::cta\n::line{lead="Only this line" style="brand"}\n:::');
 });
 
 test('customer-testimonial build() keeps every line of a multi-paragraph quote prefixed with "> ", including the attribution line', () => {

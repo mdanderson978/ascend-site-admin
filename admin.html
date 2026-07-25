@@ -364,21 +364,31 @@ textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px
 .md-photo-actions { display: flex; gap: .5rem; margin-top: .15rem; }
 /* Wide variant for panels with a repeatable group field (grids, FAQs) —
    plain fields/photo panels stay at the original 560px width. */
-.md-field-panel.md-field-panel--wide { width: min(680px, 100%); max-height: 80vh; overflow-y: auto; }
+.md-field-panel.md-field-panel--wide { width: min(760px, 100%); max-height: 80vh; overflow-y: auto; }
 .md-field-group { display: flex; flex-direction: column; gap: .4rem; }
 .md-field-group > label { font-size: 12.5px; font-weight: 600; }
 .md-field-group-rows { display: flex; flex-direction: column; gap: .5rem; }
+/* Grid, not flex: a flex row with align-items:flex-end bottom-aligns each
+   item, so a taller item (e.g. a textarea) pushes its own label down to a
+   different height than its neighbors' — looks broken (labels scattered at
+   different vertical positions across the row). Grid's align-items:start
+   keeps every item's label flush with the top of its own cell regardless
+   of how tall that item's input is; auto-fit lets narrow panels wrap a
+   5-field row into two lines instead of squeezing everything horizontally. */
 .md-field-group-row {
-  display: flex;
-  gap: .5rem;
-  align-items: flex-end;
-  padding: .5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .6rem .5rem;
+  align-items: start;
+  padding: .6rem;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--cream);
 }
-.md-field-group-item { flex: 1; display: flex; flex-direction: column; gap: .2rem; font-size: 12px; font-weight: 600; min-width: 0; }
+.md-field-group-item { display: flex; flex-direction: column; gap: .2rem; font-size: 12px; font-weight: 600; min-width: 0; }
+.md-field-group-item textarea { min-height: 52px; }
 .md-field-group-remove {
+  align-self: start;
   background: none;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -1184,46 +1194,76 @@ const BUILTIN_SHORTCODES = [
     // directive syntax existing, not on sniffing the link's href. Whether
     // it renders with a phone icon or not is inferred from the destination
     // (tel: vs anything else) on the site side, not chosen here.
+    // One or more styled lines — covers everything from a single "Call:
+    // 0407 666 999" prompt up to the contact page's real multi-part
+    // call-to-action (a bold lead-in with a phone link, then two more
+    // differently-emphasized notes below it). Each line can be plain text,
+    // a link, or text-then-link-then-more-text, independently styled.
     id: 'call-to-action',
     icon: '☎️',
     label: 'Call-to-action',
-    tooltip: 'Add a styled call-to-action — a phone number, or a link to any page',
+    tooltip: 'Add a call-to-action — a phone number, a link to any page, or several styled lines together (e.g. the contact page\'s "text us / call us / response time" block)',
     toolbarClass: 'md-tb-photo',
     panel: {
       kind: 'fields',
       ariaLabel: 'Add a call-to-action',
       submitLabel: 'Add to page',
       cancelMsg: 'Call-to-action not added',
-      fields: [
-        { label: 'Call-to-action text', hint: 'optional — the lead phrase, e.g. "Call Now!" or "Get a Free Quote"', placeholder: 'e.g. Call Now!', value: 'Call:', remember: true },
-        { label: 'Link text', required: true, placeholder: 'e.g. 0407 666 999, or "Contact Us"', remember: true },
-        {
-          label: 'Destination', required: true,
-          hint: 'a phone link (copy it from Settings), or any page/URL — must start with tel:, mailto:, http(s):// or /',
-          placeholder: 'e.g. tel:+610407666999 or /contact', remember: true,
-          pattern: '^(tel:|mailto:|https?:\\/\\/|\\/)',
-          patternError: 'Must start with tel:, mailto:, http(s):// or / — for a phone number, copy the link from Settings rather than typing it by hand.',
-        },
-      ],
+      fields: [{
+        label: 'Lines', required: true, min: 1, max: 4,
+        addLabel: '+ Add another line', type: 'group',
+        hint: 'Most call-to-actions are just one line. Add more for something like "Text us / Call us / 3-week response time".',
+        itemFields: [
+          { label: 'Text before the link', placeholder: 'e.g. Text message to' },
+          { label: 'Clickable text', placeholder: 'e.g. 0407 666 999, or Contact Us' },
+          {
+            label: 'Link destination',
+            hint: 'leave blank for a plain (non-clickable) line — otherwise must start with tel:, mailto:, http(s):// or /',
+            placeholder: 'e.g. tel:+610407666999 or /contact',
+            pattern: '^(tel:|mailto:|https?:\\/\\/|\\/)',
+            patternError: 'Must start with tel:, mailto:, http(s):// or / — for a phone number, copy the link from Settings rather than typing it by hand.',
+          },
+          { label: 'Text after the link', type: 'textarea', rows: 2, placeholder: 'e.g. is the fastest way to reach us at this stage.' },
+          {
+            label: 'Style', type: 'select', value: 'brand',
+            options: [
+              { value: 'brand', label: 'Bold blue (default — use for the main line)' },
+              { value: 'accent', label: 'Gold highlight' },
+              { value: 'muted', label: 'Plain grey (smaller, for a secondary note)' },
+            ],
+          },
+        ],
+      }],
     },
-    build: ([text, label, href]) => {
-      if (!label || !href) return null;
+    build: (values) => {
+      const rows = values[0] || [];
+      const lines = rows
+        .map(([lead, label, href, trail, style]) => ({ lead, label, href, trail, style: style || 'brand' }))
+        .filter((l) => l.lead || l.label || l.trail);
+      if (!lines.length) return null;
       const esc = (s) => s.replace(/"/g, "'");
-      const attrs = [
-        text ? 'text="' + esc(text) + '"' : null,
-        'label="' + esc(label) + '"',
-        'href="' + esc(href) + '"',
-      ].filter(Boolean).join(' ');
-      return { snippet: '::cta{' + attrs + '}', status: 'Call-to-action added ✓' };
+      const lineSnippet = (l) => {
+        const hasLink = Boolean(l.label && l.href);
+        const attrs = [
+          l.lead ? 'lead="' + esc(l.lead) + '"' : null,
+          hasLink ? 'label="' + esc(l.label) + '"' : null,
+          hasLink ? 'href="' + esc(l.href) + '"' : null,
+          l.trail ? 'trail="' + esc(l.trail) + '"' : null,
+          'style="' + esc(l.style) + '"',
+        ].filter(Boolean).join(' ');
+        return '::line{' + attrs + '}';
+      };
+      const snippet = ':::cta\n' + lines.map(lineSnippet).join('\n') + '\n:::';
+      return { snippet, status: 'Call-to-action added ✓' };
     },
-    // Metadata only, for the preview panel's directive-name lookup below —
-    // build() is hand-written above rather than routed through
+    // Metadata only, for the preview panel's directive-name lookup — build()
+    // is hand-written above rather than routed through
     // buildDirectiveSnippet(), so `kind`/`attrs` here are never read for
     // snippet construction, only `name`.
-    directive: { kind: 'leaf', name: 'cta' },
+    directive: { kind: 'container', name: 'cta' },
     guide: {
-      example: '::cta{text="…" label="…" href="…"}',
-      description: 'A call-to-action band (phone, or a link to any page) — use the ☎️ Call-to-action button above',
+      example: ':::cta\n::line{lead="…" label="…" href="…" style="…"}\n:::',
+      description: 'A call-to-action — one or more styled lines, each optionally a link — use the ☎️ Call-to-action button above',
       justification: 'where the website supports it',
     },
   },
@@ -1815,13 +1855,17 @@ function renderMarkdown(f) {
     // Kept separate from the "(required)"/"(optional)" hint since it only
     // appears once the field is actually invalid, not on first render.
     const errorHtml = (f, i) => f.pattern ? `<span class="md-field-error" data-err-for="${i}" hidden>${esc(f.patternError || 'Invalid value')}</span>` : '';
+    const groupItemInputHtml = (itemF, j) => itemF.type === 'textarea'
+      ? `<textarea class="md-field-group-input" data-item="${j}" rows="${itemF.rows || 2}" placeholder="${esc(itemF.placeholder)}"></textarea>`
+      : itemF.type === 'select'
+      ? `<select class="md-field-group-input" data-item="${j}">${(itemF.options || []).map((o) => `<option value="${esc(o.value)}"${o.value === itemF.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`
+      : `<input type="text" class="md-field-group-input" data-item="${j}" placeholder="${esc(itemF.placeholder)}">`;
     const groupRowHtml = (f, i) => `
       <div class="md-field-group-row">
         ${f.itemFields.map((itemF, j) => `
-          <label class="md-field-group-item">${esc(itemF.label)}
-            ${itemF.type === 'textarea'
-              ? `<textarea class="md-field-group-input" data-item="${j}" rows="${itemF.rows || 2}" placeholder="${esc(itemF.placeholder)}"></textarea>`
-              : `<input type="text" class="md-field-group-input" data-item="${j}" placeholder="${esc(itemF.placeholder)}">`}
+          <label class="md-field-group-item">${esc(itemF.label)}${itemF.required ? ' <span class="md-photo-req">(required)</span>' : ''}
+            ${groupItemInputHtml(itemF, j)}
+            ${itemF.pattern ? `<span class="md-field-error" data-group-err-for="${j}" hidden>${esc(itemF.patternError || 'Invalid value')}</span>` : ''}
           </label>`).join('')}
         <button type="button" class="md-field-group-remove" title="Remove this item">Remove</button>
       </div>`;
@@ -1896,7 +1940,17 @@ function renderMarkdown(f) {
     // A field with `pattern` is valid when empty-and-not-required (the
     // required check above already covers that case) or when its trimmed
     // value matches. Only text/textarea/select fields carry `pattern` today.
+    // For a group, every row's itemFields are checked the same way — an
+    // empty cell is fine unless that itemField is required, but a NON-empty
+    // cell with a pattern must match it (e.g. a per-row link destination).
     function fieldMatchesPattern(f, i) {
+      if (f.type === 'group') {
+        const rows = collectValue(f, i);
+        return rows.every((row) => row.every((cell, j) => {
+          const pattern = f.itemFields[j]?.pattern;
+          return !pattern || !cell || new RegExp(pattern).test(cell);
+        }));
+      }
       if (!f.pattern) return true;
       const v = collectValue(f, i);
       if (!v) return true;
@@ -1908,6 +1962,18 @@ function renderMarkdown(f) {
     function refreshEnabled() {
       insBtn.disabled = fields.some((f, i) => !fieldIsValid(f, i));
       fields.forEach((f, i) => {
+        if (f.type === 'group') {
+          const groupEl = panel.querySelector(`.md-field-group[data-i="${i}"]`);
+          groupEl?.querySelectorAll('.md-field-group-row').forEach((row) => {
+            f.itemFields.forEach((itemF, j) => {
+              if (!itemF.pattern) return;
+              const cell = row.querySelector(`.md-field-group-input[data-item="${j}"]`)?.value.trim() || '';
+              const errEl = row.querySelector(`.md-field-error[data-group-err-for="${j}"]`);
+              if (errEl) errEl.hidden = !cell || new RegExp(itemF.pattern).test(cell);
+            });
+          });
+          return;
+        }
         if (!f.pattern) return;
         const errEl = panel.querySelector(`.md-field-error[data-err-for="${i}"]`);
         if (errEl) errEl.hidden = fieldMatchesPattern(f, i);
