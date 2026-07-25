@@ -176,6 +176,16 @@ body {
 .btn-publish { background: var(--amber);  color: var(--ink); }
 .btn-history { background: none; border: 1px solid var(--line); color: var(--muted); font-weight: 500; }
 .btn-history:hover:not(:disabled) { border-color: var(--canopy); color: var(--canopy); opacity: 1; }
+.btn-view-live {
+  display: inline-block;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 500;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+.btn-view-live:hover { border-color: var(--canopy); color: var(--canopy); opacity: 1; }
 .btn-danger  { background: none; border: 1px solid #c0392b; color: #c0392b; font-weight: 500; }
 .btn-danger:hover:not(:disabled) { background: #c0392b; color: #fff; opacity: 1; }
 .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
@@ -956,6 +966,7 @@ textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px
     </div>
     <div id="status-msg"></div>
     <button class="btn btn-danger" id="btn-delete" style="display:none" title="Delete this entry">Delete</button>
+    <a class="btn btn-view-live" id="btn-view-live" href="#" target="_blank" rel="noopener" style="display:none" title="Open this page on the live site in a new tab">🔗 View live site</a>
     <button class="btn btn-history" id="btn-history" disabled title="See and restore previous versions of this page">🕐 History</button>
     <button class="btn btn-save" id="btn-save" disabled title="Save your changes (does not go live until you Publish)">Save Draft</button>
     <button class="btn btn-publish" id="btn-publish" disabled>Publish Changes</button>
@@ -1612,6 +1623,7 @@ async function openPage(key) {
   renderForm();
   setStatus('');
   updateDeleteButton();
+  updateViewLiveButton();
 }
 
 // A fixed/static page (e.g. Home, Contact) can never be deleted — only an
@@ -1621,6 +1633,21 @@ function updateDeleteButton() {
   const [col] = (currentKey || '').split('/');
   const canDelete = !!DYNAMIC_COLLECTIONS[col] && !currentIsNew;
   $('btn-delete').style.display = canDelete ? '' : 'none';
+}
+
+// "View live site" — hidden whenever the site hasn't configured siteUrl/
+// urlPatterns, the current collection has no pattern (e.g. settings, which
+// isn't a real page), or this is an unsaved "new" draft with no slug yet.
+// The 'home' slug always maps to the site root, regardless of pattern —
+// every site in this fleet treats it as the special index page.
+function updateViewLiveButton() {
+  const btn = $('btn-view-live');
+  const [col, slug] = (currentKey || '').split('/');
+  const pattern = CONFIG.urlPatterns?.[col];
+  if (!CONFIG.siteUrl || !pattern || currentIsNew) { btn.style.display = 'none'; return; }
+  const path = slug === 'home' ? '' : pattern.replace('{slug}', encodeURIComponent(slug));
+  btn.href = CONFIG.siteUrl.replace(/\/$/, '') + '/' + path;
+  btn.style.display = '';
 }
 
 // ── Form renderer ──────────────────────────────────────────────────────────
@@ -2840,6 +2867,7 @@ $('btn-save').addEventListener('click', async () => {
       $('topbar-title').textContent = PAGE_LABELS[currentKey] || humanizeSlug(json.slug);
       $('topbar-path').textContent  = breadcrumb(currentKey);
       $('btn-history').disabled     = false;
+      updateViewLiveButton();
       await loadSidebar();
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       document.querySelector(`.nav-item[data-key="${currentKey}"]`)?.classList.add('active');
@@ -2871,6 +2899,7 @@ $('btn-delete').addEventListener('click', async () => {
     $('topbar-title').textContent = 'Select a page to edit';
     $('topbar-path').textContent  = '';
     $('btn-delete').style.display = 'none';
+    $('btn-view-live').style.display = 'none';
     $('btn-history').disabled     = true;
     $('btn-save').disabled        = true;
     $('btn-publish').disabled     = false;
