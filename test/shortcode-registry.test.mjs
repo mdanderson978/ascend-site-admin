@@ -86,11 +86,35 @@ test('subscribe-button build() appends ?sub_confirmation=1 only when not already
   assert.equal(entry.build(['https://www.youtube.com/@x?foo=bar']).snippet, '[Subscribe on YouTube](https://www.youtube.com/@x?foo=bar&sub_confirmation=1)');
 });
 
-test('call-to-action build() requires both fields', () => {
+test('call-to-action build() emits a ::cta directive, not the old plain-prose "Call: [x](y)" pattern', () => {
   const { BUILTIN_SHORTCODES } = loadRegistryModule();
   const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'call-to-action');
-  assert.equal(entry.build(['0407 666 999', 'tel:+610407666999']).snippet, 'Call: [0407 666 999](tel:+610407666999)');
-  assert.equal(entry.build(['0407 666 999', '']), null);
+  assert.equal(
+    entry.build(['Call Now!', '0407 666 999', 'tel:+610407666999']).snippet,
+    '::cta{text="Call Now!" label="0407 666 999" href="tel:+610407666999"}'
+  );
+});
+
+test('call-to-action build() omits the text attribute entirely when left blank, rather than emitting text=""', () => {
+  const { BUILTIN_SHORTCODES } = loadRegistryModule();
+  const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'call-to-action');
+  assert.equal(entry.build(['', '0407 666 999', 'tel:+610407666999']).snippet, '::cta{label="0407 666 999" href="tel:+610407666999"}');
+});
+
+test('call-to-action build() is not phone-specific — any href starting with a recognized scheme works, e.g. a plain page link', () => {
+  const { BUILTIN_SHORTCODES } = loadRegistryModule();
+  const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'call-to-action');
+  assert.equal(
+    entry.build(['', 'Get a Free Quote', '/contact']).snippet,
+    '::cta{label="Get a Free Quote" href="/contact"}'
+  );
+});
+
+test('call-to-action build() returns null without a link text or a destination', () => {
+  const { BUILTIN_SHORTCODES } = loadRegistryModule();
+  const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'call-to-action');
+  assert.equal(entry.build(['Call Now!', '', 'tel:+610407666999']), null);
+  assert.equal(entry.build(['Call Now!', '0407 666 999', '']), null);
 });
 
 test('customer-testimonial build() keeps every line of a multi-paragraph quote prefixed with "> ", including the attribution line', () => {
