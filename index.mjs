@@ -56,6 +56,18 @@
  *                   the built-ins (no functions — this crosses the JSON
  *                   wire to the browser, see the contract comment in
  *                   references/admin.config.mjs).
+ *   siteUrl         optional; the base URL of the site an editor should see
+ *                   when they click "View live site" (e.g.
+ *                   'https://staging.example.com' while a rebuild hasn't
+ *                   cut over DNS yet, or the real domain once it has). The
+ *                   button is hidden entirely if this is omitted.
+ *   urlPatterns     optional; '<collection>' -> a path template using
+ *                   '{slug}', e.g. { pages: '{slug}', services:
+ *                   'services/{slug}' }. A collection with no entry here
+ *                   (or mapped to null, e.g. settings) never shows the
+ *                   button for its entries. The slug 'home' always maps to
+ *                   the site root ('') regardless of pattern — every site
+ *                   in this fleet treats it as the special index page.
  *   startScreenIntro / startScreenNote   optional start-screen copy
  *                   (note may contain simple HTML: <br>, <strong>).
  *   browserTitle    optional browser-tab title, default '<siteTitle> — Content Admin'.
@@ -417,6 +429,8 @@ export function startAdmin(config) {
           ),
           tasks:            config.tasks        || [],
           shortcodes:       config.shortcodes   || {},
+          siteUrl:          config.siteUrl      || '',
+          urlPatterns:      config.urlPatterns  || {},
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
           altPlaceholder:   config.altPlaceholder   || 'e.g. "Guests dining in the main dining room"',
