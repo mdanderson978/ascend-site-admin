@@ -358,6 +358,8 @@ textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px
 .md-photo-fields { display: flex; flex-direction: column; gap: .55rem; flex: 1; min-width: 0; }
 .md-photo-fields label { display: flex; flex-direction: column; gap: .25rem; font-size: 12.5px; font-weight: 600; }
 .md-photo-req { font-weight: 400; color: var(--muted); }
+.md-field-error { font-weight: 400; font-size: 11.5px; color: var(--danger); }
+.md-field-error[hidden] { display: none; }
 .md-photo-fields input, .md-photo-fields select { font-size: 13px; }
 .md-photo-actions { display: flex; gap: .5rem; margin-top: .15rem; }
 /* Wide variant for panels with a repeatable group field (grids, FAQs) —
@@ -1168,10 +1170,24 @@ const BUILTIN_SHORTCODES = [
     },
   },
   {
+    // Specifically a PHONE call-to-action (styled by the site's own
+    // p:has(> a[href^="tel:"]) rule, or equivalent) — for a call-to-action
+    // that links anywhere else (a page, an external URL, an email), use
+    // Button link instead; a bold link on its own line already gets the
+    // site's styled-button treatment and isn't limited to phone numbers.
+    // A real call-to-action, not just a phone-number special case — the
+    // destination can be a phone number, an internal page, or any external
+    // link. Emits a ::cta{...} directive (see remark-shortcodes.mjs on the
+    // site side) rather than the old plain-prose "Call: [x](tel:y)" pattern,
+    // because plain Markdown has no way to attach a class/style to an
+    // element at all — the styled band this produces depends on that
+    // directive syntax existing, not on sniffing the link's href. Whether
+    // it renders with a phone icon or not is inferred from the destination
+    // (tel: vs anything else) on the site side, not chosen here.
     id: 'call-to-action',
     icon: '☎️',
     label: 'Call-to-action',
-    tooltip: 'Add a "Call now" phone prompt',
+    tooltip: 'Add a styled call-to-action — a phone number, or a link to any page',
     toolbarClass: 'md-tb-photo',
     panel: {
       kind: 'fields',
@@ -1179,17 +1195,35 @@ const BUILTIN_SHORTCODES = [
       submitLabel: 'Add to page',
       cancelMsg: 'Call-to-action not added',
       fields: [
-        { label: 'Phone number to display', required: true, placeholder: 'e.g. 0407 666 999', remember: true },
-        { label: 'Phone link', required: true, hint: 'starts with tel: — copy this from Settings so it matches exactly', placeholder: 'e.g. tel:+610407666999', remember: true },
+        { label: 'Call-to-action text', hint: 'optional — the lead phrase, e.g. "Call Now!" or "Get a Free Quote"', placeholder: 'e.g. Call Now!', value: 'Call:', remember: true },
+        { label: 'Link text', required: true, placeholder: 'e.g. 0407 666 999, or "Contact Us"', remember: true },
+        {
+          label: 'Destination', required: true,
+          hint: 'a phone link (copy it from Settings), or any page/URL — must start with tel:, mailto:, http(s):// or /',
+          placeholder: 'e.g. tel:+610407666999 or /contact', remember: true,
+          pattern: '^(tel:|mailto:|https?:\\/\\/|\\/)',
+          patternError: 'Must start with tel:, mailto:, http(s):// or / — for a phone number, copy the link from Settings rather than typing it by hand.',
+        },
       ],
     },
-    build: ([display, tel]) => {
-      if (!display || !tel) return null;
-      return { snippet: 'Call: [' + display + '](' + tel + ')', status: 'Call-to-action added ✓' };
+    build: ([text, label, href]) => {
+      if (!label || !href) return null;
+      const esc = (s) => s.replace(/"/g, "'");
+      const attrs = [
+        text ? 'text="' + esc(text) + '"' : null,
+        'label="' + esc(label) + '"',
+        'href="' + esc(href) + '"',
+      ].filter(Boolean).join(' ');
+      return { snippet: '::cta{' + attrs + '}', status: 'Call-to-action added ✓' };
     },
+    // Metadata only, for the preview panel's directive-name lookup below —
+    // build() is hand-written above rather than routed through
+    // buildDirectiveSnippet(), so `kind`/`attrs` here are never read for
+    // snippet construction, only `name`.
+    directive: { kind: 'leaf', name: 'cta' },
     guide: {
-      example: 'Call: [number](tel:…)',
-      description: 'A phone call-to-action — use the ☎️ Call-to-action button above so the phone link is always typed correctly',
+      example: '::cta{text="…" label="…" href="…"}',
+      description: 'A call-to-action band (phone, or a link to any page) — use the ☎️ Call-to-action button above',
       justification: 'where the website supports it',
     },
   },
@@ -1775,6 +1809,12 @@ function renderMarkdown(f) {
       : f.type === 'select'
       ? `<select class="md-field-input" data-i="${i}">${(f.options || []).map((o) => `<option value="${esc(o.value)}"${o.value === f.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`
       : `<input type="text" class="md-field-input" data-i="${i}" placeholder="${esc(f.placeholder)}" value="${esc(f.value)}">`;
+    // A field with `pattern` (a RegExp source string, not an HTML pattern
+    // attribute) shows `patternError` inline once it has content that
+    // doesn't match — e.g. a tel: link typed without the "tel:" prefix.
+    // Kept separate from the "(required)"/"(optional)" hint since it only
+    // appears once the field is actually invalid, not on first render.
+    const errorHtml = (f, i) => f.pattern ? `<span class="md-field-error" data-err-for="${i}" hidden>${esc(f.patternError || 'Invalid value')}</span>` : '';
     const groupRowHtml = (f, i) => `
       <div class="md-field-group-row">
         ${f.itemFields.map((itemF, j) => `
@@ -1795,6 +1835,7 @@ function renderMarkdown(f) {
       : `
       <label>${esc(f.label)} ${reqSpan(f)}
         ${inputHtml(f, i)}
+        ${errorHtml(f, i)}
       </label>`).join('');
     panel.innerHTML = `
       <div class="md-photo-fields">
@@ -1852,8 +1893,25 @@ function renderMarkdown(f) {
       if (f.type === 'group') return v.every((row) => row.every((cell, j) => !f.itemFields[j]?.required || cell));
       return !!v;
     }
+    // A field with `pattern` is valid when empty-and-not-required (the
+    // required check above already covers that case) or when its trimmed
+    // value matches. Only text/textarea/select fields carry `pattern` today.
+    function fieldMatchesPattern(f, i) {
+      if (!f.pattern) return true;
+      const v = collectValue(f, i);
+      if (!v) return true;
+      return new RegExp(f.pattern).test(v);
+    }
+    function fieldIsValid(f, i) {
+      return fieldSatisfiesRequired(f, i) && fieldMatchesPattern(f, i);
+    }
     function refreshEnabled() {
-      insBtn.disabled = fields.some((f, i) => !fieldSatisfiesRequired(f, i));
+      insBtn.disabled = fields.some((f, i) => !fieldIsValid(f, i));
+      fields.forEach((f, i) => {
+        if (!f.pattern) return;
+        const errEl = panel.querySelector(`.md-field-error[data-err-for="${i}"]`);
+        if (errEl) errEl.hidden = fieldMatchesPattern(f, i);
+      });
     }
     panel.addEventListener('input', refreshEnabled);
     panel.querySelectorAll('.md-field-input').forEach((inp) => inp.addEventListener('keydown', (e) => {
@@ -2017,21 +2075,29 @@ function renderMarkdown(f) {
       const h = line.match(/^(#{1,6}) (.*)/);
       const li = line.match(/^[-*] (.*)/);
       const oli = line.match(/^\d+\. (.*)/);
-      const dOpen = line.match(/^:::([\w-]+)/);
+      // Container directives (:::name … :::, e.g. a future grid/callout)
+      // span multiple lines; leaf directives (::name{...}, e.g. ::cta) are
+      // exactly one line with no closing fence to search for.
+      const dContainerOpen = line.match(/^:::([\w-]+)/);
+      const dLeaf = line.match(/^::([\w-]+)/);
       if (line === '') { flushPara(); flushList(); }
-      // Container-directive shortcodes (grids, callouts, etc. — see
-      // remark-directive in the site's build pipeline) aren't something this
-      // deliberately minimal preview parser attempts to render visually —
-      // same precedent as a bold-link button not previewing as a real
-      // button. Skip past the whole fenced block and show a labeled
-      // placeholder instead of letting the raw ::: syntax collapse into one
-      // garbled paragraph.
-      else if (dOpen) {
+      // Directive shortcodes (grids, callouts, the call-to-action button,
+      // etc. — see remark-directive in the site's build pipeline) aren't
+      // something this deliberately minimal preview parser attempts to
+      // render visually — same precedent as a bold-link button not
+      // previewing as a real button. Show a labeled placeholder instead of
+      // letting the raw :: / ::: syntax collapse into a garbled paragraph.
+      else if (dContainerOpen) {
         flushPara(); flushList();
         i += 1;
         while (i < lines.length && lines[i].trim() !== ':::') i += 1;
-        const entry = resolvedShortcodes.find((e) => e.directive?.name === dOpen[1]);
-        out.push('<p class="md-preview-shortcode">🧩 ' + (entry?.label || dOpen[1]) + ' — see the live site for the real layout</p>');
+        const entry = resolvedShortcodes.find((e) => e.directive?.name === dContainerOpen[1]);
+        out.push('<p class="md-preview-shortcode">🧩 ' + (entry?.label || dContainerOpen[1]) + ' — see the live site for the real layout</p>');
+      }
+      else if (dLeaf) {
+        flushPara(); flushList();
+        const entry = resolvedShortcodes.find((e) => e.directive?.name === dLeaf[1]);
+        out.push('<p class="md-preview-shortcode">🧩 ' + (entry?.label || dLeaf[1]) + ' — see the live site for the real layout</p>');
       }
       else if (/^(-{3,}|_{3,}|\*{3,})$/.test(line)) { flushPara(); flushList(); out.push('<hr>'); }
       else if (h) { flushPara(); flushList(); const lvl = Math.max(2, h[1].length); out.push('<h' + lvl + '>' + inlineMd(h[2]) + '</h' + lvl + '>'); }
