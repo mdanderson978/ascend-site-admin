@@ -476,6 +476,15 @@ textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px
 .photo-picker-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  /* Explicit row height, not auto: this grid is a flex child of a
+     max-height-constrained column flexbox (.photo-picker-panel). Its own
+     overflow-y:auto sets its automatic minimum size to 0 (per the flex/grid
+     spec), so with auto-sized rows the flex algorithm was free to crush the
+     whole grid down to fit the leftover space instead of overflowing and
+     scrolling — every thumbnail rendered as a squashed sliver. A definite
+     row height can't be shrunk that way; it overflows and scrolls instead,
+     which is what we actually want. */
+  grid-auto-rows: 104px;
   gap: .5rem;
   overflow-y: auto;
   padding: 2px;
