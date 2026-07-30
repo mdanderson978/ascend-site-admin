@@ -204,6 +204,39 @@ test('image upload converts to webp and returns the md-relative path', async t =
   } finally { await shutdown(server); }
 });
 
+test('custom image preset crops and caps uploads to the configured dimensions', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const server = boot(root, 4428, {
+    imageSizes: {
+      hubCard: {
+        w: 1200,
+        h: 900,
+        label: 'at least 1200 x 900 px',
+        maxWidth: 1200,
+        maxHeight: 900,
+        fit: 'cover',
+      },
+    },
+  });
+  try {
+    const base = await ready(server);
+    const png = await sharp({ create: { width: 1600, height: 900, channels: 3, background: { r: 20, g: 90, b: 180 } } })
+      .png().toBuffer();
+    const fd = new FormData();
+    fd.append('imageType', 'hubCard');
+    fd.append('file', new Blob([png], { type: 'image/png' }), 'Hub Card.png');
+    const json = await (await fetch(base + '/api/upload/image', {
+      method: 'POST', headers: { Origin: base }, body: fd,
+    })).json();
+    assert.equal(json.error, undefined);
+    const onDisk = path.join(root, 'src/assets/uploads', path.basename(json.path));
+    const meta = await sharp(fs.readFileSync(onDisk)).metadata();
+    assert.equal(meta.width, 1200);
+    assert.equal(meta.height, 900);
+  } finally { await shutdown(server); }
+});
+
 // /api/uploads powers the reuse picker: newest first, images only, and each
 // row carries the exact { path, preview } shape onPick consumers write into
 // content.
