@@ -1062,10 +1062,11 @@ let DYNAMIC_ENTRY_LABELS = {}; // '<collection>/<slug>' → saved titleField val
 let DYNAMIC_ENTRY_ORDER = {}; // '<collection>/<slug>' → saved orderField value
 
 // ── Image minimums ────────────────────────────────────────────────────────
-const IMG_MIN = {
+const DEFAULT_IMG_MIN = {
   hero:    { w: 1200, h: 600,  label: 'at least 1200 × 600 px' },
   gallery: { w: 800,  h: 400,  label: 'at least 800 × 400 px'  },
 };
+let IMG_MIN = { ...DEFAULT_IMG_MIN };
 
 function checkImageSize(file, sizeType) {
   return new Promise(resolve => {
@@ -3116,6 +3117,7 @@ async function boot() {
   PAGE_LABELS   = CONFIG.pageLabels   || {};
   NAV_STRUCTURE = CONFIG.navStructure || [];
   DYNAMIC_COLLECTIONS = CONFIG.dynamicCollections || {};
+  IMG_MIN = { ...DEFAULT_IMG_MIN, ...(CONFIG.imageSizes || {}) };
 
   document.title = CONFIG.browserTitle || (CONFIG.siteTitle + ' — Content Admin');
   $('sidebar-logo').prepend(document.createTextNode(CONFIG.siteTitle));

@@ -105,6 +105,11 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 // version-restore feature able to bring pruned files back.
 const PRUNE_AGE_MS = 48 * 60 * 60 * 1000;
 
+const DEFAULT_IMAGE_SIZES = {
+  hero:    { w: 1200, h: 600, label: 'at least 1200 x 600 px', maxWidth: 1920 },
+  gallery: { w: 800,  h: 400, label: 'at least 800 x 400 px',  maxWidth: 1200 },
+};
+
 export function startAdmin(config) {
   for (const key of ['root', 'fields', 'siteTitle', 'developerName', 'developerEmail']) {
     if (!config?.[key]) throw new Error(`site-admin: config.${key} is required`);
@@ -120,6 +125,7 @@ export function startAdmin(config) {
   const FIELDS   = config.fields;
   const SECTIONS = config.sections || {};
   const DYNAMIC  = config.dynamicCollections || {};
+  const IMAGE_SIZES = { ...DEFAULT_IMAGE_SIZES, ...(config.imageSizes || {}) };
   const { siteTitle, developerName, developerEmail } = config;
 
   fs.mkdirSync(UPLOADS, { recursive: true });
@@ -196,6 +202,10 @@ export function startAdmin(config) {
 
   function sanitize(name) {
     return name.toLowerCase().replace(/[^a-z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  function imageSizePreset(type) {
+    return IMAGE_SIZES[type] || IMAGE_SIZES.gallery;
   }
 
   // Convert what the browser sent into what the .md file must store, per
@@ -330,13 +340,20 @@ export function startAdmin(config) {
       bb.on('close', async () => {
         if (tooBig)  { reject(new Error('That image is over 25 MB. Please use a smaller photo.')); return; }
         if (!buffer) { reject(new Error('No file data')); return; }
-        const maxWidth = imgType === 'gallery' ? 1200 : 1920;
+        const preset   = imageSizePreset(imgType);
+        const resize   = {
+          width: preset.maxWidth || preset.w || (imgType === 'gallery' ? 1200 : 1920),
+          withoutEnlargement: true,
+        };
+        if (preset.maxHeight || preset.h) resize.height = preset.maxHeight || preset.h;
+        if (preset.fit) resize.fit = preset.fit;
+        if (preset.position) resize.position = preset.position;
         const stamp    = Date.now();
         const outName  = stamp + '-' + sanitize(origName) + '.webp';
         const outPath  = path.join(UPLOADS, outName);
         try {
           await sharp(buffer)
-            .resize({ width: maxWidth, withoutEnlargement: true })
+            .resize(resize)
             .webp({ quality: 82 })
             .toFile(outPath);
           resolve({
@@ -431,6 +448,7 @@ export function startAdmin(config) {
           shortcodes:       config.shortcodes   || {},
           siteUrl:          config.siteUrl      || '',
           urlPatterns:      config.urlPatterns  || {},
+          imageSizes:       IMAGE_SIZES,
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
           altPlaceholder:   config.altPlaceholder   || 'e.g. "Guests dining in the main dining room"',
