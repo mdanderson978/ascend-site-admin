@@ -266,14 +266,19 @@ test('reorder updates only the orderField, preserves body and other fields, and 
     });
     assert.equal(notOrderable.status, 400);
 
-    // A slug that doesn't exist is skipped, not a hard failure for the rest
-    // of the batch.
+    // Missing and traversal-style slugs are skipped, not a hard failure for
+    // the rest of the batch. The latter must not resolve back to alpha.md.
     const partial = await (await req('/api/reorder/projects', {
       method: 'POST',
-      body: JSON.stringify({ order: [{ slug: 'alpha', value: 5 }, { slug: 'does-not-exist', value: 6 }] }),
+      body: JSON.stringify({ order: [
+        { slug: 'alpha', value: 5 },
+        { slug: 'does-not-exist', value: 6 },
+        { slug: '../projects/alpha', value: 99 },
+      ] }),
     })).json();
     assert.equal(partial.ok, true);
     assert.deepEqual(partial.updated, ['alpha']);
+    assert.match(fs.readFileSync(path.join(root, 'src/content/projects/alpha.md'), 'utf-8'), /sort_order: 5/);
   } finally {
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }

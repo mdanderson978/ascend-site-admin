@@ -40,7 +40,9 @@
  *                   file's filename. `label` is the singular noun shown in
  *                   UI copy ("+ New <label>", "Delete this <label>?").
  *                   `orderField`, when provided, names a numeric field used
- *                   to sort that collection's sidebar entries. A
+ *                   to sort that collection's sidebar entries and enables
+ *                   click-and-drag reordering. Reordering updates only that
+ *                   field and still requires Publish Changes. A
  *                   collection not listed here keeps today's behavior
  *                   exactly: a fixed, developer-defined set of entries that
  *                   can never be added to or deleted via the admin.
@@ -696,7 +698,7 @@ export function startAdmin(config) {
         for (const entry of order) {
           const slug  = entry?.slug;
           const value = entry?.value;
-          if (typeof slug !== 'string' || !Number.isFinite(value)) continue;
+          if (typeof slug !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(slug) || !Number.isFinite(value)) continue;
           const fp = contentFile(collection, slug);
           if (!fs.existsSync(fp)) continue;
           const { data, content: body } = matter(fs.readFileSync(fp, 'utf-8'));
