@@ -677,6 +677,37 @@ export function startAdmin(config) {
         return;
       }
 
+      // Sidebar drag-to-reorder for a dynamic collection's orderField (see
+      // DYNAMIC_COLLECTIONS[col].orderField). A deliberately narrow sibling
+      // to the full content POST above: it touches ONLY the order field in
+      // each entry's frontmatter, never `body` — the sidebar only has each
+      // entry's order value (from /api/search), not its full body, so
+      // reusing the full save endpoint would silently wipe every reordered
+      // entry's content back to empty.
+      const reorderMatch = path_.match(/^\/api\/reorder\/([^/]+)$/);
+      if (reorderMatch && req.method === 'POST') {
+        const [, collection] = reorderMatch;
+        const dyn = DYNAMIC[collection];
+        if (!dyn || !dyn.orderField) { jsonResp(res, 400, { error: 'This collection cannot be reordered.' }); return; }
+        const { order } = await parseJsonBody(req);
+        if (!Array.isArray(order)) { jsonResp(res, 400, { error: 'Invalid order payload.' }); return; }
+
+        const updated = [];
+        for (const entry of order) {
+          const slug  = entry?.slug;
+          const value = entry?.value;
+          if (typeof slug !== 'string' || !Number.isFinite(value)) continue;
+          const fp = contentFile(collection, slug);
+          if (!fs.existsSync(fp)) continue;
+          const { data, content: body } = matter(fs.readFileSync(fp, 'utf-8'));
+          data[dyn.orderField] = value;
+          fs.writeFileSync(fp, matter.stringify(body, data), 'utf-8');
+          updated.push(slug);
+        }
+        jsonResp(res, 200, { ok: true, updated });
+        return;
+      }
+
       if (path_ === '/api/upload/image' && req.method === 'POST') {
         try { jsonResp(res, 200, await handleImageUpload(req)); }
         catch (e) { jsonResp(res, 400, { error: e.message }); }
