@@ -18,7 +18,7 @@ test('ChatGPT HTML is separated into safe content, page assets and real image fi
     <link rel="stylesheet" href="https://example.com/widgets.css">
     <style>.hero { display: grid; }</style>
   </head><body>
-    <section class="hero" style="color: navy"><img src="${dataUrl}" alt="Pool"><button onclick="this.textContent = 'Done'">Try it</button></section>
+    <section class="hero" style="color: navy !important"><img src="${dataUrl}" alt="Pool"><button onclick="this.textContent = 'Done'">Try it</button></section>
     <script>document.body.dataset.ready = 'yes';</script>
   </body></html>`;
 
@@ -27,7 +27,8 @@ test('ChatGPT HTML is separated into safe content, page assets and real image fi
   assert.equal(result.title, 'Creative pool page');
   assert.equal(result.description, 'A complete creative page.');
   assert.doesNotMatch(result.body, /<(?:style|script|html|head|body|link|meta)\b/i);
-  assert.doesNotMatch(result.body, /\s(?:style|onclick)=/i);
+  assert.doesNotMatch(result.body, /\sonclick=/i);
+  assert.match(result.body, /style="color: navy !important"/);
   assert.doesNotMatch(result.body, /data:image/i);
   assert.match(result.body, /\/content-assets\/information\/example\/images\/image-[a-f0-9]+\.webp/);
   assert.equal(result.report.images, 1);
@@ -42,7 +43,7 @@ test('ChatGPT HTML is separated into safe content, page assets and real image fi
   const css = fs.readFileSync(path.join(root, cssFile), 'utf8');
   assert.match(css, /@import url\("https:\/\/example.com\/widgets.css"\)/);
   assert.match(css, /\.hero/);
-  assert.match(css, /\.cms-inline-/);
+  assert.doesNotMatch(css, /\.cms-inline-/);
   const jsFile = fs.readdirSync(root).find(file => /^page-[a-f0-9]+\.js$/.test(file));
   assert.ok(jsFile);
   const js = fs.readFileSync(path.join(root, jsFile), 'utf8');
@@ -71,8 +72,8 @@ test('the HTML parser separates malformed tags and unquoted executable attribute
 
   const result = await sortChatGptHtml({ source, outputDir: root, publicBase: '/content-assets/pages/parser-check' });
 
-  assert.doesNotMatch(result.body, /<(?:style|script)\b|\s(?:style|onclick)=/i);
-  assert.match(result.body, /class="cms-inline-/);
+  assert.doesNotMatch(result.body, /<(?:style|script)\b|\sonclick=/i);
+  assert.match(result.body, /style="color:red"/);
   assert.match(result.body, /data-cms-event-1/);
   assert.equal(result.report.styleBlocks, 1);
   assert.equal(result.report.scriptBlocks, 1);

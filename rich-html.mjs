@@ -36,12 +36,6 @@ function findElement(node, tagName) {
   return null;
 }
 
-function addClass(node, className) {
-  const existing = attribute(node, 'class');
-  if (existing) existing.value = `${existing.value} ${className}`.trim();
-  else node.attrs.push({ name: 'class', value: className });
-}
-
 function extractDocument(document, report) {
   const cssParts = [];
   const scriptParts = [];
@@ -112,10 +106,6 @@ function extractDocument(document, report) {
       if (node.attrs) {
         const inlineStyle = attribute(node, 'style');
         if (inlineStyle) {
-          const className = `cms-inline-${hash(inlineStyle.value)}`;
-          cssParts.push(`.${className} { ${inlineStyle.value.trim()} }`);
-          node.attrs = node.attrs.filter(item => item !== inlineStyle);
-          addClass(node, className);
           report.inlineStyles += 1;
         }
 
