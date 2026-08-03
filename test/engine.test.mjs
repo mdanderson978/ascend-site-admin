@@ -227,3 +227,100 @@ test('dynamic collections: add, dedupe-slug, delete — static collections stay 
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }
 });
+
+// Sidebar drag-to-reorder (/api/reorder/:collection) must touch ONLY the
+// configured orderField in each entry's frontmatter — never `body`, since the
+// sidebar only ever has each entry's order value (from /api/search), not its
+// full body. Reusing the full content-save endpoint for this would silently
+// wipe every reordered entry's content back to empty.
+test('reorder updates only the orderField, preserves body and other fields, and stays scoped to orderable collections', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/projects'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'src/content/projects/alpha.md'),
+    '---\ntitle: Alpha\nsort_order: 1\n---\nAlpha body content.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'src/content/projects/beta.md'),
+    '---\ntitle: Beta\nsort_order: 2\n---\nBeta body content.\n',
+  );
+
+  const server = startAdmin({
+    root,
+    port: 4414,
+    pullOnStart: false,
+    siteTitle: 'Fixture Site',
+    developerName: 'Test Developer',
+    developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title', type: 'text' }] },
+    dynamicCollections: {
+      projects: {
+        label: 'Project',
+        titleField: 'title',
+        orderField: 'sort_order',
+        fields: [
+          { name: 'title', label: 'Title', type: 'text', required: true },
+          { name: 'sort_order', label: 'Sort Order', type: 'number' },
+        ],
+      },
+    },
+  });
+
+  try {
+    if (!server.listening) {
+      await new Promise((resolve, reject) => {
+        server.once('listening', resolve);
+        server.once('error', reject);
+      });
+    }
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, {
+      ...options,
+      headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+
+    // Swap the two entries' order.
+    const swapped = await (await req('/api/reorder/projects', {
+      method: 'POST',
+      body: JSON.stringify({ order: [{ slug: 'beta', value: 1 }, { slug: 'alpha', value: 2 }] }),
+    })).json();
+    assert.equal(swapped.ok, true);
+    assert.deepEqual(swapped.updated.sort(), ['alpha', 'beta']);
+
+    const alphaRaw = fs.readFileSync(path.join(root, 'src/content/projects/alpha.md'), 'utf-8');
+    const betaRaw  = fs.readFileSync(path.join(root, 'src/content/projects/beta.md'), 'utf-8');
+    assert.match(alphaRaw, /sort_order: 2/);
+    assert.match(betaRaw, /sort_order: 1/);
+    // Body and every other field survive untouched — the whole point of a
+    // narrow reorder endpoint instead of reusing the full save endpoint.
+    assert.match(alphaRaw, /Alpha body content\./);
+    assert.match(betaRaw, /Beta body content\./);
+    assert.match(alphaRaw, /title: Alpha/);
+    assert.match(betaRaw, /title: Beta/);
+
+    // A collection with no orderField configured (or that isn't dynamic at
+    // all) refuses the request rather than silently doing nothing.
+    const notOrderable = await req('/api/reorder/pages', {
+      method: 'POST',
+      body: JSON.stringify({ order: [{ slug: 'home', value: 1 }] }),
+    });
+    assert.equal(notOrderable.status, 400);
+
+    // Missing and traversal-style slugs are skipped, not a hard failure for
+    // the rest of the batch. The latter must not resolve back to alpha.md.
+    const partial = await (await req('/api/reorder/projects', {
+      method: 'POST',
+      body: JSON.stringify({ order: [
+        { slug: 'alpha', value: 5 },
+        { slug: 'does-not-exist', value: 6 },
+        { slug: '../projects/alpha', value: 99 },
+      ] }),
+    })).json();
+    assert.equal(partial.ok, true);
+    assert.deepEqual(partial.updated, ['alpha']);
+    assert.match(fs.readFileSync(path.join(root, 'src/content/projects/alpha.md'), 'utf-8'), /sort_order: 5/);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});

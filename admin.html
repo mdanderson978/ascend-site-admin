@@ -88,6 +88,14 @@ body {
   font-family: inherit;
 }
 
+/* Sidebar drag-to-reorder (services/information/gallery entries) */
+.nav-item-draggable { display: flex; align-items: center; gap: .5rem; cursor: grab; }
+.nav-item-draggable.dragging { opacity: .35; cursor: grabbing; }
+.nav-drag-handle { color: rgba(255,255,255,.4); font-size: 13px; line-height: 1; user-select: none; }
+.nav-item-draggable:hover .nav-drag-handle, .nav-item-draggable.active .nav-drag-handle { color: rgba(255,255,255,.75); }
+.nav-item-draggable.drag-over-top    { box-shadow: inset 0 2px 0 0 var(--amber); }
+.nav-item-draggable.drag-over-bottom { box-shadow: inset 0 -2px 0 0 var(--amber); }
+
 .nav-section-header-row { display: flex; align-items: center; padding: .25rem 1rem .4rem; }
 .nav-section-header-row .nav-section-label { flex: 1; padding: 0; }
 .nav-new-btn {
@@ -848,7 +856,7 @@ textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px
 }
 #save-reminder.visible { display: flex; }
 #save-reminder .save-reminder-text { flex: 1; }
-#save-reminder .btn-save-reminder {
+#save-reminder .btn-save-reminder, #order-reminder .btn-save-reminder {
   background: var(--amber);
   color: var(--ink);
   border: none;
@@ -858,6 +866,24 @@ textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px
   font-weight: 700;
   cursor: pointer;
 }
+#order-reminder {
+  display: none;
+  position: fixed;
+  bottom: 4.75rem;
+  left: calc(var(--sidebar-w) + 1.5rem);
+  right: 1.5rem;
+  background: var(--forest);
+  color: #fff;
+  padding: .75rem 1.25rem;
+  border-radius: 8px;
+  font-size: 13px;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 8px 32px rgba(10,40,20,.28);
+  z-index: 50;
+}
+#order-reminder.visible { display: flex; }
+#order-reminder .save-reminder-text { flex: 1; }
 
 /* ── Publish failure banner ── */
 /* Non-blocking — publish itself has no modal/popup, this only appears if a
@@ -1000,6 +1026,16 @@ textarea.markdown.drag-over { border-color: var(--canopy); box-shadow: 0 0 0 3px
   <button class="btn-save-reminder" id="save-reminder-btn">Save Draft</button>
 </div>
 
+<!-- Order reminder — shown after a sidebar drag-to-reorder. Unlike a field
+     edit, a reorder writes to the working copy immediately (there's no
+     separate "Save Draft" step for it), so the only thing left to remind
+     the editor about is Publish. Stacked above #save-reminder so both can
+     be visible together without overlapping. -->
+<div id="order-reminder">
+  <span class="save-reminder-text">Sidebar order changed. Publish Changes to make it live.</span>
+  <button class="btn-save-reminder" id="order-reminder-btn">Publish Changes</button>
+</div>
+
 <!-- Publish failure banner (only shown if a publish fails) -->
 <div id="publish-banner">
   <div id="deploy-status"></div>
@@ -1048,6 +1084,18 @@ function markClean() {
 }
 
 $('save-reminder-btn').addEventListener('click', () => $('btn-save').click());
+$('order-reminder-btn').addEventListener('click', async () => {
+  const btn = $('order-reminder-btn');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Publishing…';
+  await publishChanges();
+  // On success the whole banner is hidden by publishChanges(), so restoring
+  // the button here only matters for the failure path (banner stays put,
+  // editor needs to be able to retry).
+  btn.disabled = false;
+  btn.textContent = original;
+});
 
 // ── Site config ───────────────────────────────────────────────────────────
 // Everything site-specific (title, page labels, sidebar structure, task
@@ -1552,11 +1600,24 @@ async function loadDynamicEntryMeta() {
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────
-function buildNavItem(key, sub, label) {
+function buildNavItem(key, sub, label, opts = {}) {
   const item = document.createElement('div');
-  item.className   = 'nav-item' + (sub ? ' nav-sub' : '');
+  item.className   = 'nav-item' + (sub ? ' nav-sub' : '') + (opts.draggable ? ' nav-item-draggable' : '');
   item.dataset.key = key;
-  item.textContent = label;
+  if (opts.draggable) {
+    item.draggable   = true;
+    item.dataset.slug = opts.slug;
+    const handle = document.createElement('span');
+    handle.className   = 'nav-drag-handle';
+    handle.textContent = '⠿';
+    handle.setAttribute('aria-hidden', 'true');
+    handle.title = 'Drag to reorder';
+    const text = document.createElement('span');
+    text.textContent = label;
+    item.append(handle, text);
+  } else {
+    item.textContent = label;
+  }
   item.addEventListener('click', () => openPage(key));
   return item;
 }
@@ -1574,10 +1635,15 @@ function buildDynamicNewItem(col, sub) {
 
 function buildDynamicEntries(col, slugs, { sub = false } = {}) {
   const frag = document.createDocumentFragment();
+  const draggable = Boolean(DYNAMIC_COLLECTIONS[col]?.orderField);
+  const list = document.createElement('div');
+  list.className = 'nav-reorder-list';
   for (const slug of sortedDynamicSlugs(col, slugs)) {
     const key = col + '/' + slug;
-    frag.appendChild(buildNavItem(key, sub, DYNAMIC_ENTRY_LABELS[key] || PAGE_LABELS[key] || humanizeSlug(slug)));
+    list.appendChild(buildNavItem(key, sub, DYNAMIC_ENTRY_LABELS[key] || PAGE_LABELS[key] || humanizeSlug(slug), { draggable, slug }));
   }
+  if (draggable) makeReorderable(list, col);
+  frag.appendChild(list);
   frag.appendChild(buildDynamicNewItem(col, sub));
   return frag;
 }
@@ -1610,8 +1676,91 @@ function buildDynamicSection(col, slugs) {
   newBtn.addEventListener('click', () => openPage(col + '/new'));
   hdr.appendChild(newBtn);
   sec.appendChild(hdr);
-  for (const slug of sortedDynamicSlugs(col, slugs)) sec.appendChild(buildNavItem(col + '/' + slug, false, DYNAMIC_ENTRY_LABELS[col + '/' + slug] || PAGE_LABELS[col + '/' + slug] || humanizeSlug(slug)));
+  const draggable = Boolean(DYNAMIC_COLLECTIONS[col]?.orderField);
+  const list = document.createElement('div');
+  list.className = 'nav-reorder-list';
+  for (const slug of sortedDynamicSlugs(col, slugs)) {
+    list.appendChild(buildNavItem(col + '/' + slug, false, DYNAMIC_ENTRY_LABELS[col + '/' + slug] || PAGE_LABELS[col + '/' + slug] || humanizeSlug(slug), { draggable, slug }));
+  }
+  if (draggable) makeReorderable(list, col);
+  sec.appendChild(list);
   return sec;
+}
+
+// Drag-and-drop reordering for a dynamic collection's sidebar entries.
+// Delegated listeners on the shared list container (not per-item) since
+// loadSidebar() rebuilds the whole list on every reload anyway. Reordering
+// only ever moves items within their own list — cross-collection drags are
+// impossible because each collection gets its own container instance.
+function makeReorderable(container, col) {
+  let dragSlug = null;
+
+  container.addEventListener('dragstart', (e) => {
+    const item = e.target.closest('.nav-item-draggable');
+    if (!item) return;
+    dragSlug = item.dataset.slug;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragSlug); // Firefox requires setData to permit the drag
+    item.classList.add('dragging');
+  });
+
+  container.addEventListener('dragend', () => {
+    container.querySelectorAll('.dragging, .drag-over-top, .drag-over-bottom')
+      .forEach(el => el.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom'));
+    dragSlug = null;
+  });
+
+  container.addEventListener('dragover', (e) => {
+    const item = e.target.closest('.nav-item-draggable');
+    if (!item || item.classList.contains('dragging')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    container.querySelectorAll('.drag-over-top, .drag-over-bottom')
+      .forEach(el => el.classList.remove('drag-over-top', 'drag-over-bottom'));
+    const before = (e.clientY - item.getBoundingClientRect().top) < item.offsetHeight / 2;
+    item.classList.add(before ? 'drag-over-top' : 'drag-over-bottom');
+  });
+
+  container.addEventListener('drop', (e) => {
+    const item = e.target.closest('.nav-item-draggable');
+    if (!item || !dragSlug) return;
+    e.preventDefault();
+    const before  = (e.clientY - item.getBoundingClientRect().top) < item.offsetHeight / 2;
+    const dragged = container.querySelector(`.nav-item-draggable[data-slug="${CSS.escape(dragSlug)}"]`);
+    container.querySelectorAll('.drag-over-top, .drag-over-bottom')
+      .forEach(el => el.classList.remove('drag-over-top', 'drag-over-bottom'));
+    if (dragged && dragged !== item) {
+      container.insertBefore(dragged, before ? item : item.nextSibling);
+      persistOrder(container, col);
+    }
+  });
+}
+
+async function persistOrder(container, col) {
+  const order = [...container.querySelectorAll('.nav-item-draggable')]
+    .map((el, i) => ({ slug: el.dataset.slug, value: i + 1 }));
+  for (const { slug, value } of order) DYNAMIC_ENTRY_ORDER[col + '/' + slug] = value;
+
+  setStatus('Saving new order…');
+  try {
+    const json = await fetch(`/api/reorder/${col}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ order }),
+    }).then(r => r.json());
+    if (json.ok) {
+      setStatus('Order saved ✓ — Publish Changes to make it live', 'ok');
+      $('btn-publish').disabled = false;
+      $('order-reminder').classList.add('visible');
+      refreshSearchIndex();
+    } else {
+      setStatus(json.error || 'Could not save the new order', 'err');
+      await loadSidebar();
+    }
+  } catch (_) {
+    setStatus('Could not save the new order — check your connection', 'err');
+    await loadSidebar();
+  }
 }
 
 async function loadSidebar() {
@@ -2976,7 +3125,11 @@ $('btn-delete').addEventListener('click', async () => {
 });
 
 // ── Publish ───────────────────────────────────────────────────────────────
-$('btn-publish').addEventListener('click', async () => {
+// Shared by the topbar Publish button and the order-reminder banner's own
+// Publish button, so BOTH entry points get real, immediate feedback that the
+// click registered (disabled + relabeled) rather than relying on the editor
+// to notice the topbar status pill change out of the corner of their eye.
+async function publishChanges() {
   if (isDirty && !confirm('You have unsaved changes. Save them first (click Save Draft), then Publish.')) return;
 
   $('publish-banner').classList.remove('visible');
@@ -2991,6 +3144,7 @@ $('btn-publish').addEventListener('click', async () => {
 
   if (json.ok) {
     setStatus('Published — site rebuilding ✓ (live in about 1–2 minutes)', 'ok');
+    $('order-reminder').classList.remove('visible');
   } else {
     setStatus('Publish failed', 'err');
     $('deploy-status').textContent = '❌ Something went wrong publishing your changes.';
@@ -3001,7 +3155,9 @@ $('btn-publish').addEventListener('click', async () => {
   }
 
   $('btn-publish').disabled = false;
-});
+}
+
+$('btn-publish').addEventListener('click', publishChanges);
 
 $('publish-banner-dismiss').addEventListener('click', () => $('publish-banner').classList.remove('visible'));
 
