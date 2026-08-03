@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1 - 2026-08-04
+
+- Preserve pasted inline style attributes directly so their browser cascade
+  semantics remain exact, including normal and `!important` declarations.
+
 ## 2.0.0 - 2026-08-04
 
 - Replace the default single-file interface with a responsive React and
