@@ -28,10 +28,10 @@ function loadRegistryModule() {
   return fn();
 }
 
-test('BUILTIN_SHORTCODES contains exactly the 6 migrated entries, each with the required shape', () => {
+test('BUILTIN_SHORTCODES contains the migrated entries and optional SMS action, each with the required shape', () => {
   const { BUILTIN_SHORTCODES } = loadRegistryModule();
   const ids = BUILTIN_SHORTCODES.map((e) => e.id);
-  assert.deepEqual(ids, ['insert-photo', 'thumbnail-link', 'youtube-video', 'subscribe-button', 'call-to-action', 'customer-testimonial']);
+  assert.deepEqual(ids, ['insert-photo', 'thumbnail-link', 'youtube-video', 'subscribe-button', 'sms-button', 'call-to-action', 'customer-testimonial']);
   for (const entry of BUILTIN_SHORTCODES) {
     assert.ok(entry.icon && entry.label && entry.tooltip, `${entry.id} must have icon/label/tooltip`);
     assert.ok(entry.panel && (entry.panel.kind === 'photo' || entry.panel.kind === 'fields'), `${entry.id} must have a valid panel.kind`);
@@ -84,6 +84,26 @@ test('subscribe-button build() appends ?sub_confirmation=1 only when not already
   assert.equal(entry.build(['https://www.youtube.com/@x']).snippet, '[Subscribe on YouTube](https://www.youtube.com/@x?sub_confirmation=1)');
   assert.equal(entry.build(['https://www.youtube.com/@x?sub_confirmation=1']).snippet, '[Subscribe on YouTube](https://www.youtube.com/@x?sub_confirmation=1)');
   assert.equal(entry.build(['https://www.youtube.com/@x?foo=bar']).snippet, '[Subscribe on YouTube](https://www.youtube.com/@x?foo=bar&sub_confirmation=1)');
+});
+
+test('sms-button build() normalizes the number and safely encodes a pre-filled message', () => {
+  const { BUILTIN_SHORTCODES } = loadRegistryModule();
+  const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'sms-button');
+  assert.deepEqual(
+    entry.build(['0407 666 999', "Hi! I'm interested in a pool (repair).", 'Text Message']),
+    {
+      snippet: '**[Text Message](sms:0407666999?body=Hi%21%20I%27m%20interested%20in%20a%20pool%20%28repair%29.)**',
+      status: 'SMS button added to the page ✓',
+    },
+  );
+});
+
+test('sms-button build() supports international numbers, optional messages and safe button labels', () => {
+  const { BUILTIN_SHORTCODES } = loadRegistryModule();
+  const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'sms-button');
+  assert.equal(entry.build(['+61 407-666-999', '', 'Text [Andrew]']).snippet, '**[Text \\[Andrew\\]](sms:+61407666999)**');
+  assert.equal(entry.build(['not a number', 'Hi', 'Text Message']), null);
+  assert.equal(entry.build(['', '', '']), null);
 });
 
 // call-to-action's group field submits as values[0] = Array<string[]>, one
