@@ -42,6 +42,47 @@ test('site verifier exercises the generic engine safely', async t => {
   assert.equal(result.engineVersion, packageVersion);
 });
 
+test('V2 is served by default with a stable legacy fallback and protected assets', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const server = startAdmin({
+    root, port: 4430, pullOnStart: false, siteTitle: 'Fixture Site',
+    developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title', type: 'text' }] },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const rootHtml = await (await fetch(base + '/')).text();
+    assert.match(rootHtml, /<div id="root"><\/div>/);
+    const assetPath = rootHtml.match(/src="([^"]+\.js)"/)?.[1];
+    assert.ok(assetPath, 'V2 index references its compiled script');
+    assert.equal((await fetch(base + assetPath)).status, 200);
+    assert.match(await (await fetch(base + '/legacy')).text(), /id="sidebar"/);
+    assert.equal((await fetch(base + '/admin-assets/../package.json')).status, 404);
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
+test('dynamic entry ordering updates every order field in one request', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/projects'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/projects/alpha.md'), '---\ntitle: Alpha\norder: 1\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/projects/beta.md'), '---\ntitle: Beta\norder: 2\n---\n');
+  const server = startAdmin({
+    root, port: 4431, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid', fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { projects: { label: 'Project', titleField: 'title', orderField: 'order', fields: [{ name: 'title', label: 'Title' }, { name: 'order', label: 'Order', type: 'number' }] } },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(base + '/api/order/projects', { method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: JSON.stringify({ slugs: ['beta', 'alpha'] }) });
+    assert.equal(response.status, 200);
+    assert.match(fs.readFileSync(path.join(root, 'src/content/projects/beta.md'), 'utf8'), /order: 1/);
+    assert.match(fs.readFileSync(path.join(root, 'src/content/projects/alpha.md'), 'utf8'), /order: 2/);
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
 // Sites migrated into the CMS keep their pre-existing images under
 // src/assets/images (not src/assets/uploads, which only holds files uploaded
 // through the admin UI). /api/preview must serve both, while still refusing

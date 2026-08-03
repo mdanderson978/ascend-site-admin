@@ -56,10 +56,20 @@ export async function verifySite(config, { root, port = 4399 } = {}) {
     const htmlResponse = await request(base, '/');
     assert(htmlResponse.ok, `/ returned ${htmlResponse.status}`);
     const html = await htmlResponse.text();
-    const start = html.indexOf('<script>') + 8;
-    const end = html.lastIndexOf('</script>');
-    assert(start >= 8 && end > start, 'Admin inline script is missing');
-    new Function(html.slice(start, end));
+    assert(html.includes('<div id="root"></div>') || html.includes('<script>'), 'Admin application shell is missing');
+    for (const asset of [...html.matchAll(/(?:src|href)="(\/admin-assets\/[^"]+)"/g)].map(match => match[1])) {
+      const assetResponse = await request(base, asset);
+      assert(assetResponse.ok, `${asset} returned ${assetResponse.status}`);
+      await assetResponse.arrayBuffer();
+    }
+
+    const legacyResponse = await request(base, '/legacy');
+    assert(legacyResponse.ok, `/legacy returned ${legacyResponse.status}`);
+    const legacyHtml = await legacyResponse.text();
+    const start = legacyHtml.indexOf('<script>') + 8;
+    const end = legacyHtml.lastIndexOf('</script>');
+    assert(start >= 8 && end > start, 'Legacy admin inline script is missing');
+    new Function(legacyHtml.slice(start, end));
 
     const hostile = await fetch(base + '/api/config', { headers: { Origin: 'https://hostile.invalid' } });
     assert(hostile.status === 403, `Hostile origin returned ${hostile.status}, expected 403`);

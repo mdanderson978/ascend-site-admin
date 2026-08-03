@@ -1,6 +1,6 @@
 {
   "name": "site-admin",
-  "version": "1.10.0",
+  "version": "2.0.0",
   "description": "Ascend Web Design's local CMS admin engine for split-repo Astro sites. Consumed by content repos as a git dependency pinned to a version tag.",
   "type": "module",
   "main": "index.mjs",
@@ -11,7 +11,9 @@
   "files": [
     "index.mjs",
     "admin.html",
-    "verify-site.mjs"
+    "rich-html.mjs",
+    "verify-site.mjs",
+    "dist/admin"
   ],
   "repository": {
     "type": "git",
@@ -22,12 +24,38 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test",
-    "verify": "npm test && npm audit --omit=dev && node --check index.mjs && node --check verify-site.mjs"
+    "build": "npm run typecheck && npm run build:ui",
+    "build:ui": "vite build --config ui/vite.config.ts",
+    "dev:ui": "vite --config ui/vite.config.ts",
+    "typecheck": "tsc -p ui/tsconfig.json",
+    "test": "node --test test/engine.test.mjs test/shortcode-registry.test.mjs test/save-uploads-prune.test.mjs test/rich-html.test.mjs && npm run test:ui",
+    "test:ui": "vitest run --config ui/vite.config.ts",
+    "test:e2e": "playwright test --config playwright.config.mjs",
+    "prepack": "npm run build",
+    "verify": "npm run build && npm test && npm audit --omit=dev && node --check index.mjs && node --check verify-site.mjs"
   },
   "dependencies": {
     "busboy": "^1.6.0",
     "gray-matter": "^4.0.3",
+    "parse5": "^8.0.1",
     "sharp": "^0.35.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^26.1.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7"
   }
 }

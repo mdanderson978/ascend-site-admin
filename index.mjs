@@ -23,12 +23,14 @@
  *   pageLabels      '<collection>/<slug>' → friendly page name.
  *   navStructure    sidebar groups mirroring the live site's menu:
  *                   [{ label, breadcrumb?: false, items: [{ key, sub? } |
- *                   { dynamic: '<collection>', sub? }] }].
+ *                   { dynamic: '<collection>', sub?, exclude?: string[] }] }].
  *                   breadcrumb:false omits that group's label from the top-bar
  *                   trail (use it on the main "Website Pages" group). A
  *                   dynamic item mounts that collection's entries and "+ New"
- *                   control at that point in the sidebar; unmounted dynamic
- *                   collections still render as their own sections.
+ *                   control at that point in the sidebar. `exclude` can keep
+ *                   entries that belong under a different configured hub out
+ *                   of that mount; unmounted dynamic collections still render
+ *                   as their own sections.
  *   dynamicCollections   optional; collections the client can add/delete
  *                   entries in from the admin UI, keyed by collection name:
  *                     { <collection>: { fields, titleField, label, orderField? } }
@@ -79,6 +81,9 @@
  *                   identity at all; defaults to Website Admin <developerEmail>.
  *   pullOnStart     optional; false disables the best-effort startup pull
  *                   for CI and read-only verification. Defaults to true.
+ *   adminUi         optional; set to 'legacy' for a temporary rollback to
+ *                   the 1.x interface. V2 remains available at /v2 and the
+ *                   legacy interface always remains available at /legacy.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, and history/restore live here. The admin UI (admin.html,
@@ -94,6 +99,7 @@ import { execFileSync } from 'child_process';
 import matter from 'gray-matter';
 import sharp from 'sharp';
 import Busboy from 'busboy';
+import { sortChatGptHtml } from './rich-html.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -122,7 +128,9 @@ export function startAdmin(config) {
   const UPLOADS  = path.join(ROOT, 'src', 'assets', 'uploads');
   const ASSETS   = path.join(ROOT, 'src', 'assets');
   const DOCS     = path.join(ROOT, 'public', 'documents');
+  const CONTENT_ASSETS = path.join(ROOT, 'public', 'content-assets');
   const PORT     = parseInt(process.env.ADMIN_PORT || String(config.port || 4322), 10);
+  const ADMIN_DIST = path.join(__dirname, 'dist', 'admin');
 
   const FIELDS   = config.fields;
   const SECTIONS = config.sections || {};
@@ -132,6 +140,7 @@ export function startAdmin(config) {
 
   fs.mkdirSync(UPLOADS, { recursive: true });
   fs.mkdirSync(DOCS,    { recursive: true });
+  if (config.richHtmlImport) fs.mkdirSync(CONTENT_ASSETS, { recursive: true });
 
   const git = (args, options = {}) => execFileSync(
     'git', ['-C', ROOT, ...args],
@@ -179,6 +188,27 @@ export function startAdmin(config) {
   function jsonResp(res, status, data) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
+  }
+
+  function serveAdminAsset(res, filename, cache = false) {
+    if (!fs.existsSync(filename) || !fs.statSync(filename).isFile()) return false;
+    const mime = {
+      '.html': 'text/html; charset=utf-8',
+      '.js': 'text/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.map': 'application/json; charset=utf-8',
+      '.svg': 'image/svg+xml',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.woff2': 'font/woff2',
+    }[path.extname(filename).toLowerCase()] || 'application/octet-stream';
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Cache-Control': cache ? 'public, max-age=31536000, immutable' : 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    fs.createReadStream(filename).pipe(res);
+    return true;
   }
 
   function parseJsonBody(req) {
@@ -361,6 +391,7 @@ export function startAdmin(config) {
           resolve({
             // Relative from src/content/<collection>/<slug>.md so the source
             // repo's zod image() helper resolves it natively.
+            name:    outName,
             path:    '../../assets/uploads/' + outName,
             preview: '/api/preview?p=' + encodeURIComponent('src/assets/uploads/' + outName),
           });
@@ -428,10 +459,24 @@ export function startAdmin(config) {
 
     try {
 
-      if (path_ === '/' && req.method === 'GET') {
-        const html = fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf-8');
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
+      if ((path_ === '/' || path_ === '/v2') && req.method === 'GET') {
+        const wantsLegacy = path_ === '/' && (config.adminUi === 'legacy' || url.searchParams.get('legacy') === '1');
+        const v2Index = path.join(ADMIN_DIST, 'index.html');
+        if (!wantsLegacy && serveAdminAsset(res, v2Index)) return;
+        serveAdminAsset(res, path.join(__dirname, 'admin.html'));
+        return;
+      }
+
+      if (path_ === '/legacy' && req.method === 'GET') {
+        serveAdminAsset(res, path.join(__dirname, 'admin.html'));
+        return;
+      }
+
+      if (path_.startsWith('/admin-assets/') && req.method === 'GET') {
+        const relative = decodeURIComponent(path_.slice('/admin-assets/'.length));
+        const asset = path.resolve(ADMIN_DIST, relative);
+        if (!isInside(ADMIN_DIST, asset)) { res.writeHead(403); res.end('Forbidden'); return; }
+        if (!serveAdminAsset(res, asset, true)) { res.writeHead(404); res.end('Not found'); }
         return;
       }
 
@@ -454,6 +499,7 @@ export function startAdmin(config) {
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
           altPlaceholder:   config.altPlaceholder   || 'e.g. "Guests dining in the main dining room"',
+          richHtmlImport:   Boolean(config.richHtmlImport),
         });
         return;
       }
@@ -582,7 +628,7 @@ export function startAdmin(config) {
         const dyn = DYNAMIC[collection];
         if (!dyn) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const fields = withSections(collection + '/_new', dyn.fields);
-        jsonResp(res, 200, { data: {}, body: '', fields, previews: {} });
+        jsonResp(res, 200, { key: collection + '/new', data: {}, body: '', fields, previews: {} });
         return;
       }
 
@@ -632,7 +678,7 @@ export function startAdmin(config) {
         const { data, content: body } = matter(fs.readFileSync(fp, 'utf-8'));
         const fields   = withSections(collection + '/' + slug, fieldTemplate);
         const previews = buildPreviews(data, fields, fp);
-        jsonResp(res, 200, { data, body, fields, previews });
+        jsonResp(res, 200, { key: collection + '/' + slug, data, body, fields, previews });
         return;
       }
 
@@ -679,6 +725,31 @@ export function startAdmin(config) {
         return;
       }
 
+      // Persist a complete dynamic-collection order in one request. Validate
+      // the entire list before writing so an incomplete request changes no
+      // files and can never leave duplicate positions.
+      const orderMatch = path_.match(/^\/api\/order\/([^/]+)$/);
+      if (orderMatch && req.method === 'POST') {
+        const collection = orderMatch[1];
+        const dyn = DYNAMIC[collection];
+        if (!dyn?.orderField) { jsonResp(res, 400, { error: 'This collection is not orderable.' }); return; }
+        const { slugs } = await parseJsonBody(req);
+        if (!Array.isArray(slugs) || new Set(slugs).size !== slugs.length || slugs.some(slug => typeof slug !== 'string' || !/^[a-z0-9._-]+$/i.test(slug))) {
+          jsonResp(res, 400, { error: 'Invalid entry order.' }); return;
+        }
+        const dir = path.join(CONTENT, collection);
+        const existing = fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => name.endsWith('.md')).map(name => name.slice(0, -3)).sort() : [];
+        if ([...slugs].sort().join('\0') !== existing.join('\0')) { jsonResp(res, 400, { error: 'Entry order is incomplete.' }); return; }
+        for (const [index, slug] of slugs.entries()) {
+          const filename = contentFile(collection, slug);
+          const parsed = matter(fs.readFileSync(filename, 'utf-8'));
+          parsed.data[dyn.orderField] = index + 1;
+          fs.writeFileSync(filename, matter.stringify(parsed.content, parsed.data), 'utf-8');
+        }
+        jsonResp(res, 200, { ok: true });
+        return;
+      }
+
       // Sidebar drag-to-reorder for a dynamic collection's orderField (see
       // DYNAMIC_COLLECTIONS[col].orderField). A deliberately narrow sibling
       // to the full content POST above: it touches ONLY the order field in
@@ -719,6 +790,36 @@ export function startAdmin(config) {
       if (path_ === '/api/upload/pdf' && req.method === 'POST') {
         try { jsonResp(res, 200, await handlePdfUpload(req)); }
         catch (e) { jsonResp(res, 400, { error: e.message }); }
+        return;
+      }
+
+      const chatGptImportMatch = path_.match(/^\/api\/import\/chatgpt\/([^/]+)\/(.+)$/);
+      if (chatGptImportMatch && req.method === 'POST') {
+        if (!config.richHtmlImport) { jsonResp(res, 404, { error: 'Rich HTML importing is not enabled for this site.' }); return; }
+        const [, collection, requestedSlug] = chatGptImportMatch;
+        const fieldTemplate = resolveFields(collection, requestedSlug === 'new' ? '_new' : requestedSlug);
+        if (!fieldTemplate) { jsonResp(res, 404, { error: 'Page not found.' }); return; }
+        const { html, data } = await parseJsonBody(req);
+        let targetSlug = requestedSlug;
+        if (requestedSlug === 'new') {
+          const dynamic = DYNAMIC[collection];
+          const titleValue = dynamic && data?.[dynamic.titleField];
+          if (!titleValue) { jsonResp(res, 400, { error: 'Enter the page title before importing ChatGPT HTML.' }); return; }
+          const base = sanitize(String(titleValue)) || 'untitled';
+          const dir = path.join(CONTENT, collection);
+          targetSlug = base;
+          let suffix = 2;
+          while (fs.existsSync(path.join(dir, targetSlug + '.md'))) targetSlug = `${base}-${suffix++}`;
+        }
+        if (!/^[a-z0-9][a-z0-9._-]*$/i.test(targetSlug)) { jsonResp(res, 400, { error: 'Invalid page name.' }); return; }
+        const outputDir = path.join(CONTENT_ASSETS, collection, targetSlug);
+        if (!isInside(CONTENT_ASSETS, outputDir)) { jsonResp(res, 400, { error: 'Invalid asset location.' }); return; }
+        const result = await sortChatGptHtml({
+          source: String(html || ''),
+          outputDir,
+          publicBase: `/content-assets/${collection}/${targetSlug}`,
+        });
+        jsonResp(res, 200, { ...result, targetSlug });
         return;
       }
 
@@ -769,7 +870,9 @@ export function startAdmin(config) {
           // pull below merges two real commits instead of choking on
           // uncommitted edits.
           pruneOrphanUploads();
-          git(['add', 'src/content', 'src/assets/uploads', 'public/documents']);
+          const publishPaths = ['src/content', 'src/assets/uploads', 'public/documents'];
+          if (config.richHtmlImport) publishPaths.push('public/content-assets');
+          git(['add', ...publishPaths]);
           try { git(['diff', '--cached', '--quiet']); }
           catch (_) { git(['commit', '-m', msg]); }
 

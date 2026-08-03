@@ -195,6 +195,7 @@ test('image upload converts to webp and returns the md-relative path', async t =
       method: 'POST', headers: { Origin: base }, body: fd,
     })).json();
     assert.equal(json.error, undefined);
+    assert.equal(json.name, path.basename(json.path));
     assert.match(json.path, /^\.\.\/\.\.\/assets\/uploads\/[\w.-]+\.webp$/);
     const onDisk = path.join(root, 'src/assets/uploads', path.basename(json.path));
     assert.ok(fs.existsSync(onDisk));
