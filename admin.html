@@ -1201,6 +1201,59 @@ const BUILTIN_SHORTCODES = [
     },
   },
   {
+    id: 'sms-button',
+    icon: '📱',
+    label: 'SMS button',
+    tooltip: 'Add a button that opens a new text message with an optional message already filled in',
+    toolbarClass: 'md-tb-photo',
+    panel: {
+      kind: 'fields',
+      ariaLabel: 'Add an SMS button',
+      submitLabel: 'Add SMS button to page',
+      cancelMsg: 'SMS button not added',
+      fields: [
+        {
+          label: 'Mobile number',
+          required: true,
+          hint: 'Spaces are fine. Include the country code when visitors may be outside Australia.',
+          placeholder: 'e.g. 0407 666 999 or +61 407 666 999',
+          pattern: '^(?:sms:)?[+0-9() .-]{6,}$',
+          patternError: 'Enter a mobile number using digits, spaces, brackets, + or -.',
+          remember: true,
+        },
+        {
+          label: 'Pre-filled message',
+          type: 'textarea',
+          rows: 5,
+          hint: 'optional — this appears in the visitor\'s messaging app and can still be edited before sending',
+          placeholder: 'e.g. Hi! I would like to discuss renovating my swimming pool.',
+          remember: true,
+        },
+        { label: 'Button text', value: 'Text Message', placeholder: 'e.g. Text Message' },
+      ],
+    },
+    build: ([numberInput, message, label]) => {
+      const number = String(numberInput || '')
+        .trim()
+        .replace(/^sms:/i, '')
+        .replace(/[^+\d]/g, '');
+      if (!/^\+?\d{6,15}$/.test(number)) return null;
+      const encodedMessage = encodeURIComponent(message || '')
+        .replace(/[!'()*]/g, (char) => '%' + char.charCodeAt(0).toString(16).toUpperCase());
+      const href = 'sms:' + number + (encodedMessage ? '?body=' + encodedMessage : '');
+      const safeLabel = String(label || 'Text Message').replace(/([\\[\]])/g, '\\$1');
+      return {
+        snippet: '**[' + safeLabel + '](' + href + ')**',
+        status: 'SMS button added to the page ✓',
+      };
+    },
+    guide: {
+      example: '**[Text Message](sms:0407666999?body=Hi%20there)**',
+      description: 'A button that opens a new SMS with an optional pre-filled message — use the 📱 SMS button above',
+      justification: 'the phone number and message must be encoded safely',
+    },
+  },
+  {
     // Specifically a PHONE call-to-action (styled by the site's own
     // p:has(> a[href^="tel:"]) rule, or equivalent) — for a call-to-action
     // that links anywhere else (a page, an external URL, an email), use
