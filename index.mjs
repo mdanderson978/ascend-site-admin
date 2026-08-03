@@ -747,6 +747,9 @@ export function startAdmin(config) {
           fs.writeFileSync(filename, matter.stringify(parsed.content, parsed.data), 'utf-8');
         }
         jsonResp(res, 200, { ok: true });
+        return;
+      }
+
       // Sidebar drag-to-reorder for a dynamic collection's orderField (see
       // DYNAMIC_COLLECTIONS[col].orderField). A deliberately narrow sibling
       // to the full content POST above: it touches ONLY the order field in
