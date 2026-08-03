@@ -16,11 +16,15 @@ developer contact details remain in each content repo's `admin.config.mjs`.
 ## Release procedure
 
 1. Create a release branch and update `package.json` plus release notes.
-2. Run `npm ci && npm run verify`.
+2. Run `npm ci && npm run verify && npm run test:e2e`.
 3. Open a pull request; required Verify and CodeQL checks must pass.
 4. Merge the pull request.
 5. Create and push an immutable annotated `vX.Y.Z` tag on the merge commit.
 6. Confirm the content-repo updater workflows detect the release.
+
+For a V2 rollback, pin the last stable 1.x tag. During staged acceptance, a
+site can instead set `adminUi: 'legacy'` without changing its engine version;
+the React interface remains directly available at `/v2` for comparison.
 
 Client-fleet inventory and rollout reporting are private business operations,
 not engine responsibilities. Keep them in a separate private operations

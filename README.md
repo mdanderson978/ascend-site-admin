@@ -3,6 +3,33 @@
 **A simple local CMS that makes Astro websites comfortable for non-technical
 editors—without adding a hosted CMS, database or public admin panel.**
 
+## Ascend Site Admin 2.0
+
+Version 2 replaces the single-file interface with a responsive React and
+TypeScript application while keeping the existing Node content engine and
+`startAdmin(config)` contract unchanged. Existing content repositories,
+field definitions, upload paths, shortcodes and launch scripts require no
+migration.
+
+The compiled application is included in the package under `dist/admin`; a
+consuming site does not install Vite or run a frontend build. The normal admin
+URL opens V2. During rollout, the original interface remains available at
+`/legacy`, and a site can temporarily make it the default with:
+
+```js
+startAdmin({ ...config, adminUi: 'legacy' });
+```
+
+V2 remains available at `/v2` in that mode. Remove the `adminUi` override to
+return to the V2 default.
+
+For engine development, run the content server normally and start the Vite
+frontend with `npm run dev:ui`. Production assets are created with
+`npm run build`; `npm run verify` builds and exercises both interfaces.
+The real-browser workflow suite is `npm run test:e2e` (it uses Microsoft Edge
+by default; set `PLAYWRIGHT_BROWSER_CHANNEL=chromium` in CI after installing
+Playwright Chromium).
+
 Astro is brilliant at producing fast, secure static websites from structured
 content. For a developer, editing that content in Git is straightforward. Open
 a Markdown file, update its YAML frontmatter, add an image with the correct
@@ -110,6 +137,7 @@ content-driven sites:
 
 - edit text, numbers, lists and Markdown;
 - upload images, convert them to WebP and write alt text;
+- paste complete ChatGPT HTML and automatically separate its content, CSS, JavaScript and embedded images;
 - reorder galleries and manage per-photo descriptions;
 - upload and replace PDFs;
 - search field names and saved content across the site;
