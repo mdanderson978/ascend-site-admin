@@ -1,10 +1,12 @@
 import crypto from 'crypto';
 import fsp from 'fs/promises';
 import path from 'path';
+import { parse, serialize } from 'parse5';
 import sharp from 'sharp';
 
 const MAX_IMPORT_BYTES = 15 * 1024 * 1024;
 const MAX_EMBEDDED_IMAGES = 50;
+const DATA_IMAGE_PATTERN = /data:image\/([a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)/gi;
 
 function hash(value) {
   return crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
@@ -16,32 +18,152 @@ function unwrapCodeFence(value) {
   return match ? match[1] : value;
 }
 
-function addClass(attributes, className) {
-  const classPattern = /\sclass\s*=\s*(["'])(.*?)\1/i;
-  if (classPattern.test(attributes)) return attributes.replace(classPattern, (_full, quote, names) => ` class=${quote}${names} ${className}${quote}`);
-  return `${attributes} class="${className}"`;
+function attribute(node, name) {
+  return node.attrs?.find(item => item.name === name);
 }
 
-function addDataMarker(attributes, marker) {
-  return `${attributes} ${marker}=""`;
+function textContent(node) {
+  if (node.nodeName === '#text') return node.value || '';
+  return (node.childNodes || []).map(textContent).join('');
+}
+
+function findElement(node, tagName) {
+  if (node.tagName === tagName) return node;
+  for (const child of node.childNodes || []) {
+    const found = findElement(child, tagName);
+    if (found) return found;
+  }
+  return null;
+}
+
+function addClass(node, className) {
+  const existing = attribute(node, 'class');
+  if (existing) existing.value = `${existing.value} ${className}`.trim();
+  else node.attrs.push({ name: 'class', value: className });
+}
+
+function extractDocument(document, report) {
+  const cssParts = [];
+  const scriptParts = [];
+  const eventScripts = [];
+  let title = '';
+  let description = '';
+
+  function visit(parent) {
+    const children = parent.childNodes || [];
+    for (let index = 0; index < children.length;) {
+      const node = children[index];
+      const tag = node.tagName?.toLowerCase();
+
+      if (tag === 'title') {
+        if (!title) title = textContent(node).trim();
+        children.splice(index, 1);
+        continue;
+      }
+
+      if (tag === 'meta') {
+        if (!description && attribute(node, 'name')?.value.toLowerCase() === 'description') {
+          description = attribute(node, 'content')?.value.trim() || '';
+        }
+        children.splice(index, 1);
+        continue;
+      }
+
+      if (tag === 'base') {
+        children.splice(index, 1);
+        continue;
+      }
+
+      if (tag === 'style') {
+        const css = textContent(node).trim();
+        if (css) cssParts.push(css);
+        report.styleBlocks += 1;
+        children.splice(index, 1);
+        continue;
+      }
+
+      if (tag === 'script') {
+        const type = attribute(node, 'type')?.value.toLowerCase() || '';
+        const src = attribute(node, 'src')?.value || '';
+        if (type !== 'application/ld+json') {
+          if (src) {
+            scriptParts.push(`await new Promise((resolve, reject) => {\n  const script = document.createElement('script');\n  script.src = ${JSON.stringify(src)};\n  script.onload = resolve;\n  script.onerror = reject;\n  document.head.appendChild(script);\n});`);
+            report.externalResources += 1;
+          }
+          const code = textContent(node).trim();
+          if (code) scriptParts.push(code);
+          report.scriptBlocks += 1;
+        }
+        children.splice(index, 1);
+        continue;
+      }
+
+      if (tag === 'link') {
+        const rel = attribute(node, 'rel')?.value.toLowerCase() || '';
+        const href = attribute(node, 'href')?.value || '';
+        if (rel.split(/\s+/).includes('stylesheet') && href) {
+          cssParts.unshift(`@import url(${JSON.stringify(href)});`);
+          report.externalResources += 1;
+        }
+        children.splice(index, 1);
+        continue;
+      }
+
+      if (node.attrs) {
+        const inlineStyle = attribute(node, 'style');
+        if (inlineStyle) {
+          const className = `cms-inline-${hash(inlineStyle.value)}`;
+          cssParts.push(`.${className} { ${inlineStyle.value.trim()} }`);
+          node.attrs = node.attrs.filter(item => item !== inlineStyle);
+          addClass(node, className);
+          report.inlineStyles += 1;
+        }
+
+        for (const eventAttribute of [...node.attrs].filter(item => /^on[a-z]+$/i.test(item.name))) {
+          const eventName = eventAttribute.name.slice(2).toLowerCase();
+          const marker = `data-cms-event-${report.eventHandlers + 1}`;
+          node.attrs = node.attrs.filter(item => item !== eventAttribute);
+          node.attrs.push({ name: marker, value: '' });
+          eventScripts.push(`document.querySelector('[${marker}]')?.addEventListener(${JSON.stringify(eventName)}, function (event) {\n${eventAttribute.value}\n});`);
+          report.eventHandlers += 1;
+        }
+      }
+
+      visit(node);
+      index += 1;
+    }
+  }
+
+  visit(document);
+  const body = findElement(document, 'body');
+  return { html: serialize(body || document), title, description, cssParts, scriptParts, eventScripts };
+}
+
+function collectDataImages(values) {
+  const images = new Set();
+  for (const value of values) {
+    DATA_IMAGE_PATTERN.lastIndex = 0;
+    for (const match of value.matchAll(DATA_IMAGE_PATTERN)) images.add(match[0]);
+  }
+  return [...images];
+}
+
+function replaceEvery(value, replacements) {
+  for (const [from, to] of replacements) value = value.split(from).join(to);
+  return value;
 }
 
 export async function sortChatGptHtml({ source, outputDir, publicBase }) {
   if (typeof source !== 'string' || !source.trim()) throw new Error('Paste the HTML from ChatGPT first.');
   if (Buffer.byteLength(source) > MAX_IMPORT_BYTES) throw new Error('That ChatGPT paste is over 15 MB. Split it into smaller sections and try again.');
 
-  let html = unwrapCodeFence(source).replace(/^\s*<!doctype[^>]*>/i, '');
-  const title = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, '').trim() || '';
-  const description = html.match(/<meta\b[^>]*\bname\s*=\s*["']description["'][^>]*\bcontent\s*=\s*(["'])(.*?)\1[^>]*>/i)?.[2]?.trim()
-    || html.match(/<meta\b[^>]*\bcontent\s*=\s*(["'])(.*?)\1[^>]*\bname\s*=\s*["']description["'][^>]*>/i)?.[2]?.trim()
-    || '';
-
   const report = { images: 0, styleBlocks: 0, inlineStyles: 0, scriptBlocks: 0, eventHandlers: 0, externalResources: 0 };
-  const imageDir = path.join(outputDir, 'images');
-  const dataUrls = [...new Set([...html.matchAll(/data:image\/([a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)/gi)].map(match => match[0]))];
+  const extracted = extractDocument(parse(unwrapCodeFence(source)), report);
+  const dataUrls = collectDataImages([extracted.html, ...extracted.cssParts, ...extracted.scriptParts, ...extracted.eventScripts]);
   if (dataUrls.length > MAX_EMBEDDED_IMAGES) throw new Error(`That paste contains ${dataUrls.length} embedded images. The limit is ${MAX_EMBEDDED_IMAGES} per page.`);
 
   const convertedImages = [];
+  const replacements = [];
   for (const dataUrl of dataUrls) {
     const encoded = dataUrl.slice(dataUrl.indexOf(',') + 1).replace(/\s/g, '');
     const bytes = Buffer.from(encoded, 'base64');
@@ -49,82 +171,24 @@ export async function sortChatGptHtml({ source, outputDir, publicBase }) {
     const filename = `image-${hash(bytes)}.webp`;
     const publicPath = `${publicBase}/images/${filename}`;
     convertedImages.push({ filename, bytes, publicPath });
-    html = html.split(dataUrl).join(publicPath);
+    replacements.push([dataUrl, publicPath]);
   }
   report.images = convertedImages.length;
 
-  const cssParts = [];
-  html = html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (_full, css) => {
-    cssParts.push(css.trim()); report.styleBlocks += 1; return '';
-  });
-
-  const scriptParts = [];
-  html = html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (_full, attributes, code) => {
-    const type = attributes.match(/\btype\s*=\s*(["'])(.*?)\1/i)?.[2]?.toLowerCase() || '';
-    const src = attributes.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2] || '';
-    if (type === 'application/ld+json') return '';
-    if (src) {
-      scriptParts.push(`await new Promise((resolve, reject) => {\n  const script = document.createElement('script');\n  script.src = ${JSON.stringify(src)};\n  script.onload = resolve;\n  script.onerror = reject;\n  document.head.appendChild(script);\n});`);
-      report.externalResources += 1;
-    }
-    if (code.trim()) scriptParts.push(code.trim());
-    report.scriptBlocks += 1;
-    return '';
-  });
-
-  html = html.replace(/<link\b([^>]*)>/gi, (_full, attributes) => {
-    const rel = attributes.match(/\brel\s*=\s*(["'])(.*?)\1/i)?.[2]?.toLowerCase() || '';
-    const href = attributes.match(/\bhref\s*=\s*(["'])(.*?)\1/i)?.[2] || '';
-    if (rel.includes('stylesheet') && href) {
-      cssParts.unshift(`@import url(${JSON.stringify(href)});`);
-      report.externalResources += 1;
-    }
-    return '';
-  });
-
-  const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
-  if (body) html = body[1];
-  html = html
-    .replace(/<\/?(?:html|head|body)\b[^>]*>/gi, '')
-    .replace(/<(?:meta|base)\b[^>]*>/gi, '')
-    .replace(/<title\b[^>]*>[\s\S]*?<\/title>/gi, '');
-
-  const eventScripts = [];
-  html = html.replace(/<([A-Za-z][\w:-]*)([^<>]*?)>/g, (_full, tag, originalAttributes) => {
-    let attributes = originalAttributes;
-    const styleMatch = attributes.match(/\sstyle\s*=\s*(["'])([\s\S]*?)\1/i);
-    if (styleMatch) {
-      const className = `cms-inline-${hash(styleMatch[2])}`;
-      cssParts.push(`.${className} { ${styleMatch[2].trim()} }`);
-      attributes = attributes.replace(styleMatch[0], '');
-      attributes = addClass(attributes, className);
-      report.inlineStyles += 1;
-    }
-
-    const eventPattern = /\s(on[a-z]+)\s*=\s*(["'])([\s\S]*?)\2/i;
-    let eventMatch;
-    while ((eventMatch = attributes.match(eventPattern))) {
-      const eventName = eventMatch[1].slice(2).toLowerCase();
-      const marker = `data-cms-event-${report.eventHandlers + 1}`;
-      attributes = attributes.replace(eventMatch[0], '');
-      attributes = addDataMarker(attributes, marker);
-      eventScripts.push(`document.querySelector('[${marker}]')?.addEventListener(${JSON.stringify(eventName)}, function (event) {\n${eventMatch[3]}\n});`);
-      report.eventHandlers += 1;
-    }
-    return `<${tag}${attributes}>`;
-  });
+  const html = replaceEvery(extracted.html, replacements);
+  const css = replaceEvery(extracted.cssParts.filter(Boolean).join('\n\n').trim(), replacements);
+  const rawScripts = replaceEvery([...extracted.scriptParts, ...extracted.eventScripts].filter(Boolean).join('\n\n').trim(), replacements);
 
   await fsp.rm(outputDir, { recursive: true, force: true });
   await fsp.mkdir(outputDir, { recursive: true });
   if (convertedImages.length) {
+    const imageDir = path.join(outputDir, 'images');
     await fsp.mkdir(imageDir, { recursive: true });
     for (const image of convertedImages) {
       await sharp(image.bytes).webp({ quality: 82 }).toFile(path.join(imageDir, image.filename));
     }
   }
 
-  const css = cssParts.filter(Boolean).join('\n\n').trim();
-  const rawScripts = [...scriptParts, ...eventScripts].filter(Boolean).join('\n\n').trim();
   const js = rawScripts ? `(async () => {\n${rawScripts}\n})();\n` : '';
   const styleName = css ? `page-${hash(css)}.css` : '';
   const scriptName = js ? `page-${hash(js)}.js` : '';
@@ -133,8 +197,8 @@ export async function sortChatGptHtml({ source, outputDir, publicBase }) {
 
   return {
     body: html.trim() + '\n',
-    title,
-    description,
+    title: extracted.title,
+    description: extracted.description,
     assets: {
       style: styleName ? `${publicBase}/${styleName}` : '',
       script: scriptName ? `${publicBase}/${scriptName}` : '',

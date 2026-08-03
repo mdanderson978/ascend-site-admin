@@ -33,10 +33,17 @@ export function sortedSlugs(collection: string, slugs: string[], dynamic: Record
   return [...slugs].sort((a, b) => (order[`${collection}/${a}`] ?? Infinity) - (order[`${collection}/${b}`] ?? Infinity) || a.localeCompare(b));
 }
 
-export function safeStartNote(value: string): string {
-  return value
-    .replace(/<br\b[^>]*>/gi, '<br>')
-    .replace(/<strong\b[^>]*>/gi, '<strong>')
-    .replace(/<\/strong\b[^>]*>/gi, '</strong>')
-    .replace(/<(?!br>|\/?strong>)[^>]*>/gi, '');
+export type StartNotePart = { text?: string; strong?: boolean; break?: boolean };
+
+export function startNoteParts(value: string): StartNotePart[] {
+  const parts: StartNotePart[] = [];
+  let strong = false;
+  for (const token of value.split(/(<br\s*\/?\s*>|<strong>|<\/strong>)/gi)) {
+    if (!token) continue;
+    if (/^<br\s*\/?\s*>$/i.test(token)) parts.push({ break: true });
+    else if (/^<strong>$/i.test(token)) strong = true;
+    else if (/^<\/strong>$/i.test(token)) strong = false;
+    else parts.push({ text: token, strong });
+  }
+  return parts;
 }

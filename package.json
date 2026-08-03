@@ -37,6 +37,7 @@
   "dependencies": {
     "busboy": "^1.6.0",
     "gray-matter": "^4.0.3",
+    "parse5": "^8.0.1",
     "sharp": "^0.35.2"
   },
   "devDependencies": {

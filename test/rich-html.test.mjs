@@ -63,3 +63,19 @@ test('a fenced clean fragment remains ordinary page content without CSS or JavaS
   assert.equal(fs.readdirSync(root).some(file => file.endsWith('.css')), false);
   assert.equal(fs.readdirSync(root).some(file => file.endsWith('.js')), false);
 });
+
+test('the HTML parser separates malformed tags and unquoted executable attributes', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-malformed-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const source = '<!doctype html><html><head><style>.safe{color:green}</style></head><body><button style=color:red onclick=alert(1)>Go</button><script>document.body.dataset.test="yes"</script></body></html>';
+
+  const result = await sortChatGptHtml({ source, outputDir: root, publicBase: '/content-assets/pages/parser-check' });
+
+  assert.doesNotMatch(result.body, /<(?:style|script)\b|\s(?:style|onclick)=/i);
+  assert.match(result.body, /class="cms-inline-/);
+  assert.match(result.body, /data-cms-event-1/);
+  assert.equal(result.report.styleBlocks, 1);
+  assert.equal(result.report.scriptBlocks, 1);
+  assert.equal(result.report.inlineStyles, 1);
+  assert.equal(result.report.eventHandlers, 1);
+});

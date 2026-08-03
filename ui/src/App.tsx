@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api/client';
 import type { AdminConfig, ContentTree, EntryResponse, HistoryVersion, SearchIndex } from './api/types';
 import { ConfirmDialog } from './components/Dialog';
@@ -7,7 +7,7 @@ import { Sidebar } from './components/Sidebar';
 import { ToastRegion, type ToastMessage } from './components/Toasts';
 import { EntryForm, validateEntry } from './features/editor/EntryForm';
 import { HistoryPanel } from './features/history/HistoryPanel';
-import { breadcrumb, humanize, safeStartNote } from './lib/content';
+import { breadcrumb, humanize, startNoteParts } from './lib/content';
 
 type ConfirmState = { kind: 'navigate'; key: string; field?: string } | { kind: 'delete' } | { kind: 'restore'; version: HistoryVersion } | null;
 
@@ -168,7 +168,7 @@ export default function App() {
       </header>
       <div className="mobile-actions"><button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> Save draft</button><button className="button button--primary" disabled={publishing || dirty} onClick={publish}><PublishIcon /> Publish</button></div>
       <div className="content-scroll">
-        {entryLoading ? <div className="loading-page"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div> : entry ? <EntryForm entry={entry} config={config} errors={errors} onDataChange={data => mutateEntry({ ...entry, data })} onBodyChange={body => mutateEntry({ ...entry, body })} onNotice={notify} /> : <section className="welcome-card"><span className="eyebrow">Ascend Site Admin 2.0</span><h2>What would you like to update?</h2><p>{config.startScreenIntro}</p>{config.tasks.length > 0 && <div className="task-grid">{config.tasks.map(task => <button key={`${task.goto}-${task.field || ''}`} onClick={() => openEntry(task.goto, task.field)}><span>{task.label}</span><strong>Open →</strong></button>)}</div>}<div className="welcome-note" dangerouslySetInnerHTML={{ __html: safeStartNote(config.startScreenNote) }} /></section>}
+        {entryLoading ? <div className="loading-page"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div> : entry ? <EntryForm entry={entry} config={config} errors={errors} onDataChange={data => mutateEntry({ ...entry, data })} onBodyChange={body => mutateEntry({ ...entry, body })} onNotice={notify} /> : <section className="welcome-card"><span className="eyebrow">Ascend Site Admin 2.0</span><h2>What would you like to update?</h2><p>{config.startScreenIntro}</p>{config.tasks.length > 0 && <div className="task-grid">{config.tasks.map(task => <button key={`${task.goto}-${task.field || ''}`} onClick={() => openEntry(task.goto, task.field)}><span>{task.label}</span><strong>Open →</strong></button>)}</div>}<div className="welcome-note">{startNoteParts(config.startScreenNote).map((part, index) => part.break ? <br key={index} /> : part.strong ? <strong key={index}>{part.text}</strong> : <Fragment key={index}>{part.text}</Fragment>)}</div></section>}
       </div>
     </main>
     <HistoryPanel open={historyOpen} versions={versions} loading={historyLoading} onClose={() => setHistoryOpen(false)} onRestore={version => setConfirm({ kind: 'restore', version })} />
