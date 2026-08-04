@@ -90,8 +90,25 @@ test('edit, upload, reorder, publish and restore through V2', async ({ page }) =
   await expect(page.getByText('Entry order saved as a draft.')).toBeVisible();
   expect(fs.readFileSync(path.join(root, 'src/content/projects/beta.md'), 'utf8')).toMatch(/order: 1/);
 
+  // Simulate another editor publishing the same page plus an unrelated file
+  // after this browser saved its draft. Publishing must keep this browser's
+  // page while still incorporating the unrelated remote update.
+  const concurrent = fs.mkdtempSync(path.join(os.tmpdir(), 'site-admin-v2-concurrent-'));
+  execFileSync('git', ['clone', remote, concurrent]);
+  execFileSync('git', ['config', 'user.name', 'Concurrent Editor'], { cwd: concurrent });
+  execFileSync('git', ['config', 'user.email', 'concurrent@example.invalid'], { cwd: concurrent });
+  fs.writeFileSync(path.join(concurrent, 'src/content/pages/home.md'), '---\ntitle: Concurrent home\nhero:\n  src: ""\n  alt: ""\n---\nConcurrent page content.\n');
+  fs.writeFileSync(path.join(concurrent, 'remote-note.txt'), 'unrelated remote update\n');
+  execFileSync('git', ['add', '.'], { cwd: concurrent });
+  execFileSync('git', ['commit', '-m', 'Concurrent content update'], { cwd: concurrent });
+  execFileSync('git', ['push'], { cwd: concurrent });
+  fs.rmSync(concurrent, { recursive: true, force: true });
+
   await page.getByRole('button', { name: 'Publish' }).first().click();
   await expect(page.getByText(/Published successfully/)).toBeVisible();
+  const branch = execFileSync('git', ['branch', '--show-current'], { cwd: root, encoding: 'utf8' }).trim();
+  expect(execFileSync('git', [`--git-dir=${remote}`, 'show', `${branch}:src/content/pages/home.md`], { encoding: 'utf8' })).toContain('Updated home');
+  expect(execFileSync('git', [`--git-dir=${remote}`, 'show', `${branch}:remote-note.txt`], { encoding: 'utf8' })).toContain('unrelated remote update');
 
   await page.getByRole('button', { name: 'History' }).click();
   await expect(page.getByRole('heading', { name: 'Version history' })).toBeVisible();

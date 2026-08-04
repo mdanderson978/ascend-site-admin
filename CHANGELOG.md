@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.1 - 2026-08-04
+
+- Publishing now resolves concurrent edits to the same content file in favour of the editor's saved local page while retaining unrelated remote updates.
+- Startup pulls use the same deterministic content-editor policy instead of leaving a checkout in an unresolved merge state.
+
 ## 2.1.0 - 2026-08-04
 
 - Add a page-specific drag-and-drop image library to the ChatGPT HTML workflow.
