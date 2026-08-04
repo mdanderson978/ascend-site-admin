@@ -975,7 +975,11 @@ export function startAdmin(config) {
           // Most of the time this merges cleanly (different pages changed);
           // only a real same-file conflict needs a human.
           try {
-            git(['pull', '--no-rebase', '--no-edit']);
+            // A content editor's just-saved page is authoritative when the
+            // same page changed remotely. Git still merges every unrelated
+            // remote update, while -X ours removes command-line conflict
+            // resolution from the editor's publishing workflow.
+            git(['pull', '--no-rebase', '--no-edit', '-X', 'ours']);
           } catch (pullErr) {
             try { git(['merge', '--abort']); } catch (_) {}
             throw Object.assign(
@@ -1019,7 +1023,7 @@ export function startAdmin(config) {
     // Best-effort: start from the latest content another editor may have
     // published, so this session isn't already stale before anyone types.
     if (config.pullOnStart !== false) {
-      try { git(['pull', '--no-rebase', '--no-edit']); }
+      try { git(['pull', '--no-rebase', '--no-edit', '-X', 'ours']); }
       catch (_) { /* non-fatal — the pull-before-push in /api/git/push still protects publishing */ }
     }
   });
