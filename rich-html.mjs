@@ -169,8 +169,18 @@ export async function sortChatGptHtml({ source, outputDir, publicBase }) {
   const css = replaceEvery(extracted.cssParts.filter(Boolean).join('\n\n').trim(), replacements);
   const rawScripts = replaceEvery([...extracted.scriptParts, ...extracted.eventScripts].filter(Boolean).join('\n\n').trim(), replacements);
 
-  await fsp.rm(outputDir, { recursive: true, force: true });
   await fsp.mkdir(outputDir, { recursive: true });
+  for (const name of await fsp.readdir(outputDir)) {
+    if (/^page-[a-f0-9]+\.(?:css|js)$/i.test(name)) await fsp.rm(path.join(outputDir, name), { force: true });
+  }
+  const existingImageDir = path.join(outputDir, 'images');
+  try {
+    for (const name of await fsp.readdir(existingImageDir)) {
+      if (/^image-[a-f0-9]+\.webp$/i.test(name)) await fsp.rm(path.join(existingImageDir, name), { force: true });
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   if (convertedImages.length) {
     const imageDir = path.join(outputDir, 'images');
     await fsp.mkdir(imageDir, { recursive: true });

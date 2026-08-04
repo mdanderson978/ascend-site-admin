@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
+import sharp from 'sharp';
 import { verifySite } from '../verify-site.mjs';
 import { startAdmin } from '../index.mjs';
 
@@ -122,6 +123,46 @@ test('preview serves legacy src/assets/images alongside uploads, but nothing els
   } finally {
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('page image upload converts to WebP, returns its final public path and remains listable', async t => {
+  const root = fixture();
+  t.after(async () => {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  const server = startAdmin({
+    root, port: 4433, pullOnStart: false, richHtmlImport: true, siteTitle: 'Fixture Site',
+    developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title', type: 'text' }] },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const png = await sharp({ create: { width: 2400, height: 1200, channels: 3, background: '#376b5b' } }).png().toBuffer();
+    const form = new FormData();
+    form.append('file', new Blob([png], { type: 'image/png' }), 'Pool Hero.PNG');
+    form.append('data', JSON.stringify({ title: 'Home' }));
+    const uploadedResponse = await fetch(base + '/api/upload/page-image/pages/home', { method: 'POST', headers: { Origin: base }, body: form });
+    assert.equal(uploadedResponse.status, 200);
+    const uploaded = await uploadedResponse.json();
+    assert.match(uploaded.path, /^\/content-assets\/pages\/home\/images\/\d+-pool-hero\.webp$/);
+    const localPath = path.join(root, 'public', uploaded.path.replace(/^\//, ''));
+    const metadata = await sharp(fs.readFileSync(localPath)).metadata();
+    assert.equal(metadata.format, 'webp');
+    assert.equal(metadata.width, 1920);
+
+    const listedResponse = await fetch(base + '/api/page-images/pages/home', {
+      method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: JSON.stringify({ data: { title: 'Home' } }),
+    });
+    assert.equal(listedResponse.status, 200);
+    const listed = await listedResponse.json();
+    assert.equal(listed.files.length, 1);
+    assert.equal(listed.files[0].path, uploaded.path);
+    const previewResponse = await fetch(base + listed.files[0].preview);
+    assert.equal(previewResponse.status, 200);
+    await previewResponse.arrayBuffer();
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
 });
 
 // Collections not listed in dynamicCollections must keep today's behavior

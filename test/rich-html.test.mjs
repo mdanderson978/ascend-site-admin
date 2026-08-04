@@ -10,6 +10,10 @@ import { sortChatGptHtml } from '../rich-html.mjs';
 test('ChatGPT HTML is separated into safe content, page assets and real image files', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  fs.mkdirSync(path.join(root, 'images'));
+  fs.writeFileSync(path.join(root, 'images', '1700000000000-user-photo.webp'), 'uploaded-page-image');
+  fs.writeFileSync(path.join(root, 'images', 'image-deadbeef1234.webp'), 'stale-embedded-image');
+  fs.writeFileSync(path.join(root, 'page-deadbeef1234.css'), 'stale page CSS');
   const image = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#34765d' } }).png().toBuffer();
   const dataUrl = `data:image/png;base64,${image.toString('base64')}`;
   const source = `<!doctype html><html><head>
@@ -50,8 +54,12 @@ test('ChatGPT HTML is separated into safe content, page assets and real image fi
   assert.match(js, /document\.body\.dataset\.ready/);
   assert.match(js, /addEventListener\("click"/);
   const imageFiles = fs.readdirSync(path.join(root, 'images'));
-  assert.equal(imageFiles.length, 1);
-  assert.equal((await sharp(await fsp.readFile(path.join(root, 'images', imageFiles[0]))).metadata()).format, 'webp');
+  assert.equal(imageFiles.length, 2);
+  assert.ok(imageFiles.includes('1700000000000-user-photo.webp'), 'a page image uploaded before importing must survive');
+  assert.ok(!imageFiles.includes('image-deadbeef1234.webp'), 'obsolete embedded images are replaced');
+  const convertedImage = imageFiles.find(name => name.startsWith('image-'));
+  assert.equal((await sharp(await fsp.readFile(path.join(root, 'images', convertedImage))).metadata()).format, 'webp');
+  assert.ok(!fs.existsSync(path.join(root, 'page-deadbeef1234.css')), 'obsolete generated page CSS is replaced');
 });
 
 test('a fenced clean fragment remains ordinary page content without CSS or JavaScript', async t => {

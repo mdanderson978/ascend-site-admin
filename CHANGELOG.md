@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0 - 2026-08-04
+
+- Add a page-specific drag-and-drop image library to the ChatGPT HTML workflow.
+- Process uploaded JPG, PNG and WebP files into WebP and show their final public
+  paths with individual and bulk copy actions for ChatGPT.
+- Preserve uploaded page images when a later HTML import replaces generated
+  page CSS, JavaScript and embedded-image assets.
+
 ## 2.0.1 - 2026-08-04
 
 - Preserve pasted inline style attributes directly so their browser cascade

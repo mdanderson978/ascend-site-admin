@@ -59,7 +59,13 @@ test('edit, upload, reorder, publish and restore through V2', async ({ page }) =
 
   const embeddedPhoto = `data:image/png;base64,${fs.readFileSync(photoPath).toString('base64')}`;
   await page.getByRole('button', { name: 'Paste ChatGPT HTML' }).click();
-  await page.getByLabel('ChatGPT HTML').fill(`<html><head><style>.creative { color: teal; }</style></head><body><section class="creative" style="display:grid"><h2>Creative content</h2><img src="${embeddedPhoto}" alt="Green test image"><button onclick="this.textContent='Done'">Try it</button><script>document.body.dataset.imported='yes';</script></section></body></html>`);
+  const pageImageChooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /Drop images here or choose files/ }).click();
+  await (await pageImageChooser).setFiles(photoPath);
+  const pageImagePath = await page.locator('.chatgpt-images__list code').textContent();
+  expect(pageImagePath).toMatch(/^\/content-assets\/pages\/home\/images\/\d+-test-photo\.webp$/);
+  await expect(page.getByRole('button', { name: 'Copy all paths for ChatGPT' })).toBeVisible();
+  await page.getByLabel('ChatGPT HTML').fill(`<html><head><style>.creative { color: teal; }</style></head><body><section class="creative" style="display:grid"><h2>Creative content</h2><img src="${pageImagePath}" alt="Uploaded page image"><img src="${embeddedPhoto}" alt="Green test image"><button onclick="this.textContent='Done'">Try it</button><script>document.body.dataset.imported='yes';</script></section></body></html>`);
   await page.getByRole('button', { name: 'Sort into page' }).click();
   await expect(page.getByText('Content sorted successfully')).toBeVisible();
   await expect(page.getByText(/embedded images saved as files/)).toBeVisible();
@@ -78,6 +84,7 @@ test('edit, upload, reorder, publish and restore through V2', async ({ page }) =
   expect(fs.readFileSync(path.join(root, 'src/content/pages/home.md'), 'utf8')).toContain('Creative content');
   expect(fs.readdirSync(path.join(root, 'public/content-assets/pages/home')).some(file => file.endsWith('.css'))).toBe(true);
   expect(fs.readdirSync(path.join(root, 'public/content-assets/pages/home')).some(file => file.endsWith('.js'))).toBe(true);
+  expect(fs.existsSync(path.join(root, 'public', pageImagePath.replace(/^\//, '')))).toBe(true);
 
   await page.getByRole('button', { name: 'Reorder Alpha' }).dragTo(page.getByRole('button', { name: 'Reorder Beta' }));
   await expect(page.getByText('Entry order saved as a draft.')).toBeVisible();

@@ -232,6 +232,19 @@ export function startAdmin(config) {
     return path.join(CONTENT, collection, slug + '.md');
   }
 
+  function richHtmlTargetSlug(collection, requestedSlug, data = {}) {
+    if (requestedSlug !== 'new') return requestedSlug;
+    const dynamic = DYNAMIC[collection];
+    const titleValue = dynamic && data?.[dynamic.titleField];
+    if (!titleValue) throw new Error('Enter the page title before uploading images or importing ChatGPT HTML.');
+    const base = sanitize(String(titleValue)) || 'untitled';
+    const dir = path.join(CONTENT, collection);
+    let targetSlug = base;
+    let suffix = 2;
+    while (fs.existsSync(path.join(dir, targetSlug + '.md'))) targetSlug = `${base}-${suffix++}`;
+    return targetSlug;
+  }
+
   function sanitize(name) {
     return name.toLowerCase().replace(/[^a-z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   }
@@ -401,6 +414,73 @@ export function startAdmin(config) {
       });
       req.pipe(bb);
     });
+  }
+
+  async function handlePageImageUpload(req, collection, requestedSlug) {
+    return new Promise((resolve, reject) => {
+      const bb = Busboy({ headers: req.headers, limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
+      let buffer = null;
+      let tooBig = false;
+      let origName = 'page-image';
+      let data = {};
+
+      bb.on('field', (name, value) => {
+        if (name !== 'data') return;
+        try { data = JSON.parse(value); } catch (_) { data = {}; }
+      });
+      bb.on('file', (_name, file, info) => {
+        origName = path.parse(info.filename || 'page-image').name;
+        const chunks = [];
+        file.on('data', chunk => chunks.push(chunk));
+        file.on('limit', () => { tooBig = true; });
+        file.on('close', () => { buffer = Buffer.concat(chunks); });
+      });
+      bb.on('close', async () => {
+        if (tooBig) { reject(new Error('That image is over 25 MB. Please use a smaller photo.')); return; }
+        if (!buffer) { reject(new Error('No file data')); return; }
+        try {
+          const targetSlug = richHtmlTargetSlug(collection, requestedSlug, data);
+          if (!/^[a-z0-9][a-z0-9._-]*$/i.test(targetSlug)) throw new Error('Invalid page name.');
+          const imageDir = path.join(CONTENT_ASSETS, collection, targetSlug, 'images');
+          if (!isInside(CONTENT_ASSETS, imageDir)) throw new Error('Invalid asset location.');
+          await fsp.mkdir(imageDir, { recursive: true });
+          const baseName = `${Date.now()}-${sanitize(origName) || 'page-image'}`;
+          let outName = `${baseName}.webp`;
+          let suffix = 2;
+          while (fs.existsSync(path.join(imageDir, outName))) outName = `${baseName}-${suffix++}.webp`;
+          const outPath = path.join(imageDir, outName);
+          await sharp(buffer)
+            .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 82 })
+            .toFile(outPath);
+          const publicPath = `/content-assets/${collection}/${targetSlug}/images/${outName}`;
+          resolve({
+            name: outName,
+            path: publicPath,
+            preview: '/api/preview?p=' + encodeURIComponent(relFromRoot(outPath)),
+          });
+        } catch (error) {
+          reject(new Error(error.message?.startsWith('Enter the page title') ? error.message : 'Could not read that image. Please use a JPG, PNG or WebP photo.'));
+        }
+      });
+      req.pipe(bb);
+    });
+  }
+
+  function listPageImages(collection, requestedSlug, data) {
+    const targetSlug = richHtmlTargetSlug(collection, requestedSlug, data);
+    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(targetSlug)) throw new Error('Invalid page name.');
+    const imageDir = path.join(CONTENT_ASSETS, collection, targetSlug, 'images');
+    if (!isInside(CONTENT_ASSETS, imageDir) || !fs.existsSync(imageDir)) return [];
+    return fs.readdirSync(imageDir)
+      .filter(name => /\.(?:webp|jpe?g|png|gif|avif)$/i.test(name))
+      .map(name => ({ name, mtime: fs.statSync(path.join(imageDir, name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime)
+      .map(({ name }) => ({
+        name,
+        path: `/content-assets/${collection}/${targetSlug}/images/${name}`,
+        preview: '/api/preview?p=' + encodeURIComponent(relFromRoot(path.join(imageDir, name))),
+      }));
   }
 
   async function handlePdfUpload(req) {
@@ -787,6 +867,28 @@ export function startAdmin(config) {
         return;
       }
 
+      const pageImageUploadMatch = path_.match(/^\/api\/upload\/page-image\/([^/]+)\/(.+)$/);
+      if (pageImageUploadMatch && req.method === 'POST') {
+        if (!config.richHtmlImport) { jsonResp(res, 404, { error: 'Rich HTML importing is not enabled for this site.' }); return; }
+        const [, collection, requestedSlug] = pageImageUploadMatch;
+        if (!resolveFields(collection, requestedSlug === 'new' ? '_new' : requestedSlug)) { jsonResp(res, 404, { error: 'Page not found.' }); return; }
+        try { jsonResp(res, 200, await handlePageImageUpload(req, collection, requestedSlug)); }
+        catch (e) { jsonResp(res, 400, { error: e.message }); }
+        return;
+      }
+
+      const pageImagesMatch = path_.match(/^\/api\/page-images\/([^/]+)\/(.+)$/);
+      if (pageImagesMatch && req.method === 'POST') {
+        if (!config.richHtmlImport) { jsonResp(res, 404, { error: 'Rich HTML importing is not enabled for this site.' }); return; }
+        const [, collection, requestedSlug] = pageImagesMatch;
+        if (!resolveFields(collection, requestedSlug === 'new' ? '_new' : requestedSlug)) { jsonResp(res, 404, { error: 'Page not found.' }); return; }
+        try {
+          const { data } = await parseJsonBody(req);
+          jsonResp(res, 200, { files: listPageImages(collection, requestedSlug, data || {}) });
+        } catch (e) { jsonResp(res, 400, { error: e.message }); }
+        return;
+      }
+
       if (path_ === '/api/upload/pdf' && req.method === 'POST') {
         try { jsonResp(res, 200, await handlePdfUpload(req)); }
         catch (e) { jsonResp(res, 400, { error: e.message }); }
@@ -800,17 +902,9 @@ export function startAdmin(config) {
         const fieldTemplate = resolveFields(collection, requestedSlug === 'new' ? '_new' : requestedSlug);
         if (!fieldTemplate) { jsonResp(res, 404, { error: 'Page not found.' }); return; }
         const { html, data } = await parseJsonBody(req);
-        let targetSlug = requestedSlug;
-        if (requestedSlug === 'new') {
-          const dynamic = DYNAMIC[collection];
-          const titleValue = dynamic && data?.[dynamic.titleField];
-          if (!titleValue) { jsonResp(res, 400, { error: 'Enter the page title before importing ChatGPT HTML.' }); return; }
-          const base = sanitize(String(titleValue)) || 'untitled';
-          const dir = path.join(CONTENT, collection);
-          targetSlug = base;
-          let suffix = 2;
-          while (fs.existsSync(path.join(dir, targetSlug + '.md'))) targetSlug = `${base}-${suffix++}`;
-        }
+        let targetSlug;
+        try { targetSlug = richHtmlTargetSlug(collection, requestedSlug, data); }
+        catch (e) { jsonResp(res, 400, { error: e.message }); return; }
         if (!/^[a-z0-9][a-z0-9._-]*$/i.test(targetSlug)) { jsonResp(res, 400, { error: 'Invalid page name.' }); return; }
         const outputDir = path.join(CONTENT_ASSETS, collection, targetSlug);
         if (!isInside(CONTENT_ASSETS, outputDir)) { jsonResp(res, 400, { error: 'Invalid asset location.' }); return; }
@@ -848,7 +942,7 @@ export function startAdmin(config) {
         // (src/assets/images, etc.) — buildPreviews() resolves image fields
         // to wherever the content file's frontmatter actually points, which
         // for pre-CMS content is anywhere under src/assets, not just uploads.
-        if ((!isInside(ASSETS, abs) && !isInside(DOCS, abs)) || !isInside(ROOT, abs)) {
+        if ((!isInside(ASSETS, abs) && !isInside(DOCS, abs) && !isInside(CONTENT_ASSETS, abs)) || !isInside(ROOT, abs)) {
           res.writeHead(403); res.end('Forbidden'); return;
         }
         if (!fs.existsSync(abs)) { res.writeHead(404); res.end('Not found'); return; }

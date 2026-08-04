@@ -137,7 +137,7 @@ content-driven sites:
 
 - edit text, numbers, lists and Markdown;
 - upload images, convert them to WebP and write alt text;
-- paste complete ChatGPT HTML and automatically separate its content, CSS, JavaScript and embedded images;
+- upload page-specific images, copy their final processed WebP paths for ChatGPT, then paste complete ChatGPT HTML and automatically separate its content, CSS, JavaScript and embedded images;
 - reorder galleries and manage per-photo descriptions;
 - upload and replace PDFs;
 - search field names and saved content across the site;

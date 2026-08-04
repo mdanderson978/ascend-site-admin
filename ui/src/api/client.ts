@@ -28,6 +28,7 @@ export const api = {
   restore: (key: string, sha: string) => request<{ ok: boolean; restoredFiles?: string[]; error?: string }>(`/api/restore/${key}`, json({ sha })),
   publish: (message = 'Content update') => request<{ ok: boolean; output?: string }>('/api/git/push', json({ message })),
   uploads: () => request<{ files: UploadImage[] }>('/api/uploads'),
+  pageImages: (key: string, data: ContentData) => request<{ files: UploadImage[] }>(`/api/page-images/${key}`, json({ data })),
   importChatGptHtml: (key: string, html: string, data: ContentData) => request<RichHtmlImportResult>(`/api/import/chatgpt/${key}`, json({ html, data })),
   order: (collection: string, slugs: string[]) => request<{ ok: boolean }>(`/api/order/${collection}`, json({ slugs })),
   uploadImage: (file: File, imageType: string, onProgress?: (percent: number) => void) => new Promise<UploadImage>((resolve, reject) => {
@@ -36,6 +37,22 @@ export const api = {
     data.append('imageType', imageType);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload/image');
+    xhr.responseType = 'json';
+    xhr.upload.onprogress = event => event.lengthComputable && onProgress?.(Math.round((event.loaded / event.total) * 100));
+    xhr.onerror = () => reject(new Error('The upload could not be completed.'));
+    xhr.onload = () => {
+      const result = xhr.response || {};
+      if (xhr.status >= 200 && xhr.status < 300 && !result.error) resolve(result);
+      else reject(new Error(result.error || `Upload failed (${xhr.status})`));
+    };
+    xhr.send(data);
+  }),
+  uploadPageImage: (key: string, file: File, contentData: ContentData, onProgress?: (percent: number) => void) => new Promise<UploadImage>((resolve, reject) => {
+    const data = new FormData();
+    data.append('file', file);
+    data.append('data', JSON.stringify(contentData));
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/upload/page-image/${key}`);
     xhr.responseType = 'json';
     xhr.upload.onprogress = event => event.lengthComputable && onProgress?.(Math.round((event.loaded / event.total) * 100));
     xhr.onerror = () => reject(new Error('The upload could not be completed.'));
