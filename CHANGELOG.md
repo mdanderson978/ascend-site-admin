@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.0 - 2026-08-12
+
+- Add drag-and-drop upload to single-image fields (Hero Image, Hub Card
+  Image, etc.) — dropping a photo onto the field uploads it directly,
+  matching the ChatGPT HTML image workflow's existing drop zone.
+- Fix a single-image field showing the wrong photo after a fresh pick or
+  drop: the preview preferred the server's once-computed, never-refreshed
+  `preview` snapshot over the field's own current value, so the old photo
+  kept reappearing no matter what was newly selected. The field's live
+  value now takes priority, matching the pattern the multi-image field
+  already used.
+
 ## 2.1.1 - 2026-08-04
 
 - Publishing now resolves concurrent edits to the same content file in favour of the editor's saved local page while retaining unrelated remote updates.
