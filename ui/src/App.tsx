@@ -3,6 +3,7 @@ import { api } from './api/client';
 import type { AdminConfig, ContentTree, EntryResponse, HistoryVersion, SearchIndex } from './api/types';
 import { ConfirmDialog } from './components/Dialog';
 import { ExternalIcon, HistoryIcon, MenuIcon, PublishIcon, SaveIcon, TrashIcon } from './components/Icons';
+import { PublishBanner, type PublishFailure } from './components/PublishBanner';
 import { Sidebar } from './components/Sidebar';
 import { ToastRegion, type ToastMessage } from './components/Toasts';
 import { EntryForm, validateEntry } from './features/editor/EntryForm';
@@ -30,6 +31,7 @@ export default function App() {
   const [versions, setVersions] = useState<HistoryVersion[]>([]);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [publishFailure, setPublishFailure] = useState<PublishFailure | null>(null);
 
   const notify = useCallback((message: string, kind: ToastMessage['kind'] = 'info') => {
     setToasts(current => [...current, { id: Date.now() + Math.random(), message, kind }]);
@@ -98,12 +100,12 @@ export default function App() {
 
   const publish = async () => {
     if (dirty) { notify('Save your draft before publishing.', 'error'); return; }
-    setPublishing(true);
+    setPublishing(true); setPublishFailure(null);
     try {
       const response = await api.publish();
-      if (!response.ok) throw new Error(response.output || 'Publishing failed.');
+      if (!response.ok) { setPublishFailure({ summary: 'Something went wrong publishing your changes.', output: response.output }); return; }
       setDraftSaved(false); notify('Published successfully. The live site is rebuilding now.', 'success');
-    } catch (error) { notify((error as Error).message, 'error'); }
+    } catch (error) { setPublishFailure({ summary: (error as Error).message }); }
     finally { setPublishing(false); }
   };
 
@@ -173,6 +175,7 @@ export default function App() {
     </main>
     <HistoryPanel open={historyOpen} versions={versions} loading={historyLoading} onClose={() => setHistoryOpen(false)} onRestore={version => setConfirm({ kind: 'restore', version })} />
     {confirmDetails && <ConfirmDialog open title={confirmDetails.title} description={confirmDetails.description} confirmLabel={confirmDetails.label} danger={confirmDetails.danger} onCancel={() => setConfirm(null)} onConfirm={acceptConfirm} />}
+    {publishFailure && <PublishBanner failure={publishFailure} onDismiss={() => setPublishFailure(null)} />}
     <ToastRegion toasts={toasts} dismiss={dismissToast} />
   </div>;
 }
