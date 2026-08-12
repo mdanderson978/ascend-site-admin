@@ -131,6 +131,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--focus) !importan
 .image-preview > img { width: 100%; max-height: 360px; display: block; object-fit: cover; }
 .image-preview__actions { display: flex; align-items: center; gap: .5rem; padding: .6rem; }
 .image-preview__actions .danger { margin-left: auto; }
+.image-field.is-dragging .media-empty { border-color: var(--brand-700); color: var(--brand-700); background: #eef4f1; }
+.image-field.is-dragging .image-preview { outline: 2px dashed var(--brand-700); outline-offset: 2px; }
 .subfield { max-width: 650px; display: block; margin-top: .8rem; }
 .subfield > span, .dialog-form label > span, .photo-details label > span { display: block; margin-bottom: .35rem; color: var(--ink-soft); font-size: .75rem; font-weight: 700; }
 .subfield em, .dialog-form em, .photo-details em { color: var(--danger); font-style: normal; }

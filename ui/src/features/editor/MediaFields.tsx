@@ -19,16 +19,11 @@ async function imageDimensions(file: File): Promise<{ width: number; height: num
   return dimensions;
 }
 
-export function MediaPicker({ open, imageType, preset, onClose, onPick, onNotice }: { open: boolean; imageType: string; preset?: ImagePreset; onClose: () => void; onPick: (file: UploadImage) => void; onNotice: SharedProps['onNotice'] }) {
-  const [files, setFiles] = useState<UploadImage[]>([]);
-  const [loading, setLoading] = useState(false);
+// Shared by MediaPicker's "Upload new photo" button and ImageField's drop
+// zone so both paths get identical size-limit / minimum-dimension checks
+// and identical error copy instead of drifting apart.
+function useImageUpload(imageType: string, preset: ImagePreset | undefined, onNotice: SharedProps['onNotice'], onUploaded: (file: UploadImage) => void) {
   const [progress, setProgress] = useState<number | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    setLoading(true);
-    api.uploads().then(result => setFiles(result.files)).catch(error => onNotice(error.message, 'error')).finally(() => setLoading(false));
-  }, [open, onNotice]);
   const upload = async (file?: File) => {
     if (!file) return;
     try {
@@ -39,10 +34,23 @@ export function MediaPicker({ open, imageType, preset, onClose, onPick, onNotice
       }
       setProgress(0);
       const uploaded = await api.uploadImage(file, imageType, setProgress);
-      onPick(uploaded); onClose(); onNotice('Photo uploaded and ready to save.', 'success');
+      onUploaded(uploaded); onNotice('Photo uploaded and ready to save.', 'success');
     } catch (error) { onNotice((error as Error).message, 'error'); }
     finally { setProgress(null); }
   };
+  return { upload, progress };
+}
+
+export function MediaPicker({ open, imageType, preset, onClose, onPick, onNotice }: { open: boolean; imageType: string; preset?: ImagePreset; onClose: () => void; onPick: (file: UploadImage) => void; onNotice: SharedProps['onNotice'] }) {
+  const [files, setFiles] = useState<UploadImage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    api.uploads().then(result => setFiles(result.files)).catch(error => onNotice(error.message, 'error')).finally(() => setLoading(false));
+  }, [open, onNotice]);
+  const { upload, progress } = useImageUpload(imageType, preset, onNotice, file => { onPick(file); onClose(); });
   return <Dialog open={open} title="Choose a photo" onClose={onClose} actions={<><input ref={input} hidden type="file" accept="image/*" onChange={event => upload(event.target.files?.[0])} /><button className="button button--primary" onClick={() => input.current?.click()}>{progress === null ? 'Upload new photo' : `Uploading ${progress}%`}</button><button className="button button--quiet" onClick={onClose}>Cancel</button></>}>
     <p className="dialog-copy">Reuse a recent photo, or upload a JPG, PNG or WebP image.</p>
     <div className="media-library">{loading ? <div className="loading-line">Loading photos…</div> : files.length ? files.map(file => <button key={file.path} onClick={() => { onPick(file); onClose(); }}><img src={file.preview} alt="" /><span>{file.name}</span></button>) : <div className="empty-small">No uploaded photos yet.</div>}</div>
@@ -51,12 +59,29 @@ export function MediaPicker({ open, imageType, preset, onClose, onPick, onNotice
 
 export function ImageField({ field, value, onChange, onNotice, preview, preset }: SharedProps & { preview?: string; preset?: ImagePreset }) {
   const [picker, setPicker] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const image = imageValue(value);
-  const src = preview || previewForPath(image.src);
-  return <div className="image-field">
-    {image.src ? <div className="image-preview"><img src={src} alt={image.alt || ''} /><div className="image-preview__actions"><button className="button button--quiet" onClick={() => setPicker(true)}>Replace photo</button><button className="icon-button danger" onClick={() => onChange(null)} aria-label={`Remove ${field.label}`}><TrashIcon /></button></div></div> : <button className="media-empty" onClick={() => setPicker(true)}><span className="media-empty__icon">＋</span><strong>Add a photo</strong><span>Upload new or choose an existing image</span></button>}
+  // Prefer a preview derived from the field's CURRENT value over the
+  // `preview` prop, which is a snapshot computed server-side once when the
+  // entry loaded and never refreshed for the rest of the editing session.
+  // Falling back to `preview` first meant that after picking or dropping a
+  // new photo, the old photo kept displaying (and previewForPath() can
+  // resolve any src this field ever holds, so the fallback is effectively
+  // only for a not-yet-normalised value). Matches the order ImagesField
+  // already uses below for the same reason.
+  const src = previewForPath(image.src) || preview;
+  const imageType = field.size || field.imageType || 'hero';
+  const { upload, progress } = useImageUpload(imageType, preset, onNotice, file => onChange({ src: file.path, alt: image.alt || '' }));
+  return <div
+    className={`image-field ${dragging ? 'is-dragging' : ''}`}
+    onDragEnter={event => { event.preventDefault(); setDragging(true); }}
+    onDragOver={event => event.preventDefault()}
+    onDragLeave={() => setDragging(false)}
+    onDrop={event => { event.preventDefault(); setDragging(false); upload(event.dataTransfer.files[0]); }}
+  >
+    {image.src ? <div className="image-preview"><img src={src} alt={image.alt || ''} /><div className="image-preview__actions"><button className="button button--quiet" onClick={() => setPicker(true)}>Replace photo</button><button className="icon-button danger" onClick={() => onChange(null)} aria-label={`Remove ${field.label}`}><TrashIcon /></button></div></div> : <button className="media-empty" onClick={() => setPicker(true)}><span className="media-empty__icon">＋</span><strong>{progress !== null ? `Uploading ${progress}%` : 'Add a photo'}</strong><span>Drop an image here, or click to upload or choose an existing one</span></button>}
     {image.src && <label className="subfield"><span>Image description {field.required && <em>required</em>}</span><input value={image.alt || ''} placeholder="Describe what is visible in the photo" onChange={event => onChange({ ...image, alt: event.target.value })} /></label>}
-    <MediaPicker open={picker} imageType={field.size || field.imageType || 'hero'} preset={preset} onClose={() => setPicker(false)} onPick={picked => onChange({ src: picked.path, alt: image.alt || '' })} onNotice={onNotice} />
+    <MediaPicker open={picker} imageType={imageType} preset={preset} onClose={() => setPicker(false)} onPick={picked => onChange({ src: picked.path, alt: image.alt || '' })} onNotice={onNotice} />
   </div>;
 }
 
