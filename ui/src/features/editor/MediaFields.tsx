@@ -19,19 +19,24 @@ async function imageDimensions(file: File): Promise<{ width: number; height: num
   return dimensions;
 }
 
-// Shared by MediaPicker's "Upload new photo" button and ImageField's drop
-// zone so both paths get identical size-limit / minimum-dimension checks
-// and identical error copy instead of drifting apart.
-function useImageUpload(imageType: string, preset: ImagePreset | undefined, onNotice: SharedProps['onNotice'], onUploaded: (file: UploadImage) => void) {
+// Shared by every upload path (MediaPicker's "Upload new photo" button,
+// ImageField's and ImagesField's drop zones, MarkdownEditor's drop-to-insert)
+// so all of them get identical size-limit / minimum-dimension checks and
+// identical error copy instead of drifting apart.
+async function validateImage(file: File, preset: ImagePreset | undefined): Promise<void> {
+  if (file.size > 25 * 1024 * 1024) throw new Error('That image is over 25 MB. Please use a smaller photo.');
+  if (preset?.w || preset?.h) {
+    const dimensions = await imageDimensions(file);
+    if ((preset.w && dimensions.width < preset.w) || (preset.h && dimensions.height < preset.h)) throw new Error(`That photo is too small. Please choose one ${preset.label || `at least ${preset.w || 0} × ${preset.h || 0} px`}.`);
+  }
+}
+
+export function useImageUpload(imageType: string, preset: ImagePreset | undefined, onNotice: SharedProps['onNotice'], onUploaded: (file: UploadImage) => void) {
   const [progress, setProgress] = useState<number | null>(null);
   const upload = async (file?: File) => {
     if (!file) return;
     try {
-      if (file.size > 25 * 1024 * 1024) throw new Error('That image is over 25 MB. Please use a smaller photo.');
-      if (preset?.w || preset?.h) {
-        const dimensions = await imageDimensions(file);
-        if ((preset.w && dimensions.width < preset.w) || (preset.h && dimensions.height < preset.h)) throw new Error(`That photo is too small. Please choose one ${preset.label || `at least ${preset.w || 0} × ${preset.h || 0} px`}.`);
-      }
+      await validateImage(file, preset);
       setProgress(0);
       const uploaded = await api.uploadImage(file, imageType, setProgress);
       onUploaded(uploaded); onNotice('Photo uploaded and ready to save.', 'success');
@@ -88,11 +93,34 @@ export function ImageField({ field, value, onChange, onNotice, preview, preset }
 export function ImagesField({ field, value, onChange, onNotice, previews = [], preset }: SharedProps & { previews?: Array<string | null>; preset?: ImagePreset }) {
   const [picker, setPicker] = useState(false);
   const [dragged, setDragged] = useState<number | null>(null);
+  const [dropping, setDropping] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const images = useMemo(() => Array.isArray(value) ? value.map(item => imageValue(item as ContentValue)) : [], [value]);
+  const imageType = field.size || field.imageType || 'gallery';
   const update = (index: number, patch: Partial<ImageValue>) => onChange(images.map((item, i) => i === index ? { ...item, ...patch } : item));
   const move = (from: number, to: number) => {
     if (to < 0 || to >= images.length || from === to) return;
     const next = [...images]; const [item] = next.splice(from, 1); next.splice(to, 0, item); onChange(next);
+  };
+  // Accumulates into a local `next` rather than reading the `images` prop
+  // on each iteration — the parent's state (and therefore this component's
+  // `value` prop) doesn't update until React re-renders between awaits, so
+  // reading `images` again after the first upload would silently drop it.
+  const uploadFiles = async (files: FileList | File[]) => {
+    setUploadingFiles(true);
+    let next = images;
+    let uploaded = 0;
+    for (const file of Array.from(files)) {
+      try {
+        await validateImage(file, preset);
+        const result = await api.uploadImage(file, imageType);
+        next = [...next, { src: result.path, alt: '' }];
+        onChange(next);
+        uploaded += 1;
+      } catch (error) { onNotice(`${file.name}: ${(error as Error).message}`, 'error'); }
+    }
+    setUploadingFiles(false);
+    if (uploaded) onNotice(`${uploaded} photo${uploaded === 1 ? '' : 's'} uploaded — describe each one under its picture.`, 'success');
   };
   return <div className="gallery-field">
     <div className="gallery-list">{images.map((image, index) => <article key={`${image.src}-${index}`} className="gallery-card" draggable onDragStart={() => setDragged(index)} onDragOver={event => event.preventDefault()} onDrop={() => { if (dragged !== null) move(dragged, index); setDragged(null); }}>
@@ -101,8 +129,16 @@ export function ImagesField({ field, value, onChange, onNotice, previews = [], p
       <label><span>Photo {index + 1} description</span><input value={image.alt || ''} onChange={event => update(index, { alt: event.target.value })} placeholder="Describe this photo" /></label>
       <div className="reorder-actions"><button onClick={() => move(index, index - 1)} disabled={index === 0} aria-label={`Move photo ${index + 1} up`}>↑</button><button onClick={() => move(index, index + 1)} disabled={index === images.length - 1} aria-label={`Move photo ${index + 1} down`}>↓</button><button className="danger" onClick={() => onChange(images.filter((_, i) => i !== index))} aria-label={`Remove photo ${index + 1}`}><TrashIcon /></button></div>
     </article>)}</div>
-    <button className="button button--secondary add-row" onClick={() => setPicker(true)}>＋ Add photo</button>
-    <MediaPicker open={picker} imageType={field.size || field.imageType || 'gallery'} preset={preset} onClose={() => setPicker(false)} onPick={picked => onChange([...images, { src: picked.path, alt: '' }])} onNotice={onNotice} />
+    <button
+      className={`button button--secondary add-row ${dropping ? 'is-dragging' : ''}`}
+      disabled={uploadingFiles}
+      onClick={() => setPicker(true)}
+      onDragEnter={event => { event.preventDefault(); setDropping(true); }}
+      onDragOver={event => event.preventDefault()}
+      onDragLeave={() => setDropping(false)}
+      onDrop={event => { event.preventDefault(); setDropping(false); if (event.dataTransfer.files.length) void uploadFiles(event.dataTransfer.files); }}
+    >{uploadingFiles ? 'Uploading…' : '＋ Add photo, or drop images here'}</button>
+    <MediaPicker open={picker} imageType={imageType} preset={preset} onClose={() => setPicker(false)} onPick={picked => onChange([...images, { src: picked.path, alt: '' }])} onNotice={onNotice} />
   </div>;
 }
 

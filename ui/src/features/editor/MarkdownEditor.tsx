@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { AdminConfig, ContentData, ShortcodeEntry, ShortcodeField, UploadImage } from '../../api/types';
 import { Dialog } from '../../components/Dialog';
-import { MediaPicker } from './MediaFields';
+import { MediaPicker, useImageUpload } from './MediaFields';
 import { previewForPath } from '../../lib/content';
 import { ChatGptHtmlImport } from './ChatGptAssets';
 
@@ -100,6 +100,12 @@ export function MarkdownEditor({ value, onChange, config, pageKey, data, onNotic
   const [photoMode, setPhotoMode] = useState<'plain' | 'linked' | null>(null);
   const [pickedPhoto, setPickedPhoto] = useState<UploadImage | null>(null);
   const [photoAlt, setPhotoAlt] = useState(''); const [photoTitle, setPhotoTitle] = useState(''); const [photoLink, setPhotoLink] = useState('');
+  const [dragging, setDragging] = useState(false);
+  // Dropping a photo straight onto the text box uploads it and opens the
+  // same "describe this photo" panel the toolbar's Photo button uses —
+  // dropping never skips the required alt text, it just skips picking from
+  // the toolbar first.
+  const { upload: uploadDropped } = useImageUpload('gallery', config.imageSizes.gallery, onNotice, file => { setPickedPhoto(file); setPhotoMode('plain'); });
   const ids = config.shortcodes?.include || DEFAULT_SHORTCODES;
   const shortcodes = [...ids.flatMap(id => BUILTINS[id] ? [BUILTINS[id]] : []), ...(config.shortcodes?.custom || [])];
   const replaceSelection = (before: string, after = '', placeholder = 'text') => {
@@ -135,7 +141,21 @@ export function MarkdownEditor({ value, onChange, config, pageKey, data, onNotic
       {config.richHtmlImport && <button className="chatgpt-assets-button" onClick={() => setChatGptImportOpen(true)} title="Paste a complete ChatGPT page and sort its assets automatically">Paste ChatGPT HTML</button>}
       <button className={`preview-toggle ${preview ? 'active' : ''}`} onClick={() => setPreview(current => !current)}>{preview ? 'Edit' : 'Preview'}</button>
     </div>
-    {preview ? <div className="markdown-preview"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({ src, ...props }) => <img {...props} src={previewForPath(src || '')} /> }}>{value}</ReactMarkdown></div> : <textarea ref={textarea} className="markdown-textarea" rows={18} value={value} onChange={event => onChange(event.target.value)} />}
+    {preview ? <div className="markdown-preview"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({ src, ...props }) => <img {...props} src={previewForPath(src || '')} /> }}>{value}</ReactMarkdown></div> : <textarea
+      ref={textarea}
+      className={`markdown-textarea ${dragging ? 'is-dragging' : ''}`}
+      rows={18}
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      onDragEnter={event => { event.preventDefault(); setDragging(true); }}
+      onDragOver={event => event.preventDefault()}
+      onDragLeave={() => setDragging(false)}
+      onDrop={event => {
+        const file = event.dataTransfer.files[0];
+        if (!file || !file.type.startsWith('image/')) { setDragging(false); return; }
+        event.preventDefault(); setDragging(false); void uploadDropped(file);
+      }}
+    />}
     <ShortcodeDialog entry={dialogEntry} open={Boolean(dialogEntry)} onClose={() => setDialogEntry(null)} onInsert={text => { insertBlock(text); onNotice('Advanced content added.', 'success'); }} />
     <ChatGptHtmlImport open={chatGptImportOpen} pageKey={pageKey} data={data} onClose={() => setChatGptImportOpen(false)} onApply={result => onChange(result.body)} onNotice={onNotice} />
     <MediaPicker open={Boolean(photoMode) && !pickedPhoto} imageType="gallery" preset={config.imageSizes.gallery} onClose={() => setPhotoMode(null)} onPick={setPickedPhoto} onNotice={onNotice} />

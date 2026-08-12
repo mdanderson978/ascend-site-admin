@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ImageField } from './MediaFields';
+import { ImageField, ImagesField } from './MediaFields';
 import { api } from '../../api/client';
 import type { FieldConfig } from '../../api/types';
 
@@ -57,5 +57,30 @@ describe('ImageField', () => {
     fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith({ src: '../../assets/uploads/dropped.webp', alt: '' }));
+  });
+});
+
+const arrayField: FieldConfig = { name: 'gallery_photos', label: 'Photos', type: 'images' };
+
+describe('ImagesField', () => {
+  it('uploads multiple dropped files and appends all of them, not just the last one', async () => {
+    // Each onChange call only sees the `value` prop as of the last render,
+    // which does not update mid-loop between awaited uploads — appending by
+    // reading that stale prop on each iteration would silently drop earlier
+    // files instead of accumulating them.
+    vi.mocked(api.uploadImage)
+      .mockResolvedValueOnce({ path: '../../assets/uploads/one.webp', name: 'one.webp', preview: '' })
+      .mockResolvedValueOnce({ path: '../../assets/uploads/two.webp', name: 'two.webp', preview: '' });
+    const onChange = vi.fn();
+    render(<ImagesField field={arrayField} value={[]} onChange={onChange} onNotice={vi.fn()} />);
+
+    const dropzone = screen.getByText(/Add photo/);
+    const files = [new File(['a'], 'one.webp', { type: 'image/webp' }), new File(['b'], 'two.webp', { type: 'image/webp' })];
+    fireEvent.drop(dropzone, { dataTransfer: { files } });
+
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith([
+      { src: '../../assets/uploads/one.webp', alt: '' },
+      { src: '../../assets/uploads/two.webp', alt: '' },
+    ]));
   });
 });

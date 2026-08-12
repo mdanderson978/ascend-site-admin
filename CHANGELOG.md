@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.3.0 - 2026-08-12
+
+Closes the remaining gaps between the React admin (introduced in 2.0.0) and
+the legacy single-file interface it replaced, found by direct comparison
+against `admin.html` after a client reported drag-and-drop working "before."
+
+- Add drag-and-drop to the markdown editor's page-content text box —
+  dropping a photo onto it while writing uploads it and opens the same
+  required-alt-text panel the toolbar's Photo button uses, instead of
+  requiring the toolbar every time.
+- Add drag-and-drop to multi-image ("gallery") fields' "+ Add photo" zone,
+  including multiple files in one drop, alongside the existing drag-to-
+  reorder for photos already added.
+- Replace the publish-failure toast, which showed the same detail as the
+  legacy banner but auto-dismissed after 8 seconds, with a persistent
+  banner that stays until the editor dismisses it — a failed publish can
+  mean the live site did not update, so its detail is no longer easy to
+  miss.
+
 ## 2.2.0 - 2026-08-12
 
 - Add drag-and-drop upload to single-image fields (Hero Image, Hub Card
