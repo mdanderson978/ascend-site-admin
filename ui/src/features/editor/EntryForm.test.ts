@@ -29,6 +29,12 @@ describe('validateEntry', () => {
     ], { category: 'tiling' })).toEqual({});
   });
 
+  it('accepts a value outside the suggested options for allowCustom select fields', () => {
+    expect(validateEntry([
+      { name: 'category', label: 'Category', type: 'select', allowCustom: true, options: [{ value: 'Tiling', label: 'Tiling' }] },
+    ], { category: 'Underwater Lighting' })).toEqual({});
+  });
+
   it('requires accessible descriptions for single images and galleries', () => {
     const errors = validateEntry([
       { name: 'hero', label: 'Hero image', type: 'image' },

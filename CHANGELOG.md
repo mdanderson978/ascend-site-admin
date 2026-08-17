@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.0 - 2026-08-17
+
+- Add `allowCustom: true` to the `select` field type: renders a text
+  input with a `<datalist>` of `field.options` instead of a strict
+  `<select>`, so the editor can pick a suggested value or type a new
+  one — for fields whose vocabulary should stay open-ended (e.g. a
+  project category site owners will keep adding to) rather than fixed
+  by whoever wrote `admin.config.mjs`. `select` without `allowCustom`
+  keeps the exhaustive-dropdown behaviour from 2.4.0 unchanged.
+
 ## 2.4.0 - 2026-08-17
 
 - Add a `select` field type: a fixed-choice dropdown (`field.options: {

@@ -45,6 +45,10 @@ function Field({ field, value, body, preview, config, entryKey, allData, error, 
   else if (type === 'list') control = <ListField value={value} onChange={onChange} />;
   else if (type === 'pdf') control = <PdfField field={field} value={value} onChange={onChange} onNotice={onNotice} />;
   else if (type === 'pdfs') control = <PdfsField field={field} value={value} onChange={onChange} onNotice={onNotice} />;
+  else if (type === 'select' && field.allowCustom) control = <>
+    <input id={id} type="text" list={`${id}-options`} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />
+    <datalist id={`${id}-options`}>{(field.options || []).map(opt => <option key={opt.value} value={opt.value} />)}</datalist>
+  </>;
   else if (type === 'select') control = <select id={id} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)}><option value="">— Choose —</option>{(field.options || []).map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>;
   else control = <input id={id} type="text" value={value == null ? '' : String(value)} maxLength={field.maxLength} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
 

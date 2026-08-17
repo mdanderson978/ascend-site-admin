@@ -21,8 +21,13 @@ export interface FieldConfig {
   imageType?: string;
   min?: number;
   max?: number;
-  /** type: 'select' only — the fixed list of choices shown in the dropdown. */
+  /** type: 'select' only — suggested choices. With allowCustom unset/false
+   *  this is the exhaustive, enforced list (a plain <select>). With
+   *  allowCustom: true these are offered as autocomplete suggestions but
+   *  the editor may type any other value (a text input + <datalist>). */
   options?: SelectOption[];
+  /** type: 'select' only — see `options`. */
+  allowCustom?: boolean;
 }
 
 export interface NavigationItem { key?: string; dynamic?: string; sub?: boolean; exclude?: string[] }
