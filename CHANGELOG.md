@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.0 - 2026-08-17
+
+- Add a `select` field type: a fixed-choice dropdown (`field.options: {
+  value, label }[]`) for frontmatter fields that should be a small
+  controlled vocabulary — e.g. a project's category — instead of free
+  text, where a typo would either fail schema validation on publish or
+  silently create a new, uncategorised bucket. Required-field validation
+  applies the same as every other field type.
+
 ## 2.3.0 - 2026-08-12
 
 Closes the remaining gaps between the React admin (introduced in 2.0.0) and

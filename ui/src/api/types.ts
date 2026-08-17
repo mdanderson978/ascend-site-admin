@@ -5,7 +5,9 @@ export type ContentData = Record<string, ContentValue | undefined>;
 export interface ImageValue { src: string; alt?: string }
 export interface DocumentValue { label: string; url: string }
 
-export type FieldType = 'string' | 'text' | 'textarea' | 'number' | 'boolean' | 'markdown' | 'image' | 'images' | 'list' | 'pdf' | 'pdfs' | 'heading';
+export type FieldType = 'string' | 'text' | 'textarea' | 'number' | 'boolean' | 'markdown' | 'image' | 'images' | 'list' | 'pdf' | 'pdfs' | 'heading' | 'select';
+
+export interface SelectOption { value: string; label: string }
 
 export interface FieldConfig {
   name: string;
@@ -19,6 +21,8 @@ export interface FieldConfig {
   imageType?: string;
   min?: number;
   max?: number;
+  /** type: 'select' only — the fixed list of choices shown in the dropdown. */
+  options?: SelectOption[];
 }
 
 export interface NavigationItem { key?: string; dynamic?: string; sub?: boolean; exclude?: string[] }

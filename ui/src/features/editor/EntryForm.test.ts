@@ -19,6 +19,16 @@ describe('validateEntry', () => {
     expect(validateEntry([{ name: 'price', label: 'Price', type: 'number' }], { price: '$14,300' })).toEqual({});
   });
 
+  it('requires a choice for required select fields, same as any other required field', () => {
+    const errors = validateEntry([
+      { name: 'category', label: 'Category', type: 'select', required: true, options: [{ value: 'tiling', label: 'Tiling' }] },
+    ], { category: '' });
+    expect(errors).toEqual({ category: 'Category cannot be empty.' });
+    expect(validateEntry([
+      { name: 'category', label: 'Category', type: 'select', required: true, options: [{ value: 'tiling', label: 'Tiling' }] },
+    ], { category: 'tiling' })).toEqual({});
+  });
+
   it('requires accessible descriptions for single images and galleries', () => {
     const errors = validateEntry([
       { name: 'hero', label: 'Hero image', type: 'image' },
