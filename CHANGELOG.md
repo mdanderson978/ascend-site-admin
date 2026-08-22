@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.1 - 2026-08-22
+
+- Fix `sortChatGptHtml()` throwing (and failing the whole save) if one of
+  the old `page-<hash>.css/js` or `image-<hash>.webp` files it clears before
+  writing new ones is briefly held by something else — antivirus scanning
+  it, Explorer generating a thumbnail, a sync client. Each removal now gets
+  a few short retries (real locks like this clear within milliseconds) and
+  falls back to skipping that one file with a log message rather than
+  crashing the save, the same tradeoff `pruneOrphanUploads()` already makes
+  elsewhere in this engine.
+
 ## 2.5.0 - 2026-08-17
 
 - Add `allowCustom: true` to the `select` field type: renders a text

@@ -143,6 +143,28 @@ function replaceEvery(value, replacements) {
   return value;
 }
 
+// A slow browser download/preview reading one of these files can hold a
+// Windows sharing lock on it for a moment (antivirus scanning it, Explorer
+// generating a thumbnail, OneDrive syncing it). Real locks like that clear
+// within milliseconds, so a short retry avoids failing the whole save over a
+// purely transient collision. If it's still locked after that, skip it
+// rather than crashing - it becomes an orphaned file (same tradeoff
+// pruneOrphanUploads makes elsewhere in this engine), not a broken save.
+async function removeStaleAssetFile(filePath, attempts = 3, delayMs = 150) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await fsp.rm(filePath, { force: true });
+      return;
+    } catch (error) {
+      if (attempt === attempts) {
+        console.error(`  Could not remove ${filePath} (still in use) - leaving it in place: ${error.message}`);
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 export async function sortChatGptHtml({ source, outputDir, publicBase }) {
   if (typeof source !== 'string' || !source.trim()) throw new Error('Paste the HTML from ChatGPT first.');
   if (Buffer.byteLength(source) > MAX_IMPORT_BYTES) throw new Error('That ChatGPT paste is over 15 MB. Split it into smaller sections and try again.');
@@ -171,12 +193,12 @@ export async function sortChatGptHtml({ source, outputDir, publicBase }) {
 
   await fsp.mkdir(outputDir, { recursive: true });
   for (const name of await fsp.readdir(outputDir)) {
-    if (/^page-[a-f0-9]+\.(?:css|js)$/i.test(name)) await fsp.rm(path.join(outputDir, name), { force: true });
+    if (/^page-[a-f0-9]+\.(?:css|js)$/i.test(name)) await removeStaleAssetFile(path.join(outputDir, name));
   }
   const existingImageDir = path.join(outputDir, 'images');
   try {
     for (const name of await fsp.readdir(existingImageDir)) {
-      if (/^image-[a-f0-9]+\.webp$/i.test(name)) await fsp.rm(path.join(existingImageDir, name), { force: true });
+      if (/^image-[a-f0-9]+\.webp$/i.test(name)) await removeStaleAssetFile(path.join(existingImageDir, name));
     }
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
