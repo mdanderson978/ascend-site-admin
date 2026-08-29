@@ -44,7 +44,12 @@ export function normalizePath(p) {
   if (!p) return '/';
   let out = String(p).split('?')[0].split('#')[0];
   if (!out.startsWith('/')) out = '/' + out;
-  if (out.length > 1) out = out.replace(/\/+$/, '');
+  // Plain truncation, not a /\/+$/ regex: CodeQL correctly flags an
+  // unbounded trailing-quantifier regex as polynomial-time on adversarial
+  // input even here, where in practice it never sees one (config-authored
+  // patterns and server-sanitize()'d slugs only) — not worth arguing the
+  // exploitability, the loop is just as simple and can't backtrack at all.
+  while (out.length > 1 && out.endsWith('/')) out = out.slice(0, -1);
   return out || '/';
 }
 
