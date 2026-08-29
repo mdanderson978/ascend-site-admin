@@ -1,4 +1,4 @@
-import type { AdminConfig, ContentData, ContentTree, EntryResponse, HistoryVersion, RichHtmlImportResult, SearchIndex, UploadImage } from './types';
+import type { AdminConfig, ContentData, ContentTree, EntryResponse, HistoryVersion, RenamePreview, RenameResult, RichHtmlImportResult, SearchIndex, UploadImage } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -27,6 +27,8 @@ export const api = {
   history: (key: string) => request<{ versions: HistoryVersion[] }>(`/api/history/${key}`),
   restore: (key: string, sha: string) => request<{ ok: boolean; restoredFiles?: string[]; error?: string }>(`/api/restore/${key}`, json({ sha })),
   publish: (message = 'Content update') => request<{ ok: boolean; output?: string }>('/api/git/push', json({ message })),
+  renamePreview: (key: string, newSlug: string) => request<RenamePreview>(`/api/rename/${key}/preview`, json({ newSlug })),
+  rename: (key: string, newSlug: string) => request<RenameResult>(`/api/rename/${key}`, json({ newSlug })),
   uploads: () => request<{ files: UploadImage[] }>('/api/uploads'),
   pageImages: (key: string, data: ContentData) => request<{ files: UploadImage[] }>(`/api/page-images/${key}`, json({ data })),
   importChatGptHtml: (key: string, html: string, data: ContentData) => request<RichHtmlImportResult>(`/api/import/chatgpt/${key}`, json({ html, data })),

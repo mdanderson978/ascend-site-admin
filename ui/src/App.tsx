@@ -2,11 +2,12 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api/client';
 import type { AdminConfig, ContentTree, EntryResponse, HistoryVersion, SearchIndex } from './api/types';
 import { ConfirmDialog } from './components/Dialog';
-import { ExternalIcon, HistoryIcon, MenuIcon, PublishIcon, SaveIcon, TrashIcon } from './components/Icons';
+import { EditIcon, ExternalIcon, HistoryIcon, MenuIcon, PublishIcon, SaveIcon, TrashIcon } from './components/Icons';
 import { PublishBanner, type PublishFailure } from './components/PublishBanner';
 import { Sidebar } from './components/Sidebar';
 import { ToastRegion, type ToastMessage } from './components/Toasts';
 import { EntryForm, validateEntry } from './features/editor/EntryForm';
+import { RenameDialog } from './features/editor/RenameDialog';
 import { HistoryPanel } from './features/history/HistoryPanel';
 import { breadcrumb, humanize, startNoteParts } from './lib/content';
 
@@ -32,6 +33,7 @@ export default function App() {
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [publishFailure, setPublishFailure] = useState<PublishFailure | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   const notify = useCallback((message: string, kind: ToastMessage['kind'] = 'info') => {
     setToasts(current => [...current, { id: Date.now() + Math.random(), message, kind }]);
@@ -109,6 +111,18 @@ export default function App() {
     finally { setPublishing(false); }
   };
 
+  // Mirrors save()'s /new -> real-slug promotion: a rename is a filesystem
+  // mutation, like delete/restore/reorder, that lands as a draft — Publish
+  // stays a separate, explicit step.
+  const onRenamed = async (newSlug: string) => {
+    if (!currentKey) return;
+    const nextKey = `${currentKey.split('/')[0]}/${newSlug}`;
+    setRenameOpen(false); setDraftSaved(true); setCurrentKey(nextKey);
+    await refreshNavigation();
+    setEntry(await api.entry(nextKey));
+    notify('Renamed. Publish when you are ready to make it live.', 'success');
+  };
+
   const reorderEntries = async (collection: string, slugs: string[]) => {
     try { await api.order(collection, slugs); setDraftSaved(true); await refreshNavigation(); notify('Entry order saved as a draft.', 'success'); }
     catch (error) { notify((error as Error).message, 'error'); }
@@ -150,6 +164,7 @@ export default function App() {
   const title = isNew ? `New ${config.dynamicCollections[collection]?.label || 'entry'}` : currentKey ? config.pageLabels[currentKey] || humanize(slug) : 'Content overview';
   const trail = currentKey ? breadcrumb(currentKey, config.navStructure, config.pageLabels) : '';
   const canDelete = Boolean(currentKey && config.dynamicCollections[collection] && !isNew);
+  const canRename = Boolean(currentKey && !isNew && (config.dynamicCollections[collection] || config.renamable.includes(currentKey)));
   const livePattern = currentKey ? config.urlPatterns[collection] : null;
   const liveUrl = currentKey && config.siteUrl && livePattern && !isNew ? `${config.siteUrl.replace(/\/$/, '')}/${slug === 'home' ? '' : livePattern.replace('{slug}', encodeURIComponent(slug))}` : '';
   const status = dirty ? 'Unsaved changes' : draftSaved ? 'Draft saved' : currentKey ? 'Published' : '';
@@ -163,6 +178,7 @@ export default function App() {
         <div className="topbar__actions">
           {liveUrl && <a className="button button--quiet view-live" href={liveUrl} target="_blank" rel="noreferrer"><ExternalIcon /> View site</a>}
           <button className="button button--quiet history-button" onClick={openHistory} disabled={!currentKey || isNew}><HistoryIcon /> History</button>
+          {canRename && <button className="icon-button" onClick={() => setRenameOpen(true)} aria-label="Rename this page"><EditIcon /></button>}
           {canDelete && <button className="icon-button danger" onClick={() => setConfirm({ kind: 'delete' })} aria-label="Delete entry"><TrashIcon /></button>}
           <button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> {saving ? 'Saving…' : 'Save draft'}</button>
           <button className="button button--primary" disabled={publishing || dirty} onClick={publish}><PublishIcon /> {publishing ? 'Publishing…' : 'Publish'}</button>
@@ -175,6 +191,7 @@ export default function App() {
     </main>
     <HistoryPanel open={historyOpen} versions={versions} loading={historyLoading} onClose={() => setHistoryOpen(false)} onRestore={version => setConfirm({ kind: 'restore', version })} />
     {confirmDetails && <ConfirmDialog open title={confirmDetails.title} description={confirmDetails.description} confirmLabel={confirmDetails.label} danger={confirmDetails.danger} onCancel={() => setConfirm(null)} onConfirm={acceptConfirm} />}
+    {canRename && currentKey && <RenameDialog open={renameOpen} entryKey={currentKey} currentSlug={slug} currentUrl={liveUrl || `/${slug}`} onClose={() => setRenameOpen(false)} onRenamed={onRenamed} />}
     {publishFailure && <PublishBanner failure={publishFailure} onDismiss={() => setPublishFailure(null)} />}
     <ToastRegion toasts={toasts} dismiss={dismissToast} />
   </div>;

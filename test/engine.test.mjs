@@ -365,3 +365,141 @@ test('reorder updates only the orderField, preserves body and other fields, and 
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('rename: moves the file, records a redirect, rewrites internal links, and is gated to dynamic/renamable keys', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/projects'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/projects/first.md'), '---\ntitle: First\n---\nA project.\n');
+  fs.writeFileSync(
+    path.join(root, 'src/content/pages/other.md'),
+    '---\ntitle: Other\n---\nSee our [first project](/projects/first) and <a href="/projects/first/">this link too</a>.\n',
+  );
+
+  const server = startAdmin({
+    root, port: 4440, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }], 'pages/other': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { projects: { label: 'Project', titleField: 'title', fields: [{ name: 'title', label: 'Title' }] } },
+    urlPatterns: { pages: '{slug}', projects: 'projects/{slug}' },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    // A static page not opted into config.renamable is refused.
+    const refused = await req('/api/rename/pages/other/preview', { method: 'POST', body: JSON.stringify({ newSlug: 'whatever' }) });
+    assert.equal(refused.status, 400);
+
+    // Preview finds the real cross-page links without writing anything.
+    const preview = await (await req('/api/rename/projects/first/preview', { method: 'POST', body: JSON.stringify({ newSlug: 'Second Project!' }) })).json();
+    assert.equal(preview.ok, true);
+    assert.equal(preview.newSlug, 'second-project'); // sanitized server-side, same as create
+    assert.equal(preview.oldPath, '/projects/first');
+    assert.equal(preview.newPath, '/projects/second-project');
+    assert.deepEqual(preview.linksToFix, [{ file: 'pages/other.md', count: 2 }]);
+    assert.equal(fs.existsSync(path.join(root, 'src/content/projects/first.md')), true, 'preview must not write');
+
+    // Commit: file moves, redirect recorded, links rewritten in place.
+    const committed = await (await req('/api/rename/projects/first', { method: 'POST', body: JSON.stringify({ newSlug: 'Second Project!' }) })).json();
+    assert.equal(committed.ok, true);
+    assert.equal(committed.slug, 'second-project');
+    assert.deepEqual(committed.redirect, { from: '/projects/first', to: '/projects/second-project' });
+    assert.equal(committed.linksFixed, 2);
+    assert.equal(fs.existsSync(path.join(root, 'src/content/projects/first.md')), false);
+    assert.equal(fs.existsSync(path.join(root, 'src/content/projects/second-project.md')), true);
+    assert.match(fs.readFileSync(path.join(root, 'src/content/pages/other.md'), 'utf-8'), /\/projects\/second-project/);
+    assert.doesNotMatch(fs.readFileSync(path.join(root, 'src/content/pages/other.md'), 'utf-8'), /\/projects\/first/);
+
+    const redirects = JSON.parse(fs.readFileSync(path.join(root, 'src/content/.site-admin/redirects.json'), 'utf-8'));
+    assert.deepEqual(redirects.redirects, { '/projects/first': '/projects/second-project' });
+
+    // stable_id survives the rename untouched.
+    const movedRaw = fs.readFileSync(path.join(root, 'src/content/projects/second-project.md'), 'utf-8');
+    assert.match(movedRaw, /stable_id: [0-9a-f-]{36}/);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('rename: collapses redirect chains and blocks both collision types with no partial writes', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/projects'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/projects/a.md'), '---\ntitle: A\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/projects/existing.md'), '---\ntitle: Existing\n---\n');
+
+  const server = startAdmin({
+    root, port: 4441, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { projects: { label: 'Project', titleField: 'title', fields: [{ name: 'title', label: 'Title' }] } },
+    urlPatterns: { projects: 'projects/{slug}' },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    // a -> b, then b -> c: the stored redirect for a must collapse straight to c, not dangle at b.
+    await req('/api/rename/projects/a', { method: 'POST', body: JSON.stringify({ newSlug: 'b' }) });
+    await req('/api/rename/projects/b', { method: 'POST', body: JSON.stringify({ newSlug: 'c' }) });
+    const afterChain = JSON.parse(fs.readFileSync(path.join(root, 'src/content/.site-admin/redirects.json'), 'utf-8'));
+    assert.deepEqual(afterChain.redirects, { '/projects/a': '/projects/c', '/projects/b': '/projects/c' });
+
+    const filesBefore = fs.readdirSync(path.join(root, 'src/content/projects')).sort();
+
+    // Collision: target filename already exists.
+    const filenameCollision = await req('/api/rename/projects/c', { method: 'POST', body: JSON.stringify({ newSlug: 'existing' }) });
+    assert.equal(filenameCollision.status, 409);
+
+    // Collision: target is already a redirect source pointing elsewhere.
+    const redirectCollision = await req('/api/rename/projects/existing', { method: 'POST', body: JSON.stringify({ newSlug: 'a' }) });
+    assert.equal(redirectCollision.status, 409);
+
+    // Neither blocked attempt wrote anything.
+    assert.deepEqual(fs.readdirSync(path.join(root, 'src/content/projects')).sort(), filesBefore);
+    const redirectsAfter = JSON.parse(fs.readFileSync(path.join(root, 'src/content/.site-admin/redirects.json'), 'utf-8'));
+    assert.deepEqual(redirectsAfter.redirects, afterChain.redirects);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});
+
+// git log --follow is what keeps a renamed page's pre-rename commits visible
+// in the History panel — without it a renamed page looks "born" the moment
+// it was renamed. Each step below is its own commit, same as a real Publish.
+test('rename: page history survives the rename via --follow', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/projects'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/projects/old-name.md'), '---\ntitle: Old Name\n---\n');
+  const git = (args) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore' });
+  git(['add', '-A']); git(['-c', 'user.email=t@e.com', '-c', 'user.name=T', 'commit', '-m', 'add page']);
+
+  const server = startAdmin({
+    root, port: 4442, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { projects: { label: 'Project', titleField: 'title', fields: [{ name: 'title', label: 'Title' }] } },
+    urlPatterns: { projects: 'projects/{slug}' },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    // Commit the boot-time stable_id backfill on its own first, so the
+    // rename below is a clean, isolated old-path -> new-path move (tiny
+    // fixture files are unreliable for git's similarity-based rename
+    // detection when a content change rides along in the same commit).
+    git(['add', '-A']); git(['-c', 'user.email=t@e.com', '-c', 'user.name=T', 'commit', '-m', 'stable_id backfill']);
+
+    await req('/api/rename/projects/old-name', { method: 'POST', body: JSON.stringify({ newSlug: 'new-name' }) });
+    git(['add', '-A']); git(['-c', 'user.email=t@e.com', '-c', 'user.name=T', 'commit', '-m', 'rename old-name -> new-name']);
+
+    const history = await (await req('/api/history/projects/new-name')).json();
+    assert.equal(history.versions.length, 3, 'the original add, the backfill and the rename commit are all visible');
+    assert.match(history.versions.map(v => v.message).join('\n'), /add page/);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});

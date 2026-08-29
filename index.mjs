@@ -84,22 +84,41 @@
  *   adminUi         optional; set to 'legacy' for a temporary rollback to
  *                   the 1.x interface. V2 remains available at /v2 and the
  *                   legacy interface always remains available at /legacy.
+ *   renamable       optional; string[] of '<collection>/<slug>' keys for
+ *                   STATIC (non-dynamic) pages the client may rename from
+ *                   the admin UI, in addition to every dynamicCollections
+ *                   entry (which is always renamable). Use this to allow
+ *                   renaming a specific hub/landing page without opening
+ *                   rename up to every static page on the site.
+ *   externalLinkSurfaces   optional; string[] of plain-English descriptions
+ *                   shown verbatim in the rename warning dialog, e.g.
+ *                   ['Main navigation menu', 'Footer quick links',
+ *                   'Breadcrumb schema on service pages']. These are
+ *                   things the engine has no reach into on rename (they
+ *                   live in the source repo, not this content repo) — list
+ *                   whatever is actually true for this site so the warning
+ *                   is accurate, not generic boilerplate.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
- * pruning, search, and history/restore live here. The admin UI (admin.html,
- * shipped in this package) is fully generic — it fetches all site-specific
- * values from GET /api/config at boot.
+ * pruning, search, history/restore, and page renaming (with 301-redirect
+ * bookkeeping in src/content/.site-admin/redirects.json — see
+ * REDIRECTS.md for the consumption contract) live here. The admin UI
+ * (admin.html, shipped in this package) is fully generic — it fetches all
+ * site-specific values from GET /api/config at boot.
  */
 import http from 'http';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import matter from 'gray-matter';
 import sharp from 'sharp';
 import Busboy from 'busboy';
 import { sortChatGptHtml } from './rich-html.mjs';
+import { loadRedirects, saveRedirects, recordRedirect, resolveUrl } from './redirects.mjs';
+import { findInternalLinks, fixInternalLinks } from './linkFixer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -140,6 +159,7 @@ export function startAdmin(config) {
 
   fs.mkdirSync(UPLOADS, { recursive: true });
   fs.mkdirSync(DOCS,    { recursive: true });
+  fs.mkdirSync(path.join(CONTENT, '.site-admin'), { recursive: true });
   if (config.richHtmlImport) fs.mkdirSync(CONTENT_ASSETS, { recursive: true });
 
   const git = (args, options = {}) => execFileSync(
@@ -247,6 +267,42 @@ export function startAdmin(config) {
 
   function sanitize(name) {
     return name.toLowerCase().replace(/[^a-z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  // A page's filename is its only identity today (no separate content ID
+  // anywhere in the schema) — stable_id gives rename logic (and, in a later
+  // release, hub-ownership tracking) something that survives the filename
+  // changing. Safe to write into every site's frontmatter unconditionally:
+  // Zod's default z.object() (no site in the fleet uses .strict()) silently
+  // drops unknown keys, so this needs no content-schema change to be safe —
+  // only if a site later wants to *read* the value at build time.
+  function ensureStableId(data) {
+    if (typeof data.stable_id === 'string' && data.stable_id) return data;
+    return { ...data, stable_id: crypto.randomUUID() };
+  }
+
+  // One-time (per file), idempotent sweep so every pre-existing content file
+  // gets a stable_id on first boot after upgrading. Runs after the startup
+  // pull so it never stamps a fresh ID onto content about to be replaced by
+  // a teammate's already-ID'd version from origin.
+  function backfillStableIds() {
+    if (!fs.existsSync(CONTENT)) return 0;
+    let touched = 0;
+    for (const entry of fs.readdirSync(CONTENT, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === '.site-admin') continue;
+      const dir = path.join(CONTENT, entry.name);
+      for (const file of fs.readdirSync(dir)) {
+        if (!file.endsWith('.md')) continue;
+        const fp = path.join(dir, file);
+        const parsed = matter(fs.readFileSync(fp, 'utf-8'));
+        if (typeof parsed.data.stable_id === 'string' && parsed.data.stable_id) continue;
+        parsed.data.stable_id = crypto.randomUUID();
+        fs.writeFileSync(fp, matter.stringify(parsed.content, parsed.data), 'utf-8');
+        touched++;
+      }
+    }
+    if (touched) console.log(`  Assigned stable_id to ${touched} content file(s) — this will show up as a larger-than-usual diff on the next Publish. This is expected, one-time, and additive-only.`);
+    return touched;
   }
 
   function imageSizePreset(type) {
@@ -575,6 +631,8 @@ export function startAdmin(config) {
           shortcodes:       config.shortcodes   || {},
           siteUrl:          config.siteUrl      || '',
           urlPatterns:      config.urlPatterns  || {},
+          renamable:        config.renamable    || [],
+          externalLinkSurfaces: config.externalLinkSurfaces || [],
           imageSizes:       IMAGE_SIZES,
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
@@ -652,7 +710,9 @@ export function startAdmin(config) {
         const rel = `src/content/${collection}/${slug}.md`;
         let out = '';
         try {
-          out = git(['log', '--format=%H%x09%ct%x09%s', '-n', '30', '--', rel]);
+          // --follow: a renamed file's history predates the rename commit —
+          // without it, a renamed page looks "born" the moment it was renamed.
+          out = git(['log', '--follow', '--format=%H%x09%ct%x09%s', '-n', '30', '--', rel]);
         } catch (_) { /* not committed yet — empty history */ }
         const versions = out.trim().split('\n').filter(Boolean).map(line => {
           const [sha, epoch, ...msg] = line.split('\t');
@@ -743,8 +803,97 @@ export function startAdmin(config) {
         let slug = base, n = 2;
         while (fs.existsSync(path.join(dir, slug + '.md'))) { slug = `${base}-${n++}`; }
 
-        fs.writeFileSync(path.join(dir, slug + '.md'), matter.stringify(body || '', merged), 'utf-8');
+        fs.writeFileSync(path.join(dir, slug + '.md'), matter.stringify(body || '', ensureStableId(merged)), 'utf-8');
         jsonResp(res, 200, { ok: true, slug });
+        return;
+      }
+
+      // ── Rename ────────────────────────────────────────────────────────
+      // Renames a dynamic-collection entry (or a static page explicitly
+      // listed in config.renamable) to a new slug: moves its .md file,
+      // records a 301 redirect (chain-collapsed against any redirect that
+      // already pointed here), and rewrites any hand-authored internal link
+      // to the old URL found elsewhere in this content repo. Two-step
+      // preview/commit so the warning dialog can show real counts instead
+      // of generic copy — commit re-runs the same computation itself rather
+      // than trusting the client's (possibly stale) preview response.
+      function canRename(collection, slug) {
+        if (DYNAMIC[collection]) return true;
+        return (config.renamable || []).includes(collection + '/' + slug);
+      }
+
+      // Pure computation, no filesystem writes — shared by preview and
+      // commit so they can never disagree about what would happen.
+      function computeRename(collection, slug, newSlugRaw) {
+        const newSlug = sanitize(String(newSlugRaw || ''));
+        if (!newSlug) return { ok: false, error: 'Enter a valid URL slug.' };
+        if (newSlug === slug) return { ok: false, error: "That is already this page's URL." };
+
+        const oldFile = contentFile(collection, slug);
+        const newFile = contentFile(collection, newSlug);
+        if (!fs.existsSync(oldFile)) return { ok: false, error: 'Not found.' };
+
+        const oldPath = resolveUrl(config, collection, slug);
+        const newPath = resolveUrl(config, collection, newSlug);
+        if (!oldPath || !newPath) return { ok: false, error: 'This page has no public URL to redirect from — check urlPatterns for this collection.' };
+
+        const store = loadRedirects(CONTENT);
+        let collision = null;
+        if (fs.existsSync(newFile)) collision = 'filename';
+        else if (Object.prototype.hasOwnProperty.call(store.redirects, newPath)) collision = 'redirect-source';
+
+        return { ok: true, newSlug, oldFile, newFile, oldPath, newPath, store, collision };
+      }
+
+      const renamePreviewMatch = path_.match(/^\/api\/rename\/([^/]+)\/([^/]+)\/preview$/);
+      if (renamePreviewMatch && req.method === 'POST') {
+        const [, collection, slug] = renamePreviewMatch;
+        if (!canRename(collection, slug)) { jsonResp(res, 400, { ok: false, error: 'This page cannot be renamed.' }); return; }
+        const { newSlug: requested } = await parseJsonBody(req);
+        const c = computeRename(collection, slug, requested);
+        if (!c.ok) { jsonResp(res, 400, c); return; }
+        jsonResp(res, 200, {
+          ok: true,
+          oldPath: c.oldPath,
+          newPath: c.newPath,
+          newSlug: c.newSlug,
+          collision: c.collision,
+          linksToFix: c.collision ? [] : findInternalLinks(CONTENT, c.oldPath),
+          cascade: [], // populated by hub-ownership support in a later release
+          externalLinkSurfaces: config.externalLinkSurfaces || [],
+        });
+        return;
+      }
+
+      const renameMatch = path_.match(/^\/api\/rename\/([^/]+)\/([^/]+)$/);
+      if (renameMatch && req.method === 'POST') {
+        const [, collection, slug] = renameMatch;
+        if (!canRename(collection, slug)) { jsonResp(res, 400, { ok: false, error: 'This page cannot be renamed.' }); return; }
+        const { newSlug: requested } = await parseJsonBody(req);
+        const c = computeRename(collection, slug, requested);
+        if (!c.ok) { jsonResp(res, 400, c); return; }
+        if (c.collision) {
+          jsonResp(res, 409, {
+            ok: false,
+            error: c.collision === 'filename'
+              ? `A page already exists at "${c.newSlug}".`
+              : `"${c.newPath}" is already used as a redirect target elsewhere. Choose a different URL.`,
+          });
+          return;
+        }
+
+        fs.renameSync(c.oldFile, c.newFile);
+        recordRedirect(c.store, c.oldPath, c.newPath, { collection, slug: c.newSlug, reason: 'rename' });
+        saveRedirects(CONTENT, c.store);
+        const linksFixed = fixInternalLinks(CONTENT, c.oldPath, c.newPath);
+
+        jsonResp(res, 200, {
+          ok: true,
+          slug: c.newSlug,
+          redirect: { from: c.oldPath, to: c.newPath },
+          linksFixed: linksFixed.reduce((sum, f) => sum + f.count, 0),
+          cascaded: 0, // populated by hub-ownership support in a later release
+        });
         return;
       }
 
@@ -758,7 +907,7 @@ export function startAdmin(config) {
         const { data, content: body } = matter(fs.readFileSync(fp, 'utf-8'));
         const fields   = withSections(collection + '/' + slug, fieldTemplate);
         const previews = buildPreviews(data, fields, fp);
-        jsonResp(res, 200, { key: collection + '/' + slug, data, body, fields, previews });
+        jsonResp(res, 200, { key: collection + '/' + slug, slug, data, body, fields, previews });
         return;
       }
 
@@ -800,7 +949,7 @@ export function startAdmin(config) {
         const errors = validateData(fields, merged);
         if (errors.length) { jsonResp(res, 400, { ok: false, error: errors.join(' ') }); return; }
 
-        fs.writeFileSync(fp, matter.stringify(body || '', merged), 'utf-8');
+        fs.writeFileSync(fp, matter.stringify(body || '', ensureStableId(merged)), 'utf-8');
         jsonResp(res, 200, { ok: true });
         return;
       }
@@ -1026,6 +1175,8 @@ export function startAdmin(config) {
       try { git(['pull', '--no-rebase', '--no-edit', '-X', 'ours']); }
       catch (_) { /* non-fatal — the pull-before-push in /api/git/push still protects publishing */ }
     }
+
+    backfillStableIds();
   });
 
   return server;

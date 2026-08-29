@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.6.0 - 2026-08-29
+
+Renaming a page's slug/URL after creation was previously impossible — the
+slug was derived from the Title once, at creation, was never shown anywhere
+in the admin UI, and there was no concept of a redirect anywhere in the
+engine. Found while renaming a page by hand on a live site and discovering
+the CMS itself couldn't do it.
+
+- Add a Rename action (topbar, next to History/Delete) for every dynamic-
+  collection entry, plus any static page listed in the new
+  `config.renamable`. Shows a two-step dialog: edit the URL with a live
+  sanitize preview, then confirm — the confirm step shows the real old→new
+  path, blocks on a genuine collision (existing filename or an existing
+  redirect already targeting that path), reports how many other pages will
+  have their internal links auto-updated, and lists
+  `config.externalLinkSurfaces` (nav/footer/breadcrumbs — things living in a
+  separate source repo the engine has no reach into) so the editor knows
+  what still needs a developer's manual follow-up.
+- A rename records a 301 in `src/content/.site-admin/redirects.json`
+  (already inside the existing Publish path — see `REDIRECTS.md` for the
+  consumption contract every consuming site's build/worker can read
+  against), collapsing chains automatically (rename A→B then B→C leaves a
+  direct A→C, never a dangling A→B) and rewrites hand-authored internal
+  links to the old URL found elsewhere in the content repo.
+- `GET /api/history/:collection/:slug` now uses `git log --follow`, so a
+  renamed page's history no longer looks like it was "born" at the rename
+  commit.
+- Every content file now gets a permanent `stable_id` (a one-time backfill
+  on first boot after upgrading, and on every create/update from then on) —
+  a page's filename was its only identity before this; renaming needs
+  something that survives the filename changing. Purely additive
+  frontmatter, safe for every site without any content-schema change.
+- `GET /api/content/:collection/:slug` now includes `slug` in its response.
+
 ## 2.5.1 - 2026-08-22
 
 - Fix `sortChatGptHtml()` throwing (and failing the whole save) if one of
