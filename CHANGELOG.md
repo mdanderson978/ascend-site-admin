@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.7.0 - 2026-08-30
+
+The Rename control shipped in 2.6.0 was a topbar icon button — invisible
+on mobile entirely (global.css already hid every topbar icon-button below
+a width breakpoint), and there was nowhere in the admin that showed
+whether a page would render nested under a hub's URL prefix or flat at
+the top level. Separately, a site's main nav was either a hardcoded array
+in the source repo or, since this session's earlier per-page-flag work,
+a single flat menu — no way for a client to run more than one named menu,
+link to an external URL or anchor, or build a dropdown group.
+
+- Move Rename into a new identity card rendered above every other section
+  of the entry form (including Schema) — reachable on every viewport now,
+  not just desktop. The same card shows a plain-English sentence for
+  where this entry actually lives ("Top-level page" vs "Nested under
+  `<hub>`"), computed from `config.urlPatterns`, and — when the new
+  optional `config.crossListable` names a per-collection boolean field —
+  whether this entry is also cross-listed on another collection's hub
+  grid (e.g. a flagship page also shown on a Services grid).
+- Add a Menus screen: create, rename, and delete any number of named
+  menus, each holding an ordered list of items that are a link to an
+  existing page (by `stable_id`, so a later rename needs no rewrite —
+  see `MENUS.md`), an arbitrary URL/anchor, or a non-clickable heading
+  with one level of dropdown children. A new optional
+  `config.menuSlots` lets a developer declare permanent slot IDs a
+  template renders, so the admin can freely reassign which menu fills a
+  slot without ever touching template code.
+- New `GET /api/menu-pages` endpoint backs the "link to a page" picker —
+  `stable_id` wasn't exposed anywhere else client-side (`GET /api/search`
+  only ever includes `FIELDS`-declared fields).
+- Strengthened the rename dialog's redirect/SEO messaging into a
+  highlighted callout on both steps, instead of one easy-to-miss sentence.
+- This coexists with, rather than replaces, the simpler per-page
+  `in_main_nav`/`nav_label`/`nav_order` flag pattern for sites that only
+  need one flat top-level menu — see `MENUS.md`'s "Coexisting" section.
+
 ## 2.6.0 - 2026-08-29
 
 Renaming a page's slug/URL after creation was previously impossible — the
