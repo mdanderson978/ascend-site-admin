@@ -77,6 +77,16 @@ export async function verifySite(config, { root, port = 4399 } = {}) {
     const traversal = await request(base, '/api/preview?p=public/../../package.json');
     assert(traversal.status === 403, `Preview traversal returned ${traversal.status}, expected 403`);
 
+    // Rename must refuse a key that is neither a dynamic-collection entry
+    // nor explicitly listed in config.renamable, regardless of whether this
+    // site configures either — the gate itself must exist and hold.
+    const renameGuard = await request(base, '/api/rename/pages/__verify-rename-guard__/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newSlug: 'whatever' }),
+    });
+    assert(renameGuard.status === 400, `Unguarded rename returned ${renameGuard.status}, expected 400`);
+
     return {
       ok: true,
       siteTitle: config.siteTitle,

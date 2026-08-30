@@ -12,3 +12,4 @@ export const ExternalIcon = (p: Props) => <Icon {...p}><path d="M14 5h5v5M19 5l-
 export const ChevronIcon = (p: Props) => <Icon {...p}><path d="m9 18 6-6-6-6" /></Icon>;
 export const CloseIcon = (p: Props) => <Icon {...p}><path d="m6 6 12 12M18 6 6 18" /></Icon>;
 export const GripIcon = (p: Props) => <Icon {...p}><circle cx="9" cy="6" r=".6" fill="currentColor" /><circle cx="15" cy="6" r=".6" fill="currentColor" /><circle cx="9" cy="12" r=".6" fill="currentColor" /><circle cx="15" cy="12" r=".6" fill="currentColor" /><circle cx="9" cy="18" r=".6" fill="currentColor" /><circle cx="15" cy="18" r=".6" fill="currentColor" /></Icon>;
+export const EditIcon = (p: Props) => <Icon {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></Icon>;

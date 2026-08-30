@@ -10,7 +10,7 @@ const config: AdminConfig = {
   siteTitle: 'Test', browserTitle: 'Test', pageLabels: { 'pages/home': 'Home page' },
   navStructure: [{ label: 'Website', breadcrumb: false, items: [{ key: 'pages/home' }, { dynamic: 'projects', sub: true }] }],
   dynamicCollections: { projects: { label: 'Project', titleField: 'title', orderField: 'order' } },
-  tasks: [], shortcodes: {}, siteUrl: '', urlPatterns: {}, imageSizes: {}, startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
+  tasks: [], shortcodes: {}, siteUrl: '', urlPatterns: {}, renamable: [], externalLinkSurfaces: [], imageSizes: {}, startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
 };
 
 describe('buildNavigation', () => {

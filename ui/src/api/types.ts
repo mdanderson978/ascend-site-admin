@@ -69,6 +69,8 @@ export interface AdminConfig {
   shortcodes: ShortcodeConfig;
   siteUrl: string;
   urlPatterns: Record<string, string | null>;
+  renamable: string[];
+  externalLinkSurfaces: string[];
   imageSizes: Record<string, ImagePreset>;
   startScreenIntro: string;
   startScreenNote: string;
@@ -78,10 +80,35 @@ export interface AdminConfig {
 
 export interface EntryResponse {
   key?: string;
+  slug?: string;
   data: ContentData;
   body: string;
   fields: FieldConfig[];
   previews: Record<string, string | Array<string | null>>;
+}
+
+export interface RenameLinkHit { file: string; count: number }
+export interface RenameCascadeHit { collection: string; count: number }
+
+export interface RenamePreview {
+  ok: boolean;
+  error?: string;
+  oldPath?: string;
+  newPath?: string;
+  newSlug?: string;
+  collision?: 'filename' | 'redirect-source' | null;
+  linksToFix?: RenameLinkHit[];
+  cascade?: RenameCascadeHit[];
+  externalLinkSurfaces?: string[];
+}
+
+export interface RenameResult {
+  ok: boolean;
+  error?: string;
+  slug?: string;
+  redirect?: { from: string; to: string };
+  linksFixed?: number;
+  cascaded?: number;
 }
 export interface SearchField { name: string; label: string; hint: string; value: string }
 export type SearchIndex = Record<string, SearchField[]>;
