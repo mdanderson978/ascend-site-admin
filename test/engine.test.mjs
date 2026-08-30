@@ -59,9 +59,40 @@ test('V2 is served by default with a stable legacy fallback and protected assets
     const assetPath = rootHtml.match(/src="([^"]+\.js)"/)?.[1];
     assert.ok(assetPath, 'V2 index references its compiled script');
     assert.equal((await fetch(base + assetPath)).status, 200);
-    assert.match(await (await fetch(base + '/legacy')).text(), /id="sidebar"/);
+    const legacyHtml = await (await fetch(base + '/legacy')).text();
+    assert.match(legacyHtml, /id="sidebar"/);
+    assert.match(legacyHtml, /deprecated/i, 'legacy interface shows its own deprecation banner');
     assert.equal((await fetch(base + '/admin-assets/../package.json')).status, 404);
   } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
+test('legacy admin: deprecation warnings fire once at boot (adminUi) and once per route hit (/legacy), not per request', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+
+  let server;
+  try {
+    server = startAdmin({
+      root, port: 4434, pullOnStart: false, adminUi: 'legacy', siteTitle: 'Fixture Site',
+      developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+      fields: { 'pages/home': [{ name: 'title', label: 'Title', type: 'text' }] },
+    });
+    assert.ok(warnings.some(w => w.includes('adminUi') && w.includes('deprecated')), 'boot-time warning fires when adminUi: legacy is configured');
+    const bootWarningCount = warnings.length;
+
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    await fetch(base + '/legacy');
+    await fetch(base + '/legacy');
+    await fetch(base + '/legacy');
+    assert.equal(warnings.length, bootWarningCount + 1, 'the route-level warning is deduped, not repeated per request');
+  } finally {
+    console.warn = originalWarn;
+    if (server?.listening) await new Promise(resolve => server.close(resolve));
+  }
 });
 
 test('dynamic entry ordering updates every order field in one request', async t => {
