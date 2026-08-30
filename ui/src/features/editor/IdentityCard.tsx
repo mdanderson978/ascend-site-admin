@@ -18,18 +18,38 @@ interface IdentityCardProps {
 // mobile entirely (.topbar__actions .button, .topbar__actions >
 // .icon-button { display: none }) — moving it into the scrollable form
 // body fixes that for free, it isn't just a placement preference.
+// A collection's urlPatterns entry fully determines whether its entries
+// are flat top-level pages ('{slug}') or nested under a hub prefix
+// ('some-hub/{slug}') — this needs no new config, just somewhere to show
+// what was already computable but invisible before this card existed.
+function nestingLabel(pattern: string | null | undefined): { nested: string | null } {
+  if (!pattern) return { nested: null };
+  const prefix = pattern.split('/{slug}')[0];
+  return { nested: prefix !== pattern ? prefix : null };
+}
+
 export function IdentityCard({ entry, config, canRename, liveUrl, onRenamed }: IdentityCardProps) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [collection, slug] = (entry.key || '').split('/');
 
   if (!entry.key || !liveUrl) return null;
 
+  const { nested } = nestingLabel(config.urlPatterns[collection]);
+  const crossList = config.crossListable[collection];
+  const isCrossListed = Boolean(crossList && entry.data[crossList.field]);
+
   return (
     <section className="form-card identity-card">
       <div className="form-card__fields identity-card__row">
-        <p className="identity-card__url">
-          <span>Live at</span> <code>{liveUrl}</code>
-        </p>
+        <div>
+          <p className="identity-card__url">
+            <span>Live at</span> <code>{liveUrl}</code>
+          </p>
+          <p className="identity-card__note">
+            {nested ? <>Nested under <strong>{nested}</strong></> : 'Top-level page'}
+            {isCrossListed && crossList && <> · Also shown on: {crossList.label || `${crossList.targetCollection} hub grid`}</>}
+          </p>
+        </div>
         {canRename && (
           <button type="button" className="button button--quiet" onClick={() => setRenameOpen(true)}>
             <EditIcon /> Change URL…

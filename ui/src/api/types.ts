@@ -71,6 +71,7 @@ export interface AdminConfig {
   urlPatterns: Record<string, string | null>;
   renamable: string[];
   externalLinkSurfaces: string[];
+  crossListable: Record<string, { field: string; targetCollection: string; label?: string }>;
   imageSizes: Record<string, ImagePreset>;
   startScreenIntro: string;
   startScreenNote: string;

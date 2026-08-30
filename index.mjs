@@ -98,6 +98,17 @@
  *                   live in the source repo, not this content repo) — list
  *                   whatever is actually true for this site so the warning
  *                   is accurate, not generic boilerplate.
+ *   crossListable   optional; '<collection>' -> { field, targetCollection,
+ *                   label? }, for a collection whose entries can ALSO be
+ *                   cross-listed on another collection's hub grid via
+ *                   their own boolean field (e.g. LPR's flagship
+ *                   pages/pool-tiling-melbourne setting
+ *                   also_in_services: true to also appear as a card on
+ *                   the Services hub). Purely informational — shown as a
+ *                   badge on the entry's identity card ("Also shown on:
+ *                   <label>") when that entry's `field` is true. Does not
+ *                   change urlPatterns or rendering; the field itself
+ *                   still lives in this collection's own FIELDS array.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, history/restore, and page renaming (with 301-redirect
@@ -633,6 +644,7 @@ export function startAdmin(config) {
           urlPatterns:      config.urlPatterns  || {},
           renamable:        config.renamable    || [],
           externalLinkSurfaces: config.externalLinkSurfaces || [],
+          crossListable:    config.crossListable || {},
           imageSizes:       IMAGE_SIZES,
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',

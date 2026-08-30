@@ -12,7 +12,7 @@ beforeEach(() => { vi.mocked(api.uploadImage).mockReset(); });
 
 const config: AdminConfig = {
   siteTitle: 'Test', browserTitle: 'Test', pageLabels: {}, navStructure: [], dynamicCollections: {},
-  tasks: [], shortcodes: {}, siteUrl: '', urlPatterns: {}, renamable: [], externalLinkSurfaces: [], imageSizes: { gallery: { label: 'at least 800 x 400 px' } },
+  tasks: [], shortcodes: {}, siteUrl: '', urlPatterns: {}, renamable: [], externalLinkSurfaces: [], crossListable: {}, imageSizes: { gallery: { label: 'at least 800 x 400 px' } },
   startScreenIntro: '', startScreenNote: '', altPlaceholder: 'Describe the photo',
 };
 
