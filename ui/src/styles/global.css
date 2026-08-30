@@ -99,6 +99,12 @@ a { color: inherit; }
 .form-card__header h2 { margin: 0; font-family: Georgia, serif; font-size: 1.35rem; font-weight: 500; }
 .form-card__header p { margin: .35rem 0 0; color: var(--ink-soft); font-size: .82rem; }
 .form-card__fields { padding: .4rem 1.5rem; }
+.identity-card { border-color: var(--brand-100); background: #fbfdfb; }
+.identity-card__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem 1.5rem; }
+.identity-card__url { margin: 0; overflow: hidden; font-size: .85rem; color: var(--ink-soft); text-overflow: ellipsis; white-space: nowrap; }
+.identity-card__url span { margin-right: .35rem; font-weight: 600; color: var(--brand-700); }
+.identity-card__url code { color: var(--ink); }
+.identity-card__note { margin: 0; font-size: .8rem; color: var(--ink-soft); }
 .form-field { padding: 1.25rem 0 1.45rem; border-bottom: 1px solid #e8ece7; }
 .form-field:last-child { border-bottom: 0; }
 .form-field__label { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .48rem; }
