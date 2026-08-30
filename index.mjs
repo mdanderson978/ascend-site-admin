@@ -962,7 +962,7 @@ export function startAdmin(config) {
       function resolveMenuItem(item) {
         if (item.type !== 'page') return item;
         const resolved = item.stableId ? resolveStableId(item.stableId) : null;
-        return { ...item, livePath: resolved?.path || null, missing: !resolved };
+        return { ...item, key: resolved ? `${resolved.collection}/${resolved.slug}` : null, livePath: resolved?.path || null, missing: !resolved };
       }
       function resolveMenu(menu) {
         return {

@@ -6,10 +6,12 @@ import { MenuEditor } from './MenuEditor';
 
 interface MenuManagerProps {
   config: AdminConfig;
+  onOpenEntry: (key: string) => void;
+  onEntryCreated: () => void;
   onNotice: (message: string, kind?: 'success' | 'error' | 'info') => void;
 }
 
-export function MenuManager({ config, onNotice }: MenuManagerProps) {
+export function MenuManager({ config, onOpenEntry, onEntryCreated, onNotice }: MenuManagerProps) {
   const [data, setData] = useState<MenusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -58,8 +60,11 @@ export function MenuManager({ config, onNotice }: MenuManagerProps) {
   if (editing) {
     return <MenuEditor
       menu={editing}
+      config={config}
       onBack={() => { setEditingId(null); load(); }}
       onSaved={() => load()}
+      onOpenEntry={onOpenEntry}
+      onEntryCreated={onEntryCreated}
       onNotice={onNotice}
     />;
   }

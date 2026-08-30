@@ -603,12 +603,14 @@ test('menus: a page-type item resolves through a rename with no write to menus.j
     const before = await (await req('/api/menus')).json();
     assert.equal(before.menus[0].items[0].livePath, '/projects/first');
     assert.equal(before.menus[0].items[0].missing, false);
+    assert.equal(before.menus[0].items[0].key, 'projects/first', 'resolved item also carries the collection/slug key, so the UI can jump straight to editing it');
     const menusJsonBefore = fs.readFileSync(path.join(root, 'src/content/.site-admin/menus.json'), 'utf-8');
 
     await req('/api/rename/projects/first', { method: 'POST', body: JSON.stringify({ newSlug: 'second' }) });
 
     const after = await (await req('/api/menus')).json();
     assert.equal(after.menus[0].items[0].livePath, '/projects/second', 'resolves the NEW path live, without any menus.json rewrite step');
+    assert.equal(after.menus[0].items[0].key, 'projects/second', 'key follows the rename too, live');
     const menusJsonAfter = fs.readFileSync(path.join(root, 'src/content/.site-admin/menus.json'), 'utf-8');
     assert.equal(menusJsonBefore, menusJsonAfter, 'menus.json itself is byte-for-byte unchanged by the rename');
 
@@ -617,6 +619,7 @@ test('menus: a page-type item resolves through a rename with no write to menus.j
     const afterDelete = await (await req('/api/menus')).json();
     assert.equal(afterDelete.menus[0].items[0].missing, true);
     assert.equal(afterDelete.menus[0].items[0].livePath, null);
+    assert.equal(afterDelete.menus[0].items[0].key, null);
   } finally {
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }

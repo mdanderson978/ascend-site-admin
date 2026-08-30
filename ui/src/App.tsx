@@ -185,7 +185,7 @@ export default function App() {
       </header>
       <div className="mobile-actions"><button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> Save draft</button><button className="button button--primary" disabled={publishing || dirty} onClick={publish}><PublishIcon /> Publish</button></div>
       <div className="content-scroll">
-        {view === 'menus' ? <MenuManager config={config} onNotice={notify} /> :
+        {view === 'menus' ? <MenuManager config={config} onOpenEntry={openEntry} onEntryCreated={refreshNavigation} onNotice={notify} /> :
         entryLoading ? <div className="loading-page"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div> : entry ? <EntryForm entry={entry} config={config} errors={errors} canRename={canRename} liveUrl={liveUrl} onRenamed={onRenamed} onDataChange={data => mutateEntry({ ...entry, data })} onBodyChange={body => mutateEntry({ ...entry, body })} onNotice={notify} /> : <section className="welcome-card"><span className="eyebrow">Ascend Site Admin 2.0</span><h2>What would you like to update?</h2><p>{config.startScreenIntro}</p>{config.tasks.length > 0 && <div className="task-grid">{config.tasks.map(task => <button key={`${task.goto}-${task.field || ''}`} onClick={() => openEntry(task.goto, task.field)}><span>{task.label}</span><strong>Open →</strong></button>)}</div>}<div className="welcome-note">{startNoteParts(config.startScreenNote).map((part, index) => part.break ? <br key={index} /> : part.strong ? <strong key={index}>{part.text}</strong> : <Fragment key={index}>{part.text}</Fragment>)}</div></section>}
       </div>
     </main>

@@ -129,8 +129,8 @@ export interface HistoryVersion { sha: string; date: number; message: string }
 // Menus: admin-authored, freely add/rename/delete-able named menus. A page
 // item stores stableId (never a slug/path) so a rename never goes stale -
 // livePath/missing are resolved server-side on every GET, never persisted.
-export interface MenuPageItem { id: string; type: 'page'; stableId: string; label: string; livePath?: string | null; missing?: boolean }
-export interface MenuLinkItem { id: string; type: 'link'; url: string; label: string; newTab?: boolean }
+export interface MenuPageItem { id: string; type: 'page'; stableId: string; label: string; key?: string | null; livePath?: string | null; missing?: boolean }
+export interface MenuLinkItem { id: string; type: 'link'; url: string; label: string; newTab?: boolean; nofollow?: boolean; sponsored?: boolean }
 export interface MenuHeadingItem { id: string; type: 'heading'; label: string; children: Array<MenuPageItem | MenuLinkItem> }
 export type MenuItem = MenuPageItem | MenuLinkItem | MenuHeadingItem;
 export interface Menu { id: string; name: string; items: MenuItem[] }
