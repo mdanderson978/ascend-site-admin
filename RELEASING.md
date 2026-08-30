@@ -24,7 +24,16 @@ developer contact details remain in each content repo's `admin.config.mjs`.
 
 For a V2 rollback, pin the last stable 1.x tag. During staged acceptance, a
 site can instead set `adminUi: 'legacy'` without changing its engine version;
-the React interface remains directly available at `/v2` for comparison.
+the React interface remains directly available at `/v2` for comparison, and
+the legacy interface itself is always reachable directly at `/legacy`
+regardless of `adminUi`.
+
+**`adminUi: 'legacy'` and `/legacy` are deprecated** as of v2.8.0: both keep
+working exactly as before, but logging a console warning (at boot, and again
+the first time `/legacy` is actually visited) so a lingering rollback isn't
+silent. They will be removed in a future major version once no known site in
+the fleet still sets `adminUi: 'legacy'` — check the private fleet inventory
+before that removal, not just this repo.
 
 Client-fleet inventory and rollout reporting are private business operations,
 not engine responsibilities. Keep them in a separate private operations

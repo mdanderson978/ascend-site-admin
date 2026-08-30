@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.8.0 - 2026-08-30
+
+Deprecates the legacy (1.x, `admin.html`) interface. It keeps working
+exactly as before — `adminUi: 'legacy'` and `/legacy` are unchanged
+functionally — but this is the start of retiring it now that V2 has
+covered every legacy feature plus page rename and Menu Manager.
+
+- Boot-time `console.warn` when `config.adminUi === 'legacy'` is set, and
+  a second one (deduped) the first time `/legacy` or `?legacy=1` is
+  actually visited.
+- A static warning banner at the top of the legacy interface itself,
+  pointing at `/v2`.
+- Removed the "Open legacy admin" link from V2's own sidebar — `/legacy`
+  still works for anyone who navigates there directly, or a developer
+  doing an actual rollback, it's just no longer a discoverable option
+  inside the interface you're supposed to be migrating away from.
+- Reconciled `RELEASING.md`'s rollback section with `index.mjs`'s own
+  contract comment (the two had drifted: one mentioned `/legacy` staying
+  available, the other only mentioned `/v2`) and added the deprecation
+  timeline: removal target is a future major version, once no known site
+  in the fleet still sets `adminUi: 'legacy'`.
+
 ## 2.7.0 - 2026-08-30
 
 The Rename control shipped in 2.6.0 was a topbar icon button — invisible

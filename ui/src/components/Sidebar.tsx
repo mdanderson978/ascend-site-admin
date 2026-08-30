@@ -136,8 +136,7 @@ export function Sidebar({ config, tree, searchIndex, activeKey, open, onClose, o
         })}</section>)}
       </nav>
       <div className="sr-only" aria-live="polite">{reorderAnnouncement}</div>
-      <button className="legacy-link menus-link" onClick={() => { onOpenMenus(); onClose(); }}>Manage menus</button>
-      <a className="legacy-link" href="/legacy">Open legacy admin</a>
+      <button className="menus-link" onClick={() => { onOpenMenus(); onClose(); }}>Manage menus</button>
     </aside>
   </>;
 }

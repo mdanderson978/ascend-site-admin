@@ -84,6 +84,10 @@
  *   adminUi         optional; set to 'legacy' for a temporary rollback to
  *                   the 1.x interface. V2 remains available at /v2 and the
  *                   legacy interface always remains available at /legacy.
+ *                   DEPRECATED (see RELEASING.md): logs a console warning
+ *                   at boot when set, and again the first time /legacy or
+ *                   ?legacy=1 is actually visited. Will be removed in a
+ *                   future major version once no known site still sets it.
  *   renamable       optional; string[] of '<collection>/<slug>' keys for
  *                   STATIC (non-dynamic) pages the client may rename from
  *                   the admin UI, in addition to every dynamicCollections
@@ -177,6 +181,22 @@ export function startAdmin(config) {
   const DYNAMIC  = config.dynamicCollections || {};
   const IMAGE_SIZES = { ...DEFAULT_IMAGE_SIZES, ...(config.imageSizes || {}) };
   const { siteTitle, developerName, developerEmail } = config;
+
+  // adminUi: 'legacy' and /legacy are deprecated (kept working as the
+  // documented V2 rollback path — see RELEASING.md) but will be removed in
+  // a future major version once no known site still sets adminUi: 'legacy'.
+  // Warned once at boot for a persistent site-level config choice; the
+  // route handlers below warn once more, deduped, for the more ephemeral
+  // case of someone visiting /legacy or ?legacy=1 directly.
+  if (config.adminUi === 'legacy') {
+    console.warn('site-admin: adminUi: \'legacy\' is deprecated and will be removed in a future major version. Switch to the default V2 interface when convenient.');
+  }
+  let warnedLegacyRoute = false;
+  function warnLegacyRoute() {
+    if (warnedLegacyRoute) return;
+    warnedLegacyRoute = true;
+    console.warn('site-admin: the legacy admin interface is deprecated and will be removed in a future major version. The default V2 interface covers everything it does, plus page rename and Menu Manager.');
+  }
 
   fs.mkdirSync(UPLOADS, { recursive: true });
   fs.mkdirSync(DOCS,    { recursive: true });
@@ -652,11 +672,13 @@ export function startAdmin(config) {
         const wantsLegacy = path_ === '/' && (config.adminUi === 'legacy' || url.searchParams.get('legacy') === '1');
         const v2Index = path.join(ADMIN_DIST, 'index.html');
         if (!wantsLegacy && serveAdminAsset(res, v2Index)) return;
+        warnLegacyRoute();
         serveAdminAsset(res, path.join(__dirname, 'admin.html'));
         return;
       }
 
       if (path_ === '/legacy' && req.method === 'GET') {
+        warnLegacyRoute();
         serveAdminAsset(res, path.join(__dirname, 'admin.html'));
         return;
       }
