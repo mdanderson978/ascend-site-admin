@@ -2,13 +2,13 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './api/client';
 import type { AdminConfig, ContentTree, EntryResponse, HistoryVersion, SearchIndex } from './api/types';
 import { ConfirmDialog } from './components/Dialog';
-import { EditIcon, ExternalIcon, HistoryIcon, MenuIcon, PublishIcon, SaveIcon, TrashIcon } from './components/Icons';
+import { ExternalIcon, HistoryIcon, MenuIcon, PublishIcon, SaveIcon, TrashIcon } from './components/Icons';
 import { PublishBanner, type PublishFailure } from './components/PublishBanner';
 import { Sidebar } from './components/Sidebar';
 import { ToastRegion, type ToastMessage } from './components/Toasts';
 import { EntryForm, validateEntry } from './features/editor/EntryForm';
-import { RenameDialog } from './features/editor/RenameDialog';
 import { HistoryPanel } from './features/history/HistoryPanel';
+import { MenuManager } from './features/menus/MenuManager';
 import { breadcrumb, humanize, startNoteParts } from './lib/content';
 
 type ConfirmState = { kind: 'navigate'; key: string; field?: string } | { kind: 'delete' } | { kind: 'restore'; version: HistoryVersion } | null;
@@ -19,6 +19,7 @@ export default function App() {
   const [searchIndex, setSearchIndex] = useState<SearchIndex>({});
   const [entry, setEntry] = useState<EntryResponse | null>(null);
   const [currentKey, setCurrentKey] = useState<string | null>(null);
+  const [view, setView] = useState<'entry' | 'menus'>('entry');
   const [dirty, setDirty] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -33,7 +34,6 @@ export default function App() {
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [publishFailure, setPublishFailure] = useState<PublishFailure | null>(null);
-  const [renameOpen, setRenameOpen] = useState(false);
 
   const notify = useCallback((message: string, kind: ToastMessage['kind'] = 'info') => {
     setToasts(current => [...current, { id: Date.now() + Math.random(), message, kind }]);
@@ -57,7 +57,7 @@ export default function App() {
   }, [dirty]);
 
   const loadEntry = useCallback(async (key: string, field?: string) => {
-    setEntryLoading(true); setHistoryOpen(false); setErrors({});
+    setEntryLoading(true); setHistoryOpen(false); setErrors({}); setView('entry');
     try {
       const loaded = await api.entry(key);
       setCurrentKey(key); setEntry(loaded); setDirty(false); setDraftSaved(false);
@@ -117,7 +117,7 @@ export default function App() {
   const onRenamed = async (newSlug: string) => {
     if (!currentKey) return;
     const nextKey = `${currentKey.split('/')[0]}/${newSlug}`;
-    setRenameOpen(false); setDraftSaved(true); setCurrentKey(nextKey);
+    setDraftSaved(true); setCurrentKey(nextKey);
     await refreshNavigation();
     setEntry(await api.entry(nextKey));
     notify('Renamed. Publish when you are ready to make it live.', 'success');
@@ -161,8 +161,8 @@ export default function App() {
 
   const isNew = currentKey?.endsWith('/new') || false;
   const [collection, slug] = currentKey?.split('/') || [];
-  const title = isNew ? `New ${config.dynamicCollections[collection]?.label || 'entry'}` : currentKey ? config.pageLabels[currentKey] || humanize(slug) : 'Content overview';
-  const trail = currentKey ? breadcrumb(currentKey, config.navStructure, config.pageLabels) : '';
+  const title = view === 'menus' ? 'Menus' : isNew ? `New ${config.dynamicCollections[collection]?.label || 'entry'}` : currentKey ? config.pageLabels[currentKey] || humanize(slug) : 'Content overview';
+  const trail = view === 'entry' && currentKey ? breadcrumb(currentKey, config.navStructure, config.pageLabels) : '';
   const canDelete = Boolean(currentKey && config.dynamicCollections[collection] && !isNew);
   const canRename = Boolean(currentKey && !isNew && (config.dynamicCollections[collection] || config.renamable.includes(currentKey)));
   const livePattern = currentKey ? config.urlPatterns[collection] : null;
@@ -170,28 +170,27 @@ export default function App() {
   const status = dirty ? 'Unsaved changes' : draftSaved ? 'Draft saved' : currentKey ? 'Published' : '';
 
   return <div className="app-shell">
-    <Sidebar config={config} tree={tree} searchIndex={searchIndex} activeKey={currentKey} open={sidebarOpen} onClose={() => setSidebarOpen(false)} onOpenEntry={openEntry} onReorder={reorderEntries} />
+    <Sidebar config={config} tree={tree} searchIndex={searchIndex} activeKey={currentKey} open={sidebarOpen} onClose={() => setSidebarOpen(false)} onOpenEntry={openEntry} onReorder={reorderEntries} onOpenMenus={() => setView('menus')} />
     <main className="workspace">
       <header className="topbar">
         <button className="icon-button menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><MenuIcon /></button>
         <div className="page-heading">{trail && <span>{trail}</span>}<h1>{title}</h1>{status && <small className={`entry-status ${dirty ? 'dirty' : draftSaved ? 'draft' : ''}`}><i />{status}</small>}</div>
         <div className="topbar__actions">
-          {liveUrl && <a className="button button--quiet view-live" href={liveUrl} target="_blank" rel="noreferrer"><ExternalIcon /> View site</a>}
-          <button className="button button--quiet history-button" onClick={openHistory} disabled={!currentKey || isNew}><HistoryIcon /> History</button>
-          {canRename && <button className="icon-button" onClick={() => setRenameOpen(true)} aria-label="Rename this page"><EditIcon /></button>}
-          {canDelete && <button className="icon-button danger" onClick={() => setConfirm({ kind: 'delete' })} aria-label="Delete entry"><TrashIcon /></button>}
+          {view === 'entry' && liveUrl && <a className="button button--quiet view-live" href={liveUrl} target="_blank" rel="noreferrer"><ExternalIcon /> View site</a>}
+          {view === 'entry' && <button className="button button--quiet history-button" onClick={openHistory} disabled={!currentKey || isNew}><HistoryIcon /> History</button>}
+          {view === 'entry' && canDelete && <button className="icon-button danger" onClick={() => setConfirm({ kind: 'delete' })} aria-label="Delete entry"><TrashIcon /></button>}
           <button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> {saving ? 'Saving…' : 'Save draft'}</button>
           <button className="button button--primary" disabled={publishing || dirty} onClick={publish}><PublishIcon /> {publishing ? 'Publishing…' : 'Publish'}</button>
         </div>
       </header>
       <div className="mobile-actions"><button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> Save draft</button><button className="button button--primary" disabled={publishing || dirty} onClick={publish}><PublishIcon /> Publish</button></div>
       <div className="content-scroll">
-        {entryLoading ? <div className="loading-page"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div> : entry ? <EntryForm entry={entry} config={config} errors={errors} onDataChange={data => mutateEntry({ ...entry, data })} onBodyChange={body => mutateEntry({ ...entry, body })} onNotice={notify} /> : <section className="welcome-card"><span className="eyebrow">Ascend Site Admin 2.0</span><h2>What would you like to update?</h2><p>{config.startScreenIntro}</p>{config.tasks.length > 0 && <div className="task-grid">{config.tasks.map(task => <button key={`${task.goto}-${task.field || ''}`} onClick={() => openEntry(task.goto, task.field)}><span>{task.label}</span><strong>Open →</strong></button>)}</div>}<div className="welcome-note">{startNoteParts(config.startScreenNote).map((part, index) => part.break ? <br key={index} /> : part.strong ? <strong key={index}>{part.text}</strong> : <Fragment key={index}>{part.text}</Fragment>)}</div></section>}
+        {view === 'menus' ? <MenuManager config={config} onOpenEntry={openEntry} onEntryCreated={refreshNavigation} onNotice={notify} /> :
+        entryLoading ? <div className="loading-page"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div> : entry ? <EntryForm entry={entry} config={config} errors={errors} canRename={canRename} liveUrl={liveUrl} onRenamed={onRenamed} onDataChange={data => mutateEntry({ ...entry, data })} onBodyChange={body => mutateEntry({ ...entry, body })} onNotice={notify} /> : <section className="welcome-card"><span className="eyebrow">Ascend Site Admin 2.0</span><h2>What would you like to update?</h2><p>{config.startScreenIntro}</p>{config.tasks.length > 0 && <div className="task-grid">{config.tasks.map(task => <button key={`${task.goto}-${task.field || ''}`} onClick={() => openEntry(task.goto, task.field)}><span>{task.label}</span><strong>Open →</strong></button>)}</div>}<div className="welcome-note">{startNoteParts(config.startScreenNote).map((part, index) => part.break ? <br key={index} /> : part.strong ? <strong key={index}>{part.text}</strong> : <Fragment key={index}>{part.text}</Fragment>)}</div></section>}
       </div>
     </main>
     <HistoryPanel open={historyOpen} versions={versions} loading={historyLoading} onClose={() => setHistoryOpen(false)} onRestore={version => setConfirm({ kind: 'restore', version })} />
     {confirmDetails && <ConfirmDialog open title={confirmDetails.title} description={confirmDetails.description} confirmLabel={confirmDetails.label} danger={confirmDetails.danger} onCancel={() => setConfirm(null)} onConfirm={acceptConfirm} />}
-    {canRename && currentKey && <RenameDialog open={renameOpen} entryKey={currentKey} currentSlug={slug} currentUrl={liveUrl || `/${slug}`} onClose={() => setRenameOpen(false)} onRenamed={onRenamed} />}
     {publishFailure && <PublishBanner failure={publishFailure} onDismiss={() => setPublishFailure(null)} />}
     <ToastRegion toasts={toasts} dismiss={dismissToast} />
   </div>;

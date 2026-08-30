@@ -12,6 +12,7 @@ interface SidebarProps {
   onClose: () => void;
   onOpenEntry: (key: string, field?: string) => void;
   onReorder: (collection: string, slugs: string[]) => void;
+  onOpenMenus: () => void;
 }
 
 interface NavEntry { key: string; label: string; sub?: boolean; isNew?: boolean; collection?: string }
@@ -55,7 +56,7 @@ export function buildNavigation(config: AdminConfig, tree: ContentTree, searchIn
   return groups;
 }
 
-export function Sidebar({ config, tree, searchIndex, activeKey, open, onClose, onOpenEntry, onReorder }: SidebarProps) {
+export function Sidebar({ config, tree, searchIndex, activeKey, open, onClose, onOpenEntry, onReorder, onOpenMenus }: SidebarProps) {
   const [query, setQuery] = useState('');
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
@@ -135,6 +136,7 @@ export function Sidebar({ config, tree, searchIndex, activeKey, open, onClose, o
         })}</section>)}
       </nav>
       <div className="sr-only" aria-live="polite">{reorderAnnouncement}</div>
+      <button className="legacy-link menus-link" onClick={() => { onOpenMenus(); onClose(); }}>Manage menus</button>
       <a className="legacy-link" href="/legacy">Open legacy admin</a>
     </aside>
   </>;

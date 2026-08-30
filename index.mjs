@@ -98,6 +98,26 @@
  *                   live in the source repo, not this content repo) — list
  *                   whatever is actually true for this site so the warning
  *                   is accurate, not generic boilerplate.
+ *   crossListable   optional; '<collection>' -> { field, targetCollection,
+ *                   label? }, for a collection whose entries can ALSO be
+ *                   cross-listed on another collection's hub grid via
+ *                   their own boolean field (e.g. LPR's flagship
+ *                   pages/pool-tiling-melbourne setting
+ *                   also_in_services: true to also appear as a card on
+ *                   the Services hub). Purely informational — shown as a
+ *                   badge on the entry's identity card ("Also shown on:
+ *                   <label>") when that entry's `field` is true. Does not
+ *                   change urlPatterns or rendering; the field itself
+ *                   still lives in this collection's own FIELDS array.
+ *   menuSlots       optional; '<slotKey>' -> { label }, developer-declared
+ *                   permanent IDs for where a source-repo template renders
+ *                   a named menu (e.g. { header_primary: { label: 'Header
+ *                   — Primary Nav' } }). The admin assigns which menu (see
+ *                   src/content/.site-admin/menus.json, MENUS.md) currently
+ *                   fills each slot; slot keys never change even when the
+ *                   admin renames or replaces the assigned menu, so a
+ *                   developer's template wiring never breaks from an
+ *                   admin-side rename.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, history/restore, and page renaming (with 301-redirect
@@ -119,6 +139,7 @@ import Busboy from 'busboy';
 import { sortChatGptHtml } from './rich-html.mjs';
 import { loadRedirects, saveRedirects, recordRedirect, resolveUrl } from './redirects.mjs';
 import { findInternalLinks, fixInternalLinks } from './linkFixer.mjs';
+import { loadMenus, saveMenus } from './menus.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -303,6 +324,38 @@ export function startAdmin(config) {
     }
     if (touched) console.log(`  Assigned stable_id to ${touched} content file(s) — this will show up as a larger-than-usual diff on the next Publish. This is expected, one-time, and additive-only.`);
     return touched;
+  }
+
+  // Every content page with its title and stable_id — the one full scan
+  // both resolveStableId() (rename-proof resolution for menus.json's
+  // page-type items) and GET /api/menu-pages (the "link to a page" picker,
+  // which needs stable_id to build a menu item and it's exposed nowhere
+  // else — GET /api/search only ever includes FIELDS-declared fields,
+  // never the engine-internal stable_id) both need. Re-scans on every
+  // call rather than caching, same "just re-read on every request"
+  // approach as loadRedirects; acceptable at the file counts a local CMS
+  // actually sees (backfillStableIds already does a full-repo scan at
+  // boot with no concern).
+  function allContentPages() {
+    if (!fs.existsSync(CONTENT)) return [];
+    const pages = [];
+    for (const entry of fs.readdirSync(CONTENT, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === '.site-admin') continue;
+      const collection = entry.name;
+      const dir = path.join(CONTENT, collection);
+      for (const file of fs.readdirSync(dir)) {
+        if (!file.endsWith('.md')) continue;
+        const slug = file.slice(0, -3);
+        const { data } = matter(fs.readFileSync(path.join(dir, file), 'utf-8'));
+        pages.push({ collection, slug, key: `${collection}/${slug}`, title: typeof data.title === 'string' ? data.title : slug, stableId: typeof data.stable_id === 'string' ? data.stable_id : null });
+      }
+    }
+    return pages;
+  }
+
+  function resolveStableId(stableId) {
+    const page = allContentPages().find(p => p.stableId === stableId);
+    return page ? { collection: page.collection, slug: page.slug, path: resolveUrl(config, page.collection, page.slug) } : null;
   }
 
   function imageSizePreset(type) {
@@ -633,6 +686,8 @@ export function startAdmin(config) {
           urlPatterns:      config.urlPatterns  || {},
           renamable:        config.renamable    || [],
           externalLinkSurfaces: config.externalLinkSurfaces || [],
+          crossListable:    config.crossListable || {},
+          menuSlots:        config.menuSlots     || {},
           imageSizes:       IMAGE_SIZES,
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
@@ -894,6 +949,97 @@ export function startAdmin(config) {
           linksFixed: linksFixed.reduce((sum, f) => sum + f.count, 0),
           cascaded: 0, // populated by hub-ownership support in a later release
         });
+        return;
+      }
+
+      // ── Menus ─────────────────────────────────────────────────────────
+      // Admin-authored, freely add/rename/delete-able named menus (header,
+      // footer, etc.), stored as one JSON blob (menus.mjs) rather than
+      // per-slug content files — items can link to an existing page (by
+      // stable_id, so a later rename needs no rewrite here at all), an
+      // arbitrary URL/anchor, or be a non-clickable heading for a one-level
+      // dropdown group. See MENUS.md for the full consumption contract.
+      function resolveMenuItem(item) {
+        if (item.type !== 'page') return item;
+        const resolved = item.stableId ? resolveStableId(item.stableId) : null;
+        return { ...item, key: resolved ? `${resolved.collection}/${resolved.slug}` : null, livePath: resolved?.path || null, missing: !resolved };
+      }
+      function resolveMenu(menu) {
+        return {
+          ...menu,
+          items: menu.items.map(item => item.type === 'heading'
+            ? { ...item, children: (item.children || []).map(resolveMenuItem) }
+            : resolveMenuItem(item)),
+        };
+      }
+
+      if (path_ === '/api/menu-pages' && req.method === 'GET') {
+        jsonResp(res, 200, { pages: allContentPages().filter(p => p.stableId).map(p => ({ key: p.key, title: p.title, stableId: p.stableId })) });
+        return;
+      }
+
+      if (path_ === '/api/menus' && req.method === 'GET') {
+        const store = loadMenus(CONTENT);
+        jsonResp(res, 200, { menus: store.menus.map(resolveMenu), slotAssignments: store.slotAssignments });
+        return;
+      }
+
+      if (path_ === '/api/menus' && req.method === 'POST') {
+        const { name } = await parseJsonBody(req);
+        if (!String(name || '').trim()) { jsonResp(res, 400, { ok: false, error: 'Enter a menu name.' }); return; }
+        const store = loadMenus(CONTENT);
+        const menu = { id: crypto.randomUUID(), name: String(name).trim(), items: [] };
+        store.menus.push(menu);
+        saveMenus(CONTENT, store);
+        jsonResp(res, 200, { ok: true, menu });
+        return;
+      }
+
+      const menuMatch = path_.match(/^\/api\/menus\/([^/]+)$/);
+      if (menuMatch && req.method === 'POST') {
+        const [, id] = menuMatch;
+        const { name, items } = await parseJsonBody(req);
+        const store = loadMenus(CONTENT);
+        const menu = store.menus.find(m => m.id === id);
+        if (!menu) { jsonResp(res, 404, { ok: false, error: 'Menu not found.' }); return; }
+        if (name !== undefined) {
+          if (!String(name).trim()) { jsonResp(res, 400, { ok: false, error: 'Enter a menu name.' }); return; }
+          menu.name = String(name).trim();
+        }
+        if (items !== undefined) {
+          if (!Array.isArray(items)) { jsonResp(res, 400, { ok: false, error: 'Invalid menu items.' }); return; }
+          menu.items = items;
+        }
+        saveMenus(CONTENT, store);
+        jsonResp(res, 200, { ok: true });
+        return;
+      }
+
+      if (menuMatch && req.method === 'DELETE') {
+        const [, id] = menuMatch;
+        const store = loadMenus(CONTENT);
+        const before = store.menus.length;
+        store.menus = store.menus.filter(m => m.id !== id);
+        if (store.menus.length === before) { jsonResp(res, 404, { ok: false, error: 'Menu not found.' }); return; }
+        for (const slot of Object.keys(store.slotAssignments)) {
+          if (store.slotAssignments[slot] === id) delete store.slotAssignments[slot];
+        }
+        saveMenus(CONTENT, store);
+        jsonResp(res, 200, { ok: true });
+        return;
+      }
+
+      const menuSlotMatch = path_.match(/^\/api\/menu-slots\/([^/]+)$/);
+      if (menuSlotMatch && req.method === 'POST') {
+        const [, slotKey] = menuSlotMatch;
+        if (!(config.menuSlots || {})[slotKey]) { jsonResp(res, 400, { ok: false, error: 'Unknown menu slot.' }); return; }
+        const { menuId } = await parseJsonBody(req);
+        const store = loadMenus(CONTENT);
+        if (menuId !== null && !store.menus.some(m => m.id === menuId)) { jsonResp(res, 400, { ok: false, error: 'Menu not found.' }); return; }
+        if (menuId === null) delete store.slotAssignments[slotKey];
+        else store.slotAssignments[slotKey] = menuId;
+        saveMenus(CONTENT, store);
+        jsonResp(res, 200, { ok: true });
         return;
       }
 

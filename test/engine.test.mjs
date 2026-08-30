@@ -503,3 +503,168 @@ test('rename: page history survives the rename via --follow', async t => {
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('menus: create, save (rename + edit items), and delete a menu', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const server = startAdmin({
+    root, port: 4450, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    menuSlots: { header_primary: { label: 'Header' } },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const created = await (await req('/api/menus', { method: 'POST', body: JSON.stringify({ name: 'Main Menu' }) })).json();
+    assert.equal(created.ok, true);
+    assert.equal(created.menu.name, 'Main Menu');
+    const id = created.menu.id;
+
+    const list = await (await req('/api/menus')).json();
+    assert.equal(list.menus.length, 1);
+    assert.equal(list.menus[0].id, id);
+
+    const saved = await req(`/api/menus/${id}`, {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Header Menu', items: [{ id: 'i1', type: 'link', url: '/contact', label: 'Contact' }] }),
+    });
+    assert.equal(saved.status, 200);
+
+    const afterSave = await (await req('/api/menus')).json();
+    assert.equal(afterSave.menus[0].name, 'Header Menu');
+    assert.deepEqual(afterSave.menus[0].items, [{ id: 'i1', type: 'link', url: '/contact', label: 'Contact' }]);
+
+    const slotSet = await req('/api/menu-slots/header_primary', { method: 'POST', body: JSON.stringify({ menuId: id }) });
+    assert.equal(slotSet.status, 200);
+    assert.equal((await (await req('/api/menus')).json()).slotAssignments.header_primary, id);
+
+    const deleted = await req(`/api/menus/${id}`, { method: 'DELETE' });
+    assert.equal(deleted.status, 200);
+    const afterDelete = await (await req('/api/menus')).json();
+    assert.equal(afterDelete.menus.length, 0);
+    assert.equal(afterDelete.slotAssignments.header_primary, undefined, 'deleting a menu clears any slot pointing at it');
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('menus: POST to a missing menu id 404s instead of crashing', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const server = startAdmin({
+    root, port: 4451, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const missing = await req('/api/menus/does-not-exist', { method: 'POST', body: JSON.stringify({ name: 'x' }) });
+    assert.equal(missing.status, 404);
+    const missingDelete = await req('/api/menus/does-not-exist', { method: 'DELETE' });
+    assert.equal(missingDelete.status, 404);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});
+
+// The whole point of storing stable_id instead of a slug/path in menus.json:
+// after a rename, GET /api/menus must reflect the page's new live path with
+// ZERO write to menus.json having occurred - resolution happens live, not
+// via a rewrite step like linkFixer.mjs does for markdown bodies.
+test('menus: a page-type item resolves through a rename with no write to menus.json', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/projects'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/projects/first.md'), '---\ntitle: First\nstable_id: fixed-test-id\n---\n');
+
+  const server = startAdmin({
+    root, port: 4452, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { projects: { label: 'Project', titleField: 'title', fields: [{ name: 'title', label: 'Title' }] } },
+    urlPatterns: { projects: 'projects/{slug}' },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const created = await (await req('/api/menus', { method: 'POST', body: JSON.stringify({ name: 'Main Menu' }) })).json();
+    await req(`/api/menus/${created.menu.id}`, {
+      method: 'POST',
+      body: JSON.stringify({ items: [{ id: 'i1', type: 'page', stableId: 'fixed-test-id', label: 'First Project' }] }),
+    });
+
+    const before = await (await req('/api/menus')).json();
+    assert.equal(before.menus[0].items[0].livePath, '/projects/first');
+    assert.equal(before.menus[0].items[0].missing, false);
+    assert.equal(before.menus[0].items[0].key, 'projects/first', 'resolved item also carries the collection/slug key, so the UI can jump straight to editing it');
+    const menusJsonBefore = fs.readFileSync(path.join(root, 'src/content/.site-admin/menus.json'), 'utf-8');
+
+    await req('/api/rename/projects/first', { method: 'POST', body: JSON.stringify({ newSlug: 'second' }) });
+
+    const after = await (await req('/api/menus')).json();
+    assert.equal(after.menus[0].items[0].livePath, '/projects/second', 'resolves the NEW path live, without any menus.json rewrite step');
+    assert.equal(after.menus[0].items[0].key, 'projects/second', 'key follows the rename too, live');
+    const menusJsonAfter = fs.readFileSync(path.join(root, 'src/content/.site-admin/menus.json'), 'utf-8');
+    assert.equal(menusJsonBefore, menusJsonAfter, 'menus.json itself is byte-for-byte unchanged by the rename');
+
+    // A stable_id pointing at a deleted page resolves gracefully, not a throw.
+    fs.unlinkSync(path.join(root, 'src/content/projects/second.md'));
+    const afterDelete = await (await req('/api/menus')).json();
+    assert.equal(afterDelete.menus[0].items[0].missing, true);
+    assert.equal(afterDelete.menus[0].items[0].livePath, null);
+    assert.equal(afterDelete.menus[0].items[0].key, null);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});
+
+// resolveMenu() recurses into a heading item's children — this covers that
+// path explicitly, since every other menu test above only exercises
+// top-level items. Also covers linking a menu item straight at a hub page
+// (a plain pages/* entry, resolved exactly like any other page).
+test('menus: a heading item\'s nested children resolve stable_id too, including a link to a hub page', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/services'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/pages/services-hub.md'), '---\ntitle: Services\nstable_id: hub-id\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/services/led-lights.md'), '---\ntitle: LED Lights\nstable_id: child-id\n---\n');
+
+  const server = startAdmin({
+    root, port: 4453, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }], 'pages/services-hub': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { services: { label: 'Service', titleField: 'title', fields: [{ name: 'title', label: 'Title' }] } },
+    urlPatterns: { pages: '{slug}', services: 'services-hub/{slug}' },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const created = await (await req('/api/menus', { method: 'POST', body: JSON.stringify({ name: 'Main Menu' }) })).json();
+    await req(`/api/menus/${created.menu.id}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        items: [
+          { id: 'hub-item', type: 'page', stableId: 'hub-id', label: 'Services' },
+          { id: 'heading-item', type: 'heading', label: 'More', children: [{ id: 'child-item', type: 'page', stableId: 'child-id', label: 'LED Lights' }] },
+        ],
+      }),
+    });
+
+    const result = await (await req('/api/menus')).json();
+    const [hubItem, headingItem] = result.menus[0].items;
+    assert.equal(hubItem.livePath, '/services-hub', 'linking straight at a hub page resolves like any other page');
+    assert.equal(headingItem.type, 'heading');
+    assert.equal(headingItem.children[0].livePath, '/services-hub/led-lights', 'a heading\'s nested child is resolved too, not just top-level items');
+    assert.equal(headingItem.children[0].missing, false);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});

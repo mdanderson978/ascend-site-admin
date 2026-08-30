@@ -2,12 +2,16 @@ import { useMemo } from 'react';
 import type { AdminConfig, ContentData, ContentValue, EntryResponse, FieldConfig } from '../../api/types';
 import { ImageField, ImagesField, ListField, PdfField, PdfsField } from './MediaFields';
 import { MarkdownEditor } from './MarkdownEditor';
+import { IdentityCard } from './IdentityCard';
 
 interface EntryFormProps {
   entry: EntryResponse;
   config: AdminConfig;
   errors: Record<string, string>;
   pageName?: string;
+  canRename: boolean;
+  liveUrl: string;
+  onRenamed: (newSlug: string) => void;
   onDataChange: (data: ContentData) => void;
   onBodyChange: (body: string) => void;
   onNotice: (message: string, kind?: 'success' | 'error' | 'info') => void;
@@ -61,7 +65,7 @@ function Field({ field, value, body, preview, config, entryKey, allData, error, 
   </div>;
 }
 
-export function EntryForm({ entry, config, errors, pageName, onDataChange, onBodyChange, onNotice }: EntryFormProps) {
+export function EntryForm({ entry, config, errors, pageName, canRename, liveUrl, onRenamed, onDataChange, onBodyChange, onNotice }: EntryFormProps) {
   const assetPageName = pageName || (typeof entry.data.title === 'string' && entry.data.title.trim()) || 'this page';
   const sections = useMemo(() => {
     const output: Array<{ id: string; title?: string; hint?: string; fields: FieldConfig[] }> = [{ id: 'main', fields: [] }];
@@ -72,5 +76,8 @@ export function EntryForm({ entry, config, errors, pageName, onDataChange, onBod
     return output.filter(section => section.fields.length > 0);
   }, [entry.fields]);
   const change = (field: FieldConfig, value: ContentValue) => onDataChange({ ...entry.data, [field.name]: value });
-  return <form className="entry-form" onSubmit={event => event.preventDefault()}>{sections.map(section => <section className="form-card" key={section.id}>{section.title && <header className="form-card__header"><h2>{section.title}</h2>{section.hint && <p>{section.hint}</p>}</header>}<div className="form-card__fields">{section.fields.map(field => <Field key={`${entry.key || assetPageName}-${field.name}`} field={field} value={entry.data[field.name]} body={entry.body} preview={entry.previews[field.name]} config={config} entryKey={entry.key || 'unknown'} allData={entry.data} error={errors[field.name]} onChange={value => change(field, value)} onBodyChange={onBodyChange} onNotice={onNotice} />)}</div></section>)}</form>;
+  return <form className="entry-form" onSubmit={event => event.preventDefault()}>
+    <IdentityCard entry={entry} config={config} canRename={canRename} liveUrl={liveUrl} onRenamed={onRenamed} />
+    {sections.map(section => <section className="form-card" key={section.id}>{section.title && <header className="form-card__header"><h2>{section.title}</h2>{section.hint && <p>{section.hint}</p>}</header>}<div className="form-card__fields">{section.fields.map(field => <Field key={`${entry.key || assetPageName}-${field.name}`} field={field} value={entry.data[field.name]} body={entry.body} preview={entry.previews[field.name]} config={config} entryKey={entry.key || 'unknown'} allData={entry.data} error={errors[field.name]} onChange={value => change(field, value)} onBodyChange={onBodyChange} onNotice={onNotice} />)}</div></section>)}
+  </form>;
 }

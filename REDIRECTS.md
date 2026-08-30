@@ -59,5 +59,7 @@ integration:
 3. Deploy as normal.
 
 See the Local Pool Renovations site (`lpr-astro` + `lpr-astro-content`) for
-a concrete example once that integration lands there — it merges this file
-into a Cloudflare Worker's redirect map at build time.
+a concrete example: `lpr-astro/scripts/apply-redirects.mjs` reads this file
+during `npm run prebuild` and regenerates `src/worker/generated-redirects.ts`,
+which the site's Cloudflare Worker merges into its own redirect map
+(hand-authored entries win on conflict).
