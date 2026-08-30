@@ -72,6 +72,7 @@ export interface AdminConfig {
   renamable: string[];
   externalLinkSurfaces: string[];
   crossListable: Record<string, { field: string; targetCollection: string; label?: string }>;
+  menuSlots: Record<string, MenuSlot>;
   imageSizes: Record<string, ImagePreset>;
   startScreenIntro: string;
   startScreenNote: string;
@@ -124,3 +125,15 @@ export interface RichHtmlImportResult {
   report: { images: number; styleBlocks: number; inlineStyles: number; scriptBlocks: number; eventHandlers: number; externalResources: number };
 }
 export interface HistoryVersion { sha: string; date: number; message: string }
+
+// Menus: admin-authored, freely add/rename/delete-able named menus. A page
+// item stores stableId (never a slug/path) so a rename never goes stale -
+// livePath/missing are resolved server-side on every GET, never persisted.
+export interface MenuPageItem { id: string; type: 'page'; stableId: string; label: string; livePath?: string | null; missing?: boolean }
+export interface MenuLinkItem { id: string; type: 'link'; url: string; label: string; newTab?: boolean }
+export interface MenuHeadingItem { id: string; type: 'heading'; label: string; children: Array<MenuPageItem | MenuLinkItem> }
+export type MenuItem = MenuPageItem | MenuLinkItem | MenuHeadingItem;
+export interface Menu { id: string; name: string; items: MenuItem[] }
+export interface MenusResponse { menus: Menu[]; slotAssignments: Record<string, string> }
+export interface MenuSlot { label: string }
+export interface MenuPageOption { key: string; title: string; stableId: string }

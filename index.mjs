@@ -326,28 +326,36 @@ export function startAdmin(config) {
     return touched;
   }
 
-  // Reverse lookup for a page-type menu item: stable_id -> where that page
-  // lives right now. Menus never store a slug/path (see menus.mjs's header
-  // comment), so this is the only place resolution happens for the admin
-  // UI — re-scans content on every call rather than caching, same "just
-  // re-read on every request" approach as loadRedirects; acceptable at the
-  // file counts a local CMS actually sees (backfillStableIds already does
-  // a full-repo scan at boot with no concern).
-  function resolveStableId(stableId) {
-    if (!fs.existsSync(CONTENT)) return null;
+  // Every content page with its title and stable_id — the one full scan
+  // both resolveStableId() (rename-proof resolution for menus.json's
+  // page-type items) and GET /api/menu-pages (the "link to a page" picker,
+  // which needs stable_id to build a menu item and it's exposed nowhere
+  // else — GET /api/search only ever includes FIELDS-declared fields,
+  // never the engine-internal stable_id) both need. Re-scans on every
+  // call rather than caching, same "just re-read on every request"
+  // approach as loadRedirects; acceptable at the file counts a local CMS
+  // actually sees (backfillStableIds already does a full-repo scan at
+  // boot with no concern).
+  function allContentPages() {
+    if (!fs.existsSync(CONTENT)) return [];
+    const pages = [];
     for (const entry of fs.readdirSync(CONTENT, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name === '.site-admin') continue;
       const collection = entry.name;
       const dir = path.join(CONTENT, collection);
       for (const file of fs.readdirSync(dir)) {
         if (!file.endsWith('.md')) continue;
-        const parsed = matter(fs.readFileSync(path.join(dir, file), 'utf-8'));
-        if (parsed.data.stable_id !== stableId) continue;
         const slug = file.slice(0, -3);
-        return { collection, slug, path: resolveUrl(config, collection, slug) };
+        const { data } = matter(fs.readFileSync(path.join(dir, file), 'utf-8'));
+        pages.push({ collection, slug, key: `${collection}/${slug}`, title: typeof data.title === 'string' ? data.title : slug, stableId: typeof data.stable_id === 'string' ? data.stable_id : null });
       }
     }
-    return null;
+    return pages;
+  }
+
+  function resolveStableId(stableId) {
+    const page = allContentPages().find(p => p.stableId === stableId);
+    return page ? { collection: page.collection, slug: page.slug, path: resolveUrl(config, page.collection, page.slug) } : null;
   }
 
   function imageSizePreset(type) {
@@ -963,6 +971,11 @@ export function startAdmin(config) {
             ? { ...item, children: (item.children || []).map(resolveMenuItem) }
             : resolveMenuItem(item)),
         };
+      }
+
+      if (path_ === '/api/menu-pages' && req.method === 'GET') {
+        jsonResp(res, 200, { pages: allContentPages().filter(p => p.stableId).map(p => ({ key: p.key, title: p.title, stableId: p.stableId })) });
+        return;
       }
 
       if (path_ === '/api/menus' && req.method === 'GET') {

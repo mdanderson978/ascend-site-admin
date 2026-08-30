@@ -621,3 +621,47 @@ test('menus: a page-type item resolves through a rename with no write to menus.j
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }
 });
+
+// resolveMenu() recurses into a heading item's children — this covers that
+// path explicitly, since every other menu test above only exercises
+// top-level items. Also covers linking a menu item straight at a hub page
+// (a plain pages/* entry, resolved exactly like any other page).
+test('menus: a heading item\'s nested children resolve stable_id too, including a link to a hub page', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/services'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/pages/services-hub.md'), '---\ntitle: Services\nstable_id: hub-id\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/services/led-lights.md'), '---\ntitle: LED Lights\nstable_id: child-id\n---\n');
+
+  const server = startAdmin({
+    root, port: 4453, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }], 'pages/services-hub': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { services: { label: 'Service', titleField: 'title', fields: [{ name: 'title', label: 'Title' }] } },
+    urlPatterns: { pages: '{slug}', services: 'services-hub/{slug}' },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const created = await (await req('/api/menus', { method: 'POST', body: JSON.stringify({ name: 'Main Menu' }) })).json();
+    await req(`/api/menus/${created.menu.id}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        items: [
+          { id: 'hub-item', type: 'page', stableId: 'hub-id', label: 'Services' },
+          { id: 'heading-item', type: 'heading', label: 'More', children: [{ id: 'child-item', type: 'page', stableId: 'child-id', label: 'LED Lights' }] },
+        ],
+      }),
+    });
+
+    const result = await (await req('/api/menus')).json();
+    const [hubItem, headingItem] = result.menus[0].items;
+    assert.equal(hubItem.livePath, '/services-hub', 'linking straight at a hub page resolves like any other page');
+    assert.equal(headingItem.type, 'heading');
+    assert.equal(headingItem.children[0].livePath, '/services-hub/led-lights', 'a heading\'s nested child is resolved too, not just top-level items');
+    assert.equal(headingItem.children[0].missing, false);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});

@@ -10,7 +10,7 @@ afterEach(cleanup);
 const baseConfig: AdminConfig = {
   siteTitle: 'Test', browserTitle: 'Test', pageLabels: {}, navStructure: [], dynamicCollections: {},
   tasks: [], shortcodes: {}, siteUrl: 'https://example.com', urlPatterns: { pages: '{slug}', services: 'pool-renovation-services/{slug}' },
-  renamable: [], externalLinkSurfaces: [], crossListable: {}, imageSizes: {},
+  renamable: [], externalLinkSurfaces: [], crossListable: {}, menuSlots: {}, imageSizes: {},
   startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
 };
 

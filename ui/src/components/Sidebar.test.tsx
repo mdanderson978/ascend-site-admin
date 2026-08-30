@@ -10,7 +10,7 @@ const config: AdminConfig = {
   siteTitle: 'Test', browserTitle: 'Test', pageLabels: { 'pages/home': 'Home page' },
   navStructure: [{ label: 'Website', breadcrumb: false, items: [{ key: 'pages/home' }, { dynamic: 'projects', sub: true }] }],
   dynamicCollections: { projects: { label: 'Project', titleField: 'title', orderField: 'order' } },
-  tasks: [], shortcodes: {}, siteUrl: '', urlPatterns: {}, renamable: [], externalLinkSurfaces: [], crossListable: {}, imageSizes: {}, startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
+  tasks: [], shortcodes: {}, siteUrl: '', urlPatterns: {}, renamable: [], externalLinkSurfaces: [], crossListable: {}, menuSlots: {}, imageSizes: {}, startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
 };
 
 describe('buildNavigation', () => {
@@ -39,7 +39,7 @@ describe('buildNavigation', () => {
     render(<Sidebar config={config} tree={{ pages: ['home'], projects: ['first', 'second'] }} searchIndex={{
       'projects/first': [{ name: 'order', label: 'Order', hint: '', value: '1' }],
       'projects/second': [{ name: 'order', label: 'Order', hint: '', value: '2' }],
-    }} activeKey={null} open onClose={() => {}} onOpenEntry={() => {}} onReorder={() => {}} />);
+    }} activeKey={null} open onClose={() => {}} onOpenEntry={() => {}} onReorder={() => {}} onOpenMenus={() => {}} />);
     expect(screen.getByRole('button', { name: 'Reorder First' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Move First earlier' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Reorder First' }));
@@ -55,7 +55,7 @@ describe('buildNavigation', () => {
       'projects/first': [{ name: 'order', label: 'Order', hint: '', value: '1' }],
       'projects/second': [{ name: 'order', label: 'Order', hint: '', value: '2' }],
       'projects/hidden': [{ name: 'order', label: 'Order', hint: '', value: '3' }],
-    }} activeKey={null} open onClose={() => {}} onOpenEntry={() => {}} onReorder={onReorder} />);
+    }} activeKey={null} open onClose={() => {}} onOpenEntry={() => {}} onReorder={onReorder} onOpenMenus={() => {}} />);
     await user.click(screen.getByRole('button', { name: 'Reorder Second' }));
     await user.click(screen.getByRole('button', { name: 'Move Second earlier' }));
     expect(onReorder).toHaveBeenCalledWith('projects', ['second', 'first', 'hidden']);

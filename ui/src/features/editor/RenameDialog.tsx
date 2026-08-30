@@ -73,7 +73,12 @@ export function RenameDialog({ open, entryKey, currentSlug, currentUrl, onClose,
       {step === 'edit' ? (
         <div className="dialog-form">
           <p className="rename-dialog__diff">Current URL: <code>{currentUrl}</code></p>
-          <p className="dialog-copy">Changing a page's URL can affect search rankings and break bookmarks or links people already have. A redirect from the old URL is created automatically.</p>
+          <p className="rename-dialog__reassurance">
+            <strong>It's safe to rename this page.</strong> A permanent redirect from
+            the old address to the new one is created automatically the moment you
+            confirm below — Google transfers this page's existing search rankings
+            across, and anyone using an old link or bookmark still reaches the page.
+          </p>
           <label>
             <span>New URL</span>
             <input type="text" value={input} onChange={event => setInput(event.target.value)} autoFocus />
@@ -92,7 +97,7 @@ export function RenameDialog({ open, entryKey, currentSlug, currentUrl, onClose,
             </p>
           ) : (
             <>
-              <p>A permanent redirect from the old URL will be created automatically.</p>
+              <p className="rename-dialog__reassurance"><strong>Search rankings are protected.</strong> A permanent redirect from the old URL to the new one will be created automatically, so this page keeps its rankings and old links keep working.</p>
               {linkCount > 0 && <p>{linkCount} link{linkCount === 1 ? '' : 's'} on {preview.linksToFix?.length} other page{preview.linksToFix?.length === 1 ? '' : 's'} will be updated automatically.</p>}
               {cascadeCount > 0 && <p>{cascadeCount} page{cascadeCount === 1 ? '' : 's'} inside this section will move with it.</p>}
               {surfaces.length > 0 && (
