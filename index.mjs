@@ -33,7 +33,8 @@
  *                   as their own sections.
  *   dynamicCollections   optional; collections the client can add/delete
  *                   entries in from the admin UI, keyed by collection name:
- *                     { <collection>: { fields, titleField, label, orderField? } }
+ *                     { <collection>: { fields, titleField, label,
+ *                                       orderField?, sortFields?, sortDirection? } }
  *                   `fields` is the FIELDS-style array applied to every entry
  *                   in that collection (existing and new — there is no
  *                   static per-slug FIELDS entry for a dynamic collection,
@@ -44,10 +45,33 @@
  *                   `orderField`, when provided, names a numeric field used
  *                   to sort that collection's sidebar entries and enables
  *                   click-and-drag reordering. Reordering updates only that
- *                   field and still requires Publish Changes. A
- *                   collection not listed here keeps today's behavior
- *                   exactly: a fixed, developer-defined set of entries that
- *                   can never be added to or deleted via the admin.
+ *                   field and still requires Publish Changes.
+ *                   `sortFields` + `sortDirection` are the OTHER, automatic
+ *                   way to order a dynamic collection's sidebar entries — no
+ *                   dragging, no stored order field, just a live sort by each
+ *                   entry's own real frontmatter value(s) every time the list
+ *                   is read. `sortFields` is an array of field names (e.g.
+ *                   ['date', 'service']) compared in order — the first
+ *                   field breaks ties with the second, and so on. Values are
+ *                   compared as plain strings (a missing field sorts as
+ *                   '') — this is deliberate, not a limitation: an ISO
+ *                   'YYYY-MM-DD' date string already sorts correctly as a
+ *                   string with no date parsing needed, and a two-value enum
+ *                   like 'am'/'pm' sorts correctly too ('pm' > 'am'). Don't
+ *                   reach for real date parsing here unless a site's actual
+ *                   date field isn't already zero-padded ISO. `sortDirection`
+ *                   is 'asc' or 'desc' (required when sortFields is set — no
+ *                   default, so a site always states its intent explicitly)
+ *                   and applies to every key in sortFields uniformly. A
+ *                   collection using sortFields should NOT also set
+ *                   orderField — the automatic sort recomputes the order on
+ *                   every read, which would fight a dragged position
+ *                   immediately; sortFields wins if both are set (drag
+ *                   reordering is simply disabled, matching orderField being
+ *                   absent). A collection not listed here at all keeps
+ *                   today's behavior exactly: a fixed, developer-defined set
+ *                   of entries that can never be added to or deleted via the
+ *                   admin.
  *   tasks           start-screen shortcuts: [{ goto, field?, label }].
  *   shortcodes      optional; controls which "advanced content" toolbar
  *                   buttons appear in every markdown body editor:
@@ -179,6 +203,11 @@ export function startAdmin(config) {
   const FIELDS   = config.fields;
   const SECTIONS = config.sections || {};
   const DYNAMIC  = config.dynamicCollections || {};
+  for (const [col, d] of Object.entries(DYNAMIC)) {
+    if (d.sortFields?.length && d.sortDirection !== 'asc' && d.sortDirection !== 'desc') {
+      throw new Error(`site-admin: dynamicCollections.${col}.sortDirection must be 'asc' or 'desc' when sortFields is set`);
+    }
+  }
   const IMAGE_SIZES = { ...DEFAULT_IMAGE_SIZES, ...(config.imageSizes || {}) };
   const { siteTitle, developerName, developerEmail } = config;
 
@@ -308,6 +337,55 @@ export function startAdmin(config) {
 
   function sanitize(name) {
     return name.toLowerCase().replace(/[^a-z0-9.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  // Automatic sidebar ordering for a dynamic collection via
+  // DYNAMIC[col].sortFields/sortDirection (see the config contract comment
+  // at the top of this file) — an alternative to the manual-drag
+  // orderField, for collections that should just always read in real
+  // frontmatter order (newest sermon first, etc.) with no dragging and no
+  // stored position field. Reads every entry's frontmatter once per call;
+  // fine at fleet-realistic collection sizes (hundreds of entries, not
+  // reading anything upload-heavy). String comparison only, deliberately —
+  // see the contract comment for why that's correct for ISO dates and
+  // short enums without needing real date parsing.
+  //
+  // gray-matter's underlying YAML parser auto-coerces an UNQUOTED
+  // ISO-8601-looking scalar (date: 2026-01-05, no quotes) into a real JS
+  // Date object, not a string — every admin-saved date is written quoted
+  // (date: "2026-01-05") specifically to avoid this, but hand-edited or
+  // differently-migrated content can still arrive unquoted. String(dateObj)
+  // produces something like "Sun Jan 04 2026 13:00:00 GMT+0000 ..." which
+  // sorts nothing like the ISO string it displays as — caught by this
+  // function's own test using an unquoted fixture date and sorting wrong.
+  // toDateAwareString() normalizes a Date back to its ISO calendar date
+  // before the plain string comparison, so both quoted and unquoted dates
+  // sort identically.
+  function toDateAwareString(value) {
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    return String(value ?? '');
+  }
+  function sortDynamicSlugs(col, slugs) {
+    const dyn = DYNAMIC[col];
+    const fieldsToSort = dyn?.sortFields;
+    if (!fieldsToSort?.length) return slugs;
+    const dir = dyn.sortDirection === 'asc' ? 1 : -1;
+    const keyed = slugs.map(slug => {
+      const fp = contentFile(col, slug);
+      let data = {};
+      if (fs.existsSync(fp)) {
+        try { ({ data } = matter(fs.readFileSync(fp, 'utf-8'))); } catch { /* malformed entry sorts as all-blank keys, not fatal */ }
+      }
+      return { slug, keys: fieldsToSort.map(f => toDateAwareString(data?.[f])) };
+    });
+    keyed.sort((a, b) => {
+      for (let i = 0; i < a.keys.length; i++) {
+        if (a.keys[i] < b.keys[i]) return -1 * dir;
+        if (a.keys[i] > b.keys[i]) return 1 * dir;
+      }
+      return 0;
+    });
+    return keyed.map(k => k.slug);
   }
 
   // A page's filename is its only identity today (no separate content ID
@@ -700,7 +778,10 @@ export function startAdmin(config) {
           pageLabels:       config.pageLabels   || {},
           navStructure:     config.navStructure || [],
           dynamicCollections: Object.fromEntries(
-            Object.entries(DYNAMIC).map(([col, d]) => [col, { label: d.label, titleField: d.titleField, orderField: d.orderField }])
+            // orderField (drag-to-reorder) is suppressed when sortFields is
+            // set - the automatic sort would fight a dragged position on
+            // the very next read, so the client shouldn't offer dragging.
+            Object.entries(DYNAMIC).map(([col, d]) => [col, { label: d.label, titleField: d.titleField, orderField: d.sortFields?.length ? undefined : d.orderField }])
           ),
           tasks:            config.tasks        || [],
           shortcodes:       config.shortcodes   || {},
@@ -729,9 +810,10 @@ export function startAdmin(config) {
         // disk ARE the source of truth for which entries exist.
         for (const col of Object.keys(DYNAMIC)) {
           const dir = path.join(CONTENT, col);
-          tree[col] = fs.existsSync(dir)
+          const slugs = fs.existsSync(dir)
             ? fs.readdirSync(dir).filter(f => f.endsWith('.md')).map(f => f.slice(0, -3))
             : [];
+          tree[col] = sortDynamicSlugs(col, slugs);
         }
         jsonResp(res, 200, tree);
         return;

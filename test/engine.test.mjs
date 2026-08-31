@@ -115,6 +115,48 @@ test('dynamic entry ordering updates every order field in one request', async t 
   } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
 });
 
+// sortFields is the automatic alternative to orderField: no dragging, no
+// stored position - the sidebar just reads back in real frontmatter order
+// every time, sorted by the entry's own field value(s). Covers the primary
+// case (date descending), the tie-break case (a second key breaking ties
+// on the first, e.g. two same-day entries ordered by an am/pm field), and
+// that a missing field on one entry doesn't crash the sort.
+test('dynamic collections: sortFields orders sidebar entries automatically, with tie-breaking, no drag needed', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/sermons'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/sermons/2026-01-05-am.md'), '---\ntitle: New Year\ndate: 2026-01-05\nservice: am\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/sermons/2026-01-05-pm.md'), '---\ntitle: New Year Evening\ndate: 2026-01-05\nservice: pm\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/sermons/2025-12-25.md'), '---\ntitle: Christmas\ndate: 2025-12-25\n---\n'); // no service field at all
+  const server = startAdmin({
+    root, port: 4432, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid', fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { sermons: { label: 'Sermon', titleField: 'title', sortFields: ['date', 'service'], sortDirection: 'desc', fields: [{ name: 'title', label: 'Title' }] } },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const config = await (await fetch(base + '/api/config')).json();
+    // orderField must not be advertised - dragging a sortFields collection
+    // would just be undone by the next automatic sort.
+    assert.equal(config.dynamicCollections.sermons.orderField, undefined);
+    const tree = await (await fetch(base + '/api/content')).json();
+    assert.deepEqual(tree.sermons, ['2026-01-05-pm', '2026-01-05-am', '2025-12-25']);
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
+test('dynamic collections: sortFields without a valid sortDirection fails at startup, not silently', () => {
+  const root = fixture();
+  try {
+    assert.throws(
+      () => startAdmin({
+        root, port: 4433, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid', fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+        dynamicCollections: { sermons: { label: 'Sermon', titleField: 'title', sortFields: ['date'], fields: [{ name: 'title', label: 'Title' }] } },
+      }),
+      /sortDirection must be 'asc' or 'desc'/
+    );
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // Sites migrated into the CMS keep their pre-existing images under
 // src/assets/images (not src/assets/uploads, which only holds files uploaded
 // through the admin UI). /api/preview must serve both, while still refusing
