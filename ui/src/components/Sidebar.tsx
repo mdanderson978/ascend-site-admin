@@ -34,12 +34,17 @@ export function buildNavigation(config: AdminConfig, tree: ContentTree, searchIn
     mounted.add(collection);
     const dynamic = config.dynamicCollections[collection];
     return [
+      // "+ New X" goes FIRST, not last — a collection meant to be added to
+      // regularly (a weekly sermon, say) grows the entry list underneath it
+      // indefinitely, and an editor doing that routine task should never
+      // have to scroll past however many hundred existing entries exist to
+      // find the one control they need most often.
+      { key: `${collection}/new`, label: `New ${dynamic.label}`, sub, isNew: true },
       ...sortedSlugs(collection, tree[collection] || [], config.dynamicCollections, order).filter(slug => !exclude.includes(slug)).map(slug => {
         const key = `${collection}/${slug}`;
         const title = searchIndex[key]?.find(item => item.name === dynamic.titleField)?.value;
         return { key, label: config.pageLabels[key] || title || humanize(slug), sub, collection };
       }),
-      { key: `${collection}/new`, label: `New ${dynamic.label}`, sub, isNew: true },
     ];
   };
   const groups: NavGroup[] = config.navStructure.map(section => ({
