@@ -1,6 +1,6 @@
 {
   "name": "site-admin",
-  "version": "2.9.0",
+  "version": "2.9.1",
   "description": "Ascend Web Design's local CMS admin engine for split-repo Astro sites. Consumed by content repos as a git dependency pinned to a version tag.",
   "type": "module",
   "main": "index.mjs",
@@ -14,6 +14,7 @@
     "rich-html.mjs",
     "redirects.mjs",
     "linkFixer.mjs",
+    "menus.mjs",
     "verify-site.mjs",
     "dist/admin"
   ],
