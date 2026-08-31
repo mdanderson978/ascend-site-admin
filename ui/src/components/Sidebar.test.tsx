@@ -14,13 +14,17 @@ const config: AdminConfig = {
 };
 
 describe('buildNavigation', () => {
-  it('mounts configured pages, sorted dynamic entries and a create action', () => {
+  it('mounts configured pages, a create action first, then sorted dynamic entries', () => {
     const groups = buildNavigation(config, { pages: ['home'], projects: ['second', 'first'] }, {
       'projects/first': [{ name: 'order', label: 'Order', hint: '', value: '1' }],
       'projects/second': [{ name: 'order', label: 'Order', hint: '', value: '2' }],
     });
-    expect(groups[0].entries.map(entry => entry.key)).toEqual(['pages/home', 'projects/first', 'projects/second', 'projects/new']);
-    expect(groups[0].entries[1]).toMatchObject({ sub: true, collection: 'projects' });
+    // "New" comes before the entries, not after - a collection an editor
+    // adds to routinely (a weekly sermon, say) grows underneath it
+    // indefinitely, and the one control used every time shouldn't require
+    // scrolling past however many hundred existing entries exist.
+    expect(groups[0].entries.map(entry => entry.key)).toEqual(['pages/home', 'projects/new', 'projects/first', 'projects/second']);
+    expect(groups[0].entries[2]).toMatchObject({ sub: true, collection: 'projects' });
   });
 
   it('keeps unconfigured static content visible under Other', () => {
@@ -31,7 +35,7 @@ describe('buildNavigation', () => {
   it('supports excluding entries from one dynamic hub mount', () => {
     const filtered = { ...config, navStructure: [{ label: 'Website', items: [{ dynamic: 'projects', exclude: ['second'] }] }] };
     const groups = buildNavigation(filtered, { projects: ['first', 'second'] }, {});
-    expect(groups[0].entries.map(entry => entry.key)).toEqual(['projects/first', 'projects/new']);
+    expect(groups[0].entries.map(entry => entry.key)).toEqual(['projects/new', 'projects/first']);
   });
 
   it('uses one visible drag handle and reveals fallback move controls on demand', async () => {

@@ -1647,8 +1647,14 @@ function buildDynamicEntries(col, slugs, { sub = false } = {}) {
     list.appendChild(buildNavItem(key, sub, DYNAMIC_ENTRY_LABELS[key] || PAGE_LABELS[key] || humanizeSlug(slug), { draggable, slug }));
   }
   if (draggable) makeReorderable(list, col);
-  frag.appendChild(list);
+  // "+ New X" goes FIRST, not last - matches buildDynamicSection() below,
+  // which already puts it in the header row above the list for an
+  // unmounted collection. A collection meant to be added to routinely (a
+  // weekly sermon, say) grows underneath it indefinitely, and an editor
+  // doing that routine task should never have to scroll past however many
+  // hundred existing entries exist to find the one control they need most.
   frag.appendChild(buildDynamicNewItem(col, sub));
+  frag.appendChild(list);
   return frag;
 }
 
