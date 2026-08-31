@@ -10,6 +10,30 @@ import { startAdmin } from '../index.mjs';
 
 const packageVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
+// A git-dependency install (what every consuming site actually uses, not
+// this repo's own checkout) is filtered by package.json's `files` array,
+// the same as a real npm publish would be. Every consuming site's node_modules
+// still has index.mjs itself (it's always in `files`), so a local import it
+// makes from a file NOT in `files` doesn't fail here in this repo's own
+// tests - it only fails at runtime on a real site, the first time that code
+// path executes. This shipped for real: menus.mjs (added for the v2.7.0
+// Menu Manager feature) was never added to `files`, so every site that
+// installed v2.7.0/2.8.0 got `ERR_MODULE_NOT_FOUND` the moment the admin
+// server booted, since index.mjs imports it unconditionally at module load
+// time. Caught only when Essendon Presbyterian Church's content repo
+// upgraded past v2.6.0 for the first time (2026-09-01) - no site had
+// bumped that far until then. This test makes that whole bug class
+// impossible to reintroduce silently.
+test('every local file index.mjs imports from is listed in package.json "files"', () => {
+  const indexSrc = fs.readFileSync(new URL('../index.mjs', import.meta.url), 'utf8');
+  const localImports = [...indexSrc.matchAll(/^import\s+.*?\sfrom\s+'\.\/([^']+)'/gm)].map(m => m[1]);
+  assert.ok(localImports.length > 0, 'sanity check: index.mjs should import at least one local file');
+  const files = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).files;
+  for (const imported of localImports) {
+    assert.ok(files.includes(imported), `package.json "files" is missing "${imported}", which index.mjs imports - a consuming site's git-dependency install would 404/crash on this at runtime`);
+  }
+});
+
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'site-admin-test-'));
   fs.mkdirSync(path.join(root, 'src/content/pages'), { recursive: true });
