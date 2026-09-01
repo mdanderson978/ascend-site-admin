@@ -36,7 +36,7 @@ export function validateEntry(fields: FieldConfig[], data: ContentData): Record<
   return errors;
 }
 
-function Field({ field, value, body, preview, config, entryKey, allData, error, onChange, onBodyChange, onNotice }: { field: FieldConfig; value: ContentValue | undefined; body: string; preview?: string | Array<string | null>; config: AdminConfig; entryKey: string; allData: ContentData; error?: string; onChange: (value: ContentValue) => void; onBodyChange: (value: string) => void; onNotice: EntryFormProps['onNotice'] }) {
+export function Field({ field, value, body, preview, config, entryKey, allData, error, onChange, onBodyChange, onNotice }: { field: FieldConfig; value: ContentValue | undefined; body: string; preview?: string | Array<string | null>; config: AdminConfig; entryKey: string; allData: ContentData; error?: string; onChange: (value: ContentValue) => void; onBodyChange: (value: string) => void; onNotice: EntryFormProps['onNotice'] }) {
   const id = `field-${field.name.replace(/[^a-z0-9_-]/gi, '-')}`;
   const type = field.type || 'string';
   let control;
@@ -53,7 +53,11 @@ function Field({ field, value, body, preview, config, entryKey, allData, error, 
     <input id={id} type="text" list={`${id}-options`} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />
     <datalist id={`${id}-options`}>{(field.options || []).map(opt => <option key={opt.value} value={opt.value} />)}</datalist>
   </>;
-  else if (type === 'select') control = <select id={id} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)}><option value="">— Choose —</option>{(field.options || []).map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>;
+  else if (type === 'select') {
+    const options = field.options || [];
+    const hasOwnEmptyOption = options.some(opt => opt.value === '');
+    control = <select id={id} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)}>{!hasOwnEmptyOption && <option value="">— Choose —</option>}{options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>;
+  }
   else control = <input id={id} type="text" value={value == null ? '' : String(value)} maxLength={field.maxLength} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
 
   const length = typeof value === 'string' ? value.length : 0;
