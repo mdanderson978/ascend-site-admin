@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.11.0 - 2026-09-02
+
+A plain `select` field always got a hardcoded `— Choose —` placeholder
+prepended, even for a field where "nothing selected" is itself a real,
+meaningful choice (e.g. a hero-image style field where unset means
+"show the plain regular photo," not "unanswered question") - forcing
+that field's own answer for the empty state into a second, redundant
+option instead.
+
+- `select` fields (not `allowCustom`) now skip the generic placeholder
+  when the field's own `options` already includes an entry with
+  `value: ''` - so a field can supply its own label (e.g. `{ value: '',
+  label: 'Regular Image' }`) as the real first, pre-selected choice
+  instead of getting `— Choose —` above it. A field that doesn't
+  define its own empty option keeps the exact previous behavior.
+
 ## 2.10.0 - 2026-09-01
 
 The "Paste ChatGPT HTML" importer already rehosts embedded base64
