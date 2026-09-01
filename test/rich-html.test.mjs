@@ -88,3 +88,45 @@ test('the HTML parser separates malformed tags and unquoted executable attribute
   assert.equal(result.report.inlineStyles, 1);
   assert.equal(result.report.eventHandlers, 1);
 });
+
+test('a non-image data: URI (a PDF smuggled in as a link target) is rejected', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-data-pdf-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const source = '<a href="data:application/pdf;base64,JVBERi0xLjQK" download="guide.pdf">Download</a>';
+
+  await assert.rejects(
+    sortChatGptHtml({ source, outputDir: root, publicBase: '/content-assets/information/example' }),
+    /embeds a file .* instead of a real link/i,
+  );
+});
+
+test('a script that rebuilds a file from an embedded base64 blob (the ChatGPT PDF workaround) is rejected', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-blob-pdf-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const source = `<a id="dl" download="guide.pdf" href="#">Download the guide</a>
+    <script>
+      var bytes = window.atob('JVBERi0xLjQK');
+      var blob = new Blob([bytes], { type: 'application/pdf' });
+      document.getElementById('dl').href = URL.createObjectURL(blob);
+    </script>`;
+
+  await assert.rejects(
+    sortChatGptHtml({ source, outputDir: root, publicBase: '/content-assets/information/example' }),
+    /rebuilds a downloadable file from embedded data/i,
+  );
+});
+
+test('a script using only atob() or only Blob/createObjectURL alone (not both) is not treated as an embedded file', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-blob-safe-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const source = `<button id="copy">Copy code</button>
+    <script>
+      document.getElementById('copy').addEventListener('click', function () {
+        var decoded = window.atob('aGVsbG8=');
+        navigator.clipboard.writeText(decoded);
+      });
+    </script>`;
+
+  const result = await sortChatGptHtml({ source, outputDir: root, publicBase: '/content-assets/information/example' });
+  assert.match(result.body, /id="copy"/);
+});
