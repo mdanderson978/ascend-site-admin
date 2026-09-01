@@ -22,7 +22,7 @@ The "Paste ChatGPT HTML" importer already rehosts embedded base64
 *images* as real files (`DATA_IMAGE_PATTERN`). Nothing stopped it
 accepting any other embedded file the same way ChatGPT sometimes
 produces one when it has no access to a site's real uploads: a PDF (or
-similar) either as a non-image `data:` URI, or — seen in the wild —
+similar) either as a non-image `data:` URI, or (seen in the wild)
 the whole file base64-encoded into a `<script>`, decoded with
 `atob()` and handed out via `Blob()`/`createObjectURL()` at runtime.
 Both work for visitors, but ship the file as unreplaceable dead
