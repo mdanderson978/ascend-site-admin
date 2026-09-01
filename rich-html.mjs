@@ -7,6 +7,25 @@ import sharp from 'sharp';
 const MAX_IMPORT_BYTES = 15 * 1024 * 1024;
 const MAX_EMBEDDED_IMAGES = 50;
 const DATA_IMAGE_PATTERN = /data:image\/([a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)/gi;
+// A data: URI for anything other than an image - a PDF, a font, a zip,
+// whatever - isn't rehosted the way DATA_IMAGE_PATTERN rehosts images, so it
+// would otherwise pass straight through as permanent dead weight in the
+// saved page (embedded once, never reachable by its own URL, no way to
+// replace it without re-pasting the whole page).
+const DATA_NON_IMAGE_PATTERN = /data:(?!image\/)[a-z0-9.+-]+\/[a-z0-9.+-]+;base64,/gi;
+// ChatGPT has no access to this site's filesystem, so when asked for a real
+// downloadable file (a PDF guide, etc.) it sometimes improvises: embed the
+// whole file as a giant base64 string literal in a <script>, decode it with
+// atob() in the visitor's browser, and hand it out via
+// Blob()/createObjectURL(). It works, but it ships the file as
+// unreplaceable dead code with no real URL and no way to update it except
+// re-pasting the entire page - exactly the anti-pattern DATA_NON_IMAGE_PATTERN
+// blocks for a plain data: URI, just spelled differently. Both signals
+// (atob decoding + Blob/createObjectURL reconstruction) appearing in the
+// same script is specific enough not to false-positive on ordinary
+// clipboard/share code that uses one or the other alone.
+const BASE64_BLOB_RECONSTRUCTION_PATTERN = /\batob\s*\(/i;
+const BLOB_URL_PATTERN = /\b(?:new\s+Blob\s*\(|createObjectURL\s*\()/i;
 
 function hash(value) {
   return crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
@@ -129,6 +148,24 @@ function extractDocument(document, report) {
   return { html: serialize(body || document), title, description, cssParts, scriptParts, eventScripts };
 }
 
+// Throws if the paste tries to smuggle a real file in as inline data instead
+// of a proper upload - see DATA_NON_IMAGE_PATTERN and
+// BASE64_BLOB_RECONSTRUCTION_PATTERN above for why this needs blocking
+// outright rather than silently importing it. Checked separately from
+// collectDataImages() because these aren't rehostable the way embedded
+// images are - there's no automatic fix, the paste has to change.
+function assertNoEmbeddedFileBlobs(values) {
+  for (const value of values) {
+    DATA_NON_IMAGE_PATTERN.lastIndex = 0;
+    if (DATA_NON_IMAGE_PATTERN.test(value)) {
+      throw new Error('This paste embeds a file (e.g. a PDF) as raw data instead of a real link. Save that file and add it with the page\'s own PDF/file upload field instead of asking ChatGPT to build the download into the page.');
+    }
+    if (BASE64_BLOB_RECONSTRUCTION_PATTERN.test(value) && BLOB_URL_PATTERN.test(value)) {
+      throw new Error('This paste rebuilds a downloadable file from embedded data in its own script instead of linking to a real file. Save that file and add it with the page\'s own PDF/file upload field instead of asking ChatGPT to build the download into the page.');
+    }
+  }
+}
+
 function collectDataImages(values) {
   const images = new Set();
   for (const value of values) {
@@ -171,7 +208,9 @@ export async function sortChatGptHtml({ source, outputDir, publicBase }) {
 
   const report = { images: 0, styleBlocks: 0, inlineStyles: 0, scriptBlocks: 0, eventHandlers: 0, externalResources: 0 };
   const extracted = extractDocument(parse(unwrapCodeFence(source)), report);
-  const dataUrls = collectDataImages([extracted.html, ...extracted.cssParts, ...extracted.scriptParts, ...extracted.eventScripts]);
+  const extractedValues = [extracted.html, ...extracted.cssParts, ...extracted.scriptParts, ...extracted.eventScripts];
+  assertNoEmbeddedFileBlobs(extractedValues);
+  const dataUrls = collectDataImages(extractedValues);
   if (dataUrls.length > MAX_EMBEDDED_IMAGES) throw new Error(`That paste contains ${dataUrls.length} embedded images. The limit is ${MAX_EMBEDDED_IMAGES} per page.`);
 
   const convertedImages = [];

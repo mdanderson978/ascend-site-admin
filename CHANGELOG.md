@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.10.0 - 2026-09-01
+
+The "Paste ChatGPT HTML" importer already rehosts embedded base64
+*images* as real files (`DATA_IMAGE_PATTERN`). Nothing stopped it
+accepting any other embedded file the same way ChatGPT sometimes
+produces one when it has no access to a site's real uploads: a PDF (or
+similar) either as a non-image `data:` URI, or — seen in the wild —
+the whole file base64-encoded into a `<script>`, decoded with
+`atob()` and handed out via `Blob()`/`createObjectURL()` at runtime.
+Both work for visitors, but ship the file as unreplaceable dead
+weight with no real URL, easy to miss because the page still renders
+looking correct, and a second copy waiting to drift from a real
+upload of the same file added later.
+
+- `sortChatGptHtml()` now rejects the paste outright in both cases,
+  with a message pointing the editor at the page's own PDF/file
+  upload field instead. Detection: a non-image `data:...;base64,`
+  URI anywhere in the extracted markup/CSS/scripts, or `atob(`
+  together with `new Blob(`/`createObjectURL(` in the same script
+  (both signals required, so ordinary clipboard/decode code that
+  uses only one doesn't false-positive).
+
 ## 2.8.0 - 2026-08-30
 
 Deprecates the legacy (1.x, `admin.html`) interface. It keeps working
