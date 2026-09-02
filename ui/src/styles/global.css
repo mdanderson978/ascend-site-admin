@@ -229,6 +229,34 @@ input:focus, textarea:focus, select:focus { border-color: var(--focus) !importan
 .menu-item-row__actions button { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: white; }
 .menu-item-row__actions svg { width: 15px; }
 .menu-item-list__add { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+
+/* Blocks field (v3 page builder) — the block-row layout deliberately
+   mirrors .menu-item-row (same native-drag idiom, same up/down + trash
+   actions) rather than introducing a second pattern for "a reorderable
+   typed-union list" in the same app. */
+.blocks-list { display: flex; flex-direction: column; gap: .6rem; margin: .75rem 0; }
+.block-row { border: 1px solid var(--line); border-radius: 9px; background: #fafbf9; transition: opacity .12s, border-color .12s, box-shadow .12s; }
+.block-row.is-dragging { opacity: .45; }
+.block-row.is-drop-target { border-color: var(--brand-700); box-shadow: 0 0 0 2px var(--brand-100); }
+.block-row__header { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: .7rem; padding: .6rem .75rem; }
+.block-row__handle { display: grid; place-items: center; height: 100%; color: var(--ink-soft); cursor: grab; }
+.block-row__handle svg { width: 20px; }
+.block-row__toggle { display: flex; align-items: center; gap: .5rem; min-width: 0; padding: 0; border: none; background: none; color: var(--ink); font-size: .9rem; text-align: left; cursor: pointer; }
+.block-row__chevron { display: inline-flex; flex: none; transition: transform .15s; transform: rotate(0deg); }
+.block-row__chevron.is-open { transform: rotate(90deg); }
+.block-row__chevron svg { width: 14px; }
+.block-row__icon { flex: none; font-size: 1.1rem; }
+.block-row__summary { overflow: hidden; color: var(--ink-soft); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.block-row__actions { display: flex; gap: .3rem; }
+.block-row__actions button { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: white; }
+.block-row__actions svg { width: 15px; }
+.block-row__fields { padding: 0 .75rem .75rem; border-top: 1px solid var(--line); }
+.block-row__fields > .form-field:first-child { padding-top: .75rem; }
+.blocks-field__palette { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.block-palette-card { display: flex; align-items: center; gap: .5rem; padding: .55rem .8rem; border: 1px solid var(--line-strong); border-radius: 8px; background: white; font-size: .85rem; font-weight: 650; cursor: pointer; }
+.block-palette-card:hover { border-color: var(--brand-700); background: #eef4f1; }
+.block-palette-card__icon { font-size: 1.1rem; }
+
 .picker-create { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 .picker-create__row { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0; }
 .picker-create__row select, .picker-create__row input { min-height: 40px; padding: .5rem .65rem; border: 1px solid var(--line-strong); border-radius: 6px; }

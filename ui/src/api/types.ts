@@ -1,13 +1,31 @@
 export type Primitive = string | number | boolean | null;
-export type ContentValue = Primitive | ImageValue | ImageValue[] | string[] | DocumentValue | DocumentValue[];
+export type ContentValue = Primitive | ImageValue | ImageValue[] | string[] | DocumentValue | DocumentValue[] | BlockValue[];
 export type ContentData = Record<string, ContentValue | undefined>;
 
 export interface ImageValue { src: string; alt?: string }
 export interface DocumentValue { label: string; url: string }
 
-export type FieldType = 'string' | 'text' | 'textarea' | 'number' | 'boolean' | 'markdown' | 'image' | 'images' | 'list' | 'pdf' | 'pdfs' | 'heading' | 'select';
+export type FieldType = 'string' | 'text' | 'textarea' | 'number' | 'boolean' | 'markdown' | 'image' | 'images' | 'list' | 'pdf' | 'pdfs' | 'heading' | 'select' | 'blocks';
 
 export interface SelectOption { value: string; label: string }
+
+/** type: 'blocks' only — one entry in the palette a `blocks` field offers.
+ *  `fields` reuses the ordinary FieldConfig system verbatim — a block type
+ *  is just a small field template, same shape as a page's own top-level
+ *  `fields` array. Nesting a `blocks` or `markdown` field inside `fields`
+ *  is rejected at server boot (see index.mjs's validateBlockTypeConfig). */
+export interface BlockTypeDef {
+  id: string;
+  label: string;
+  icon?: string;
+  fields: FieldConfig[];
+}
+
+/** One item in a `blocks` field's array value. `id` is UI-only bookkeeping
+ *  (React keys, drag identity) — stripped server-side before the value is
+ *  ever written to a content file's YAML. Every other key is one of this
+ *  block's own field values, keyed by that field's `name`. */
+export interface BlockValue { id: string; type: string; [fieldName: string]: ContentValue | string }
 
 export interface FieldConfig {
   name: string;
@@ -19,7 +37,9 @@ export interface FieldConfig {
   size?: string;
   /** @deprecated Use size; retained for early V2 development configs. */
   imageType?: string;
+  /** type: 'blocks' — minimum number of blocks required, if any. */
   min?: number;
+  /** type: 'blocks' — maximum number of blocks allowed, if any. */
   max?: number;
   /** type: 'select' only — suggested choices. With allowCustom unset/false
    *  this is the exhaustive, enforced list (a plain <select>). With
@@ -28,6 +48,8 @@ export interface FieldConfig {
   options?: SelectOption[];
   /** type: 'select' only — see `options`. */
   allowCustom?: boolean;
+  /** type: 'blocks' only — the palette of block types this field can contain. */
+  blockTypes?: BlockTypeDef[];
 }
 
 export interface NavigationItem { key?: string; dynamic?: string; sub?: boolean; exclude?: string[] }
@@ -80,13 +102,18 @@ export interface AdminConfig {
   richHtmlImport?: boolean;
 }
 
+/** A `blocks` field's preview entry: one preview-map per block, keyed by
+ *  that block's own image field name(s) — mirrors the top-level
+ *  `EntryResponse.previews` shape one level down. */
+export type BlockPreviews = Array<Record<string, string | Array<string | null>>>;
+
 export interface EntryResponse {
   key?: string;
   slug?: string;
   data: ContentData;
   body: string;
   fields: FieldConfig[];
-  previews: Record<string, string | Array<string | null>>;
+  previews: Record<string, string | Array<string | null> | BlockPreviews>;
 }
 
 export interface RenameLinkHit { file: string; count: number }
