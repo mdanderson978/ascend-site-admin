@@ -208,6 +208,31 @@ export function startAdmin(config) {
       throw new Error(`site-admin: dynamicCollections.${col}.sortDirection must be 'asc' or 'desc' when sortFields is set`);
     }
   }
+
+  // A `blocks` field's own block types are themselves ordinary FieldConfig
+  // arrays — but two field types don't make sense one level down and would
+  // otherwise fail confusingly at first-save instead of at boot: 'blocks'
+  // (no nesting for v1 — a block palette inside a block palette has no
+  // matching Zod discriminated-union shape on the Astro side) and
+  // 'markdown' (a block isn't a full page body; the shortcode/MarkdownEditor
+  // pipeline is scoped to one top-level field, not one block instance).
+  // Checked once at boot, across every FIELDS/dynamicCollections field
+  // template, so a bad config fails loudly at server start rather than
+  // silently misbehaving the first time an editor opens the form.
+  function validateBlockTypeConfig(fields, where) {
+    for (const f of fields) {
+      if (f.type !== 'blocks') continue;
+      for (const blockType of f.blockTypes || []) {
+        for (const sub of blockType.fields || []) {
+          if (sub.type === 'blocks' || sub.type === 'markdown') {
+            throw new Error(`site-admin: ${where} field "${f.name}" — block type "${blockType.id}" has a "${sub.name}" field of type '${sub.type}', which is not allowed inside a block (no nesting, and a block isn't a full page body).`);
+          }
+        }
+      }
+    }
+  }
+  for (const [key, fields] of Object.entries(FIELDS)) validateBlockTypeConfig(fields, `fields["${key}"]`);
+  for (const [col, d] of Object.entries(DYNAMIC)) validateBlockTypeConfig(d.fields, `dynamicCollections.${col}.fields`);
   const IMAGE_SIZES = { ...DEFAULT_IMAGE_SIZES, ...(config.imageSizes || {}) };
   const { siteTitle, developerName, developerEmail } = config;
 
@@ -478,6 +503,27 @@ export function startAdmin(config) {
       // spaces can be meaningful inside delimited list formats.
       return v.filter(item => String(item).trim() !== '');
     }
+    if (f.type === 'blocks' && Array.isArray(v)) {
+      const byType = Object.fromEntries((f.blockTypes || []).map(bt => [bt.id, bt]));
+      return v.map(block => {
+        const def = block && typeof block === 'object' ? byType[block.type] : null;
+        if (!def) return block; // unrecognized type — passed through, validateData rejects it
+        const subByName = Object.fromEntries(def.fields.map(sub => [sub.name, sub]));
+        const out = { type: block.type }; // UI-only `id` deliberately dropped here — never reaches YAML
+        for (const [k, val] of Object.entries(block)) {
+          if (k === 'id' || k === 'type') continue;
+          const sub = subByName[k];
+          const coerced = sub ? coerceValue(sub, val) : val;
+          // Same empty-string convention the top-level save routes already
+          // apply (index.mjs's POST /api/content/:collection/:slug) — an
+          // optional sub-field left blank is omitted rather than written as
+          // `''`, so a block re-saved without every optional value filled
+          // in produces the same clean YAML either way.
+          if (coerced !== null && coerced !== undefined && coerced !== '') out[k] = coerced;
+        }
+        return out;
+      });
+    }
     return v;
   }
 
@@ -493,6 +539,17 @@ export function startAdmin(config) {
       }
       if (f.type === 'number' && !empty && typeof v !== 'number') {
         errors.push(`"${f.label}" must be a number, e.g. 495 or 840.50 — no $ sign, commas or letters.`);
+      }
+      if (f.type === 'blocks' && Array.isArray(v)) {
+        const byType = Object.fromEntries((f.blockTypes || []).map(bt => [bt.id, bt]));
+        if (typeof f.min === 'number' && v.length < f.min) errors.push(`"${f.label}" needs at least ${f.min} block${f.min === 1 ? '' : 's'}.`);
+        if (typeof f.max === 'number' && v.length > f.max) errors.push(`"${f.label}" allows at most ${f.max} block${f.max === 1 ? '' : 's'}.`);
+        v.forEach((block, index) => {
+          const def = block && typeof block === 'object' ? byType[block.type] : null;
+          const position = `Section ${index + 1}${def ? ` ("${def.label}")` : ''}`;
+          if (!def) { errors.push(`${position}: unrecognized block type "${block?.type}".`); return; }
+          for (const nested of validateData(def.fields, block)) errors.push(`${position}: ${nested}`);
+        });
       }
     }
     return errors;
@@ -522,8 +579,42 @@ export function startAdmin(config) {
             : null;
         });
       }
+      if (f.type === 'blocks' && Array.isArray(data[f.name])) {
+        const byType = Object.fromEntries((f.blockTypes || []).map(bt => [bt.id, bt]));
+        // One preview-map per block, same recursive shape one level down —
+        // BlocksField reads previews[field.name][blockIndex][subFieldName].
+        previews[f.name] = data[f.name].map(block => {
+          const def = block && typeof block === 'object' ? byType[block.type] : null;
+          return def ? buildPreviews(block, def.fields, filePath) : {};
+        });
+      }
     }
     return previews;
+  }
+
+  // "Find anything" search (see /api/search below) flattened into a single
+  // field per top-level value — a `blocks` field needs its own case since
+  // its value is an array of differently-shaped objects, not one flat
+  // value. Emits one labelled row PER SUB-FIELD of every block, so a
+  // client searching for text buried inside, say, a testimonial block's
+  // "quote" still finds the page it's on — the generic Array.isArray
+  // fallback below would instead flatten a whole block into one noisy,
+  // unlabelled blob.
+  function searchRowsForBlocks(f, data) {
+    const blocks = Array.isArray(data[f.name]) ? data[f.name] : [];
+    const byType = Object.fromEntries((f.blockTypes || []).map(bt => [bt.id, bt]));
+    return blocks.flatMap((block, index) => {
+      const def = block && typeof block === 'object' ? byType[block.type] : null;
+      if (!def) return [];
+      const sectionLabel = `Section ${index + 1} — ${def.label}`;
+      return (def.fields || []).filter(sub => sub.type !== 'heading').map(sub => {
+        const v = block[sub.name];
+        let value = '';
+        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') value = String(v);
+        else if (v && typeof v === 'object' && 'alt' in v) value = String(v.alt || '');
+        return { name: `${f.name}[${index}].${sub.name}`, label: `${sectionLabel} — ${sub.label}`, hint: sub.hint || '', value };
+      });
+    });
   }
 
   // ── Orphaned upload pruning ──────────────────────────────────────────────
@@ -803,7 +894,21 @@ export function startAdmin(config) {
       if (path_ === '/api/content' && req.method === 'GET') {
         const tree = {};
         for (const key of Object.keys(FIELDS)) {
-          const [col, slug] = key.split('/');
+          // Split on the FIRST "/" only, not every "/" - a nested static page
+          // key like "pages/about/index" or "pages/awards/hall-of-fame/criteria"
+          // has a slug that itself contains slashes. `key.split('/')` used to
+          // destructure straight into [col, slug], silently truncating to just
+          // the first path segment after the collection (col='pages',
+          // slug='about', dropping "/index" entirely) - every nested page under
+          // the same top-level directory collapsed onto that one truncated
+          // slug, which duplicated and mislabeled them in the sidebar's Other
+          // bucket and 404'd when opened, since no content file actually lives
+          // at that truncated path. Confirmed against the Australian Masters
+          // Athletics site (2026-09-02), which uses this nested key convention
+          // throughout (pages/*/index, pages/events/rules/*, etc.).
+          const slashIndex = key.indexOf('/');
+          const col = key.slice(0, slashIndex);
+          const slug = key.slice(slashIndex + 1);
           (tree[col] = tree[col] || []).push(slug);
         }
         // Dynamic collections have no static FIELDS entries — the files on
@@ -835,20 +940,27 @@ export function startAdmin(config) {
           }
         }
         for (const key of searchKeys) {
-          const [col, slug] = key.split('/');
+          // Same first-"/"-only split as /api/content above - see that
+          // comment. A truncated slug here meant resolveFields() and
+          // contentFile() were both being asked about a path with no
+          // corresponding real file, for every nested static page key.
+          const slashIndex = key.indexOf('/');
+          const col = key.slice(0, slashIndex);
+          const slug = key.slice(slashIndex + 1);
           const fields = resolveFields(col, slug) || [];
           let data = {}, body = '';
           const fp = contentFile(col, slug);
           if (fs.existsSync(fp)) ({ data, content: body } = matter(fs.readFileSync(fp, 'utf-8')));
           index[key] = fields
             .filter(f => f.type !== 'heading')
-            .map(f => {
+            .flatMap(f => {
+              if (f.type === 'blocks') return searchRowsForBlocks(f, data);
               const v = f.type === 'markdown' ? body : data[f.name];
               let value = '';
               if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') value = String(v);
               else if (Array.isArray(v)) value = v.map(x => (x && typeof x === 'object') ? Object.values(x).join(' ') : String(x)).join('\n');
               else if (v && typeof v === 'object') value = Object.values(v).filter(x => typeof x === 'string').join(' ');
-              return { name: f.name, label: f.label, hint: f.hint || '', value };
+              return [{ name: f.name, label: f.label, hint: f.hint || '', value }];
             });
         }
         jsonResp(res, 200, index);

@@ -1,5 +1,53 @@
 # Changelog
 
+## 2.11.1 - 2026-09-02
+
+`/api/content` and `/api/search` both parsed a FIELDS key by splitting it on
+every `/` and destructuring straight into `[col, slug]`, keeping only the
+first segment after the collection. That's exact for a flat key
+(`boardMembers/john-clark`), but a nested static page key's slug is itself
+allowed to contain `/` (`pages/about/index`, or two directories deep like
+`pages/awards/hall-of-fame/criteria`) - every nested key sharing that first
+segment collapsed onto the same truncated slug, which the sidebar's
+orphan-detection then duplicated once per colliding key (generically
+mislabeled, since the truncated slug doesn't match any real `pageLabels`
+entry), and 404s when opened, reaching for a file that was never at that
+truncated path. Found on the Australian Masters Athletics site
+(2026-09-02), which uses this nested key convention throughout - every
+site whose `admin.config.mjs` keys any static page more than one directory
+deep hit this the moment that page count grew past a handful, since the
+generic "Other" bucket duplicate count scales with however many sibling
+files share the truncated first segment.
+
+- Both endpoints now split on the *first* `/` only (`key.indexOf('/')` +
+  `slice`), preserving the full remainder as the slug - matching what
+  `resolveFields()` and `contentFile()` already expected.
+- Added a regression test covering both a two-deep and a three-deep nested
+  key in one fixture; confirmed it fails against the old code (collapsing
+  to the exact duplicate/truncated pattern observed live) and passes
+  against the fix.
+
+The React app's own topbar (App.tsx) had the identical `key.split('/')`
+mistake computing `collection`/`slug` for the current entry, found while
+wiring up `siteUrl`/`urlPatterns` (the "View live page" button) for the
+first time on a site with nested static keys - the button would have
+linked one level too deep, or 404d, for any such page. Fixing it surfaced
+a second, previously-latent bug in the same computation: `liveUrl` ran
+`encodeURIComponent()` on the whole multi-segment slug at once, which also
+escapes `/` (into `%2F`), mangling a nested slug's own path separators
+into one bogus segment - invisible before now only because the truncation
+bug meant a multi-segment slug never actually reached that line.
+
+- Extracted the key-splitting and live-URL-building logic out of App.tsx
+  into two small, independently tested pure functions in `lib/content.ts`
+  (`splitKey`, `liveUrlFor`) rather than leaving it inline and untested a
+  second time. `liveUrlFor` now encodes each path segment individually and
+  rejoins with `/`, instead of encoding the slug as one unit.
+- 12 new unit tests for the two functions, covering the nested-nothing,
+  nested-one-level, nested-two-levels, bare-"index", "home", and
+  special-character-within-a-segment cases. Full suite: 22 server tests +
+  59 UI tests passing, typecheck clean.
+
 ## 2.11.0 - 2026-09-02
 
 A plain `select` field always got a hardcoded `— Choose —` placeholder

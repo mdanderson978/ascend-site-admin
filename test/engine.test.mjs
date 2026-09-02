@@ -168,6 +168,55 @@ test('dynamic collections: sortFields orders sidebar entries automatically, with
   } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
 });
 
+// A static FIELDS key for a nested page (e.g. "pages/about/index", or a page
+// two directories deep like "pages/awards/hall-of-fame/criteria") has a slug
+// that itself contains "/" characters. /api/content and /api/search used to
+// split each key on "/" and destructure straight into [col, slug], which
+// silently keeps only the first segment after the collection and drops the
+// rest - every nested key sharing that first segment collapsed onto the same
+// truncated slug (e.g. "pages/about/index" and "pages/about/governance" both
+// became tree.pages entry "about"), which the sidebar's orphan-detection then
+// duplicated once per colliding key, mislabeled generically (humanizing just
+// that shared first segment), and 404s reaching for a file that was never at
+// that truncated path in the first place. Caught on the Australian Masters
+// Athletics site (2026-09-02), which uses this nested key convention
+// throughout. Covers both the two-deep and three-deep cases in one fixture.
+test('/api/content and /api/search preserve the full slug for a nested static page key, not just its first segment', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/pages/about'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src/content/pages/awards/hall-of-fame'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/pages/about/index.md'), '---\ntitle: About\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/pages/about/governance.md'), '---\ntitle: Governance\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/pages/awards/hall-of-fame/criteria.md'), '---\ntitle: HOF Criteria\n---\n');
+  const server = startAdmin({
+    root, port: 4433, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: {
+      'pages/home': [{ name: 'title', label: 'Title' }],
+      'pages/about/index': [{ name: 'title', label: 'Title', required: true }],
+      'pages/about/governance': [{ name: 'title', label: 'Title', required: true }],
+      'pages/awards/hall-of-fame/criteria': [{ name: 'title', label: 'Title', required: true }],
+    },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const tree = await (await fetch(base + '/api/content')).json();
+    // Each nested key must survive whole, as its own distinct tree entry -
+    // not truncated to "about"/"awards" and collapsed together.
+    assert.deepEqual(new Set(tree.pages), new Set(['home', 'about/index', 'about/governance', 'awards/hall-of-fame/criteria']));
+
+    const search = await (await fetch(base + '/api/search')).json();
+    // A correctly-resolved entry carries its real "Title" field value read
+    // from the actual file: resolveFields()/contentFile() only find that
+    // file when given the full, untruncated slug.
+    const titleValue = key => search[key]?.find(f => f.name === 'title')?.value;
+    assert.equal(titleValue('pages/about/index'), 'About');
+    assert.equal(titleValue('pages/about/governance'), 'Governance');
+    assert.equal(titleValue('pages/awards/hall-of-fame/criteria'), 'HOF Criteria');
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
 test('dynamic collections: sortFields without a valid sortDirection fails at startup, not silently', () => {
   const root = fixture();
   try {
@@ -761,6 +810,131 @@ test('menus: a heading item\'s nested children resolve stable_id too, including 
     assert.equal(headingItem.type, 'heading');
     assert.equal(headingItem.children[0].livePath, '/services-hub/led-lights', 'a heading\'s nested child is resolved too, not just top-level items');
     assert.equal(headingItem.children[0].missing, false);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});
+
+// ── Blocks (v3 page-builder) ─────────────────────────────────────────────
+
+const STAT_PHOTO_BLOCK_TYPES = [
+  { id: 'stat', label: 'Stat', fields: [
+    { name: 'number', label: 'Number', type: 'number', required: true },
+    { name: 'caption', label: 'Caption', type: 'string' },
+  ] },
+  { id: 'photo', label: 'Photo', fields: [
+    { name: 'note', label: 'Note', type: 'string' },
+  ] },
+];
+
+function flexpageConfig(root, port, blockTypes = STAT_PHOTO_BLOCK_TYPES) {
+  return {
+    root, port, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: {
+      flexpage: { label: 'Flexible Page', titleField: 'title', fields: [
+        { name: 'title', label: 'Title', type: 'string', required: true },
+        { name: 'sections', label: 'Sections', type: 'blocks', blockTypes },
+      ] },
+    },
+  };
+}
+
+// A block type's own fields aren't allowed to nest another `blocks` field
+// (no matching Zod discriminated-union shape one level down) or a
+// `markdown` field (a block isn't a full page body) — this is checked once
+// at boot, so a bad config fails loudly at server start rather than
+// misbehaving the first time an editor opens the form.
+test('blocks: server refuses to boot when a block type nests a blocks or markdown field', () => {
+  const root = fixture();
+  try {
+    assert.throws(() => startAdmin(flexpageConfig(root, 4460, [
+      { id: 'bad', label: 'Bad', fields: [{ name: 'nested', label: 'Nested', type: 'blocks', blockTypes: [] }] },
+    ])), /not allowed inside a block/);
+    assert.throws(() => startAdmin(flexpageConfig(root, 4460, [
+      { id: 'bad', label: 'Bad', fields: [{ name: 'body', label: 'Body', type: 'markdown' }] },
+    ])), /not allowed inside a block/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// The one genuinely new piece of recursion in coerceValue()/validateData():
+// a nested `number` sub-field must round-trip unquoted (same reason a
+// top-level number does — z.coerce.number() in the site's real schema
+// rejects a quoted YAML string), the UI-only per-block `id` must never
+// reach the written file, and an empty optional sub-field is dropped the
+// same way an empty top-level field already is.
+test('blocks: round-trips a mixed block list, coercing nested numbers unquoted and stripping the UI-only id', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const server = startAdmin(flexpageConfig(root, 4461));
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const created = await req('/api/content/flexpage/new', {
+      method: 'POST',
+      body: JSON.stringify({
+        data: {
+          title: 'Test Page',
+          sections: [
+            { id: 'ui-1', type: 'stat', number: '42', caption: 'Years in business' },
+            { id: 'ui-2', type: 'photo', note: '' },
+          ],
+        },
+        body: '',
+      }),
+    });
+    assert.equal(created.status, 200);
+    const { slug } = await created.json();
+
+    const raw = fs.readFileSync(path.join(root, 'src/content/flexpage', `${slug}.md`), 'utf-8');
+    assert.match(raw, /number: 42\n/, 'nested number is written unquoted, not as a YAML string');
+    assert.doesNotMatch(raw, /ui-1|ui-2/, 'the UI-only per-block id never reaches the written file');
+    assert.doesNotMatch(raw, /caption: ''|note: ''/, 'an empty optional sub-field is omitted, not written as an empty string');
+
+    const fetched = await (await req(`/api/content/flexpage/${slug}`)).json();
+    assert.equal(fetched.data.sections.length, 2);
+    assert.equal(fetched.data.sections[0].type, 'stat');
+    assert.equal(fetched.data.sections[0].number, 42);
+    assert.equal(fetched.data.sections[0].caption, 'Years in business');
+    assert.equal(fetched.data.sections[0].id, undefined, 'id is not round-tripped back either');
+    assert.equal(fetched.data.sections[1].type, 'photo');
+    assert.equal(fetched.data.sections[1].note, undefined);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});
+
+// Friendly, block-position-labelled errors for the two ways a block can be
+// invalid: a missing required sub-field, and a `type` the config's palette
+// doesn't recognize (e.g. hand-edited or corrupt content).
+test('blocks: validateData rejects a missing required sub-field and an unrecognized block type, both with friendly labels', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const server = startAdmin(flexpageConfig(root, 4462));
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const missingRequired = await req('/api/content/flexpage/new', {
+      method: 'POST',
+      body: JSON.stringify({ data: { title: 'X', sections: [{ id: 'a', type: 'stat', caption: 'No number here' }] }, body: '' }),
+    });
+    assert.equal(missingRequired.status, 400);
+    const missingBody = await missingRequired.json();
+    assert.match(missingBody.error, /Section 1 \("Stat"\).*Number.*cannot be empty/);
+
+    const badType = await req('/api/content/flexpage/new', {
+      method: 'POST',
+      body: JSON.stringify({ data: { title: 'Y', sections: [{ id: 'b', type: 'nonexistent' }] }, body: '' }),
+    });
+    assert.equal(badType.status, 400);
+    const badTypeBody = await badType.json();
+    assert.match(badTypeBody.error, /unrecognized block type "nonexistent"/);
   } finally {
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }

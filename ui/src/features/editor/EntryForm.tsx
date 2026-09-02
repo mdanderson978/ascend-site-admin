@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import type { AdminConfig, ContentData, ContentValue, EntryResponse, FieldConfig } from '../../api/types';
+import type { AdminConfig, BlockPreviews, BlockValue, ContentData, ContentValue, EntryResponse, FieldConfig } from '../../api/types';
 import { ImageField, ImagesField, ListField, PdfField, PdfsField } from './MediaFields';
 import { MarkdownEditor } from './MarkdownEditor';
 import { IdentityCard } from './IdentityCard';
+import { BlocksField } from './BlocksField';
 
 interface EntryFormProps {
   entry: EntryResponse;
@@ -32,12 +33,27 @@ export function validateEntry(fields: FieldConfig[], data: ContentData): Record<
     }
     if (field.type === 'image' && typeof value === 'string' && value) errors[field.name] = `${field.label} needs an image description.`;
     if (field.type === 'images' && Array.isArray(value) && value.some(item => typeof item === 'string' ? Boolean(item) : typeof item === 'object' && item && 'src' in item && item.src && !String(item.alt || '').trim())) errors[field.name] = `Every photo in ${field.label} needs an image description.`;
+    if (field.type === 'blocks' && Array.isArray(value)) {
+      if (typeof field.min === 'number' && value.length < field.min) errors[field.name] = `${field.label} needs at least ${field.min} block${field.min === 1 ? '' : 's'}.`;
+      if (typeof field.max === 'number' && value.length > field.max) errors[field.name] = `${field.label} allows at most ${field.max} block${field.max === 1 ? '' : 's'}.`;
+      const byType = Object.fromEntries((field.blockTypes || []).map(bt => [bt.id, bt]));
+      for (const [index, block] of (value as BlockValue[]).entries()) {
+        const def = block && typeof block === 'object' ? byType[block.type] : undefined;
+        if (!def) continue; // an unrecognized type is a server-side/data-integrity concern, not a client UX validation
+        for (const [key, message] of Object.entries(validateEntry(def.fields, block))) errors[`${field.name}[${index}].${key}`] = message;
+      }
+    }
   }
   return errors;
 }
 
-export function Field({ field, value, body, preview, config, entryKey, allData, error, onChange, onBodyChange, onNotice }: { field: FieldConfig; value: ContentValue | undefined; body: string; preview?: string | Array<string | null>; config: AdminConfig; entryKey: string; allData: ContentData; error?: string; onChange: (value: ContentValue) => void; onBodyChange: (value: string) => void; onNotice: EntryFormProps['onNotice'] }) {
-  const id = `field-${field.name.replace(/[^a-z0-9_-]/gi, '-')}`;
+export function Field({ field, value, body, preview, config, entryKey, allData, error, errors, idPrefix = '', onChange, onBodyChange, onNotice }: { field: FieldConfig; value: ContentValue | undefined; body: string; preview?: string | Array<string | null> | BlockPreviews; config: AdminConfig; entryKey: string; allData: ContentData; error?: string; errors?: Record<string, string>; idPrefix?: string; onChange: (value: ContentValue) => void; onBodyChange: (value: string) => void; onNotice: EntryFormProps['onNotice'] }) {
+  // idPrefix disambiguates a sub-field's DOM id when Field() is invoked
+  // recursively for a block's own fields (BlocksField) — two blocks of the
+  // same type both expanded would otherwise both render id="field-heading",
+  // an invalid duplicate id that breaks label association for whichever
+  // one isn't first in the DOM.
+  const id = `field-${idPrefix}${field.name.replace(/[^a-z0-9_-]/gi, '-')}`;
   const type = field.type || 'string';
   let control;
   if (type === 'boolean') control = <label className="toggle"><input id={id} type="checkbox" checked={Boolean(value)} onChange={event => onChange(event.target.checked)} /><span aria-hidden="true" /><strong>{value ? 'On' : 'Off'}</strong></label>;
@@ -45,10 +61,11 @@ export function Field({ field, value, body, preview, config, entryKey, allData, 
   else if (type === 'text' || type === 'textarea') control = <textarea id={id} rows={4} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
   else if (type === 'markdown') control = <MarkdownEditor value={body} onChange={onBodyChange} config={config} pageKey={entryKey} data={allData} onNotice={onNotice} />;
   else if (type === 'image') control = <ImageField field={field} value={value} onChange={onChange} onNotice={onNotice} preview={typeof preview === 'string' ? preview : undefined} preset={config.imageSizes[field.size || field.imageType || 'hero']} />;
-  else if (type === 'images') control = <ImagesField field={field} value={value} onChange={onChange} onNotice={onNotice} previews={Array.isArray(preview) ? preview : []} preset={config.imageSizes[field.size || field.imageType || 'gallery']} />;
+  else if (type === 'images') control = <ImagesField field={field} value={value} onChange={onChange} onNotice={onNotice} previews={Array.isArray(preview) ? (preview as Array<string | null>) : []} preset={config.imageSizes[field.size || field.imageType || 'gallery']} />;
   else if (type === 'list') control = <ListField value={value} onChange={onChange} />;
   else if (type === 'pdf') control = <PdfField field={field} value={value} onChange={onChange} onNotice={onNotice} />;
   else if (type === 'pdfs') control = <PdfsField field={field} value={value} onChange={onChange} onNotice={onNotice} />;
+  else if (type === 'blocks') control = <BlocksField field={field} value={value} preview={preview as BlockPreviews | undefined} config={config} entryKey={entryKey} allData={allData} errors={errors || {}} onChange={onChange} onNotice={onNotice} />;
   else if (type === 'select' && field.allowCustom) control = <>
     <input id={id} type="text" list={`${id}-options`} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />
     <datalist id={`${id}-options`}>{(field.options || []).map(opt => <option key={opt.value} value={opt.value} />)}</datalist>
@@ -82,6 +99,6 @@ export function EntryForm({ entry, config, errors, pageName, canRename, liveUrl,
   const change = (field: FieldConfig, value: ContentValue) => onDataChange({ ...entry.data, [field.name]: value });
   return <form className="entry-form" onSubmit={event => event.preventDefault()}>
     <IdentityCard entry={entry} config={config} canRename={canRename} liveUrl={liveUrl} onRenamed={onRenamed} />
-    {sections.map(section => <section className="form-card" key={section.id}>{section.title && <header className="form-card__header"><h2>{section.title}</h2>{section.hint && <p>{section.hint}</p>}</header>}<div className="form-card__fields">{section.fields.map(field => <Field key={`${entry.key || assetPageName}-${field.name}`} field={field} value={entry.data[field.name]} body={entry.body} preview={entry.previews[field.name]} config={config} entryKey={entry.key || 'unknown'} allData={entry.data} error={errors[field.name]} onChange={value => change(field, value)} onBodyChange={onBodyChange} onNotice={onNotice} />)}</div></section>)}
+    {sections.map(section => <section className="form-card" key={section.id}>{section.title && <header className="form-card__header"><h2>{section.title}</h2>{section.hint && <p>{section.hint}</p>}</header>}<div className="form-card__fields">{section.fields.map(field => <Field key={`${entry.key || assetPageName}-${field.name}`} field={field} value={entry.data[field.name]} body={entry.body} preview={entry.previews[field.name]} config={config} entryKey={entry.key || 'unknown'} allData={entry.data} error={errors[field.name]} errors={errors} onChange={value => change(field, value)} onBodyChange={onBodyChange} onNotice={onNotice} />)}</div></section>)}
   </form>;
 }

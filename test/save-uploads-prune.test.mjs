@@ -300,6 +300,50 @@ test('publish prunes only old unreferenced uploads — body and frontmatter refe
   } finally { await shutdown(server); }
 });
 
+// pruneOrphanUploads() does a raw regex scan over every .md file's full
+// text, not a field-aware traversal — this proves that's still true for the
+// new `blocks` field type (v3's page-builder feature) without needing any
+// blocks-aware code in the pruner itself. An image nested inside a block's
+// own frontmatter is just more text in the same file.
+test('publish also protects an image referenced only inside a block, with no blocks-aware pruning code needed', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const up = n => path.join(root, 'src/assets/uploads', n);
+  fs.writeFileSync(up('block-photo.webp'), 'x');
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  fs.utimesSync(up('block-photo.webp'), threeDaysAgo, threeDaysAgo);
+
+  fs.mkdirSync(path.join(root, 'src/content/flexpage'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'src/content/flexpage/about.md'),
+    '---\ntitle: About\nsections:\n  - type: photo\n    image:\n      src: "../../assets/uploads/block-photo.webp"\n      alt: A photo\n---\n',
+  );
+
+  const server = boot(root, 4423, {
+    dynamicCollections: {
+      flexpage: {
+        label: 'Flexible Page', titleField: 'title',
+        fields: [
+          { name: 'title', label: 'Title', type: 'string', required: true },
+          { name: 'sections', label: 'Sections', type: 'blocks', blockTypes: [
+            { id: 'photo', label: 'Photo', fields: [{ name: 'image', label: 'Photo', type: 'image', required: true }] },
+          ] },
+        ],
+      },
+    },
+  });
+  try {
+    const base = await ready(server);
+    const res = await fetch(base + '/api/git/push', {
+      method: 'POST',
+      headers: { Origin: base, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'test publish' }),
+    });
+    assert.equal(res.status, 200); // ok:false is fine — there is no remote; pruning already ran
+    assert.ok(fs.existsSync(up('block-photo.webp')), 'an image referenced only inside a block must survive pruning');
+  } finally { await shutdown(server); }
+});
+
 // ── Cross-origin write guard ────────────────────────────────────────────────
 
 // The admin has no auth by design (localhost only) — the origin check is the

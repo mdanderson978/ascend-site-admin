@@ -9,7 +9,7 @@ import { ToastRegion, type ToastMessage } from './components/Toasts';
 import { EntryForm, validateEntry } from './features/editor/EntryForm';
 import { HistoryPanel } from './features/history/HistoryPanel';
 import { MenuManager } from './features/menus/MenuManager';
-import { breadcrumb, humanize, startNoteParts } from './lib/content';
+import { breadcrumb, humanize, liveUrlFor, splitKey, startNoteParts } from './lib/content';
 
 type ConfirmState = { kind: 'navigate'; key: string; field?: string } | { kind: 'delete' } | { kind: 'restore'; version: HistoryVersion } | null;
 
@@ -160,13 +160,12 @@ export default function App() {
   if (!config) return <div className="boot-state boot-state--error"><h1>Could not open Site Admin</h1><p>Check that the content server is running, then refresh this page.</p></div>;
 
   const isNew = currentKey?.endsWith('/new') || false;
-  const [collection, slug] = currentKey?.split('/') || [];
+  const { collection, slug } = currentKey ? splitKey(currentKey) : { collection: '', slug: '' };
   const title = view === 'menus' ? 'Menus' : isNew ? `New ${config.dynamicCollections[collection]?.label || 'entry'}` : currentKey ? config.pageLabels[currentKey] || humanize(slug) : 'Content overview';
   const trail = view === 'entry' && currentKey ? breadcrumb(currentKey, config.navStructure, config.pageLabels) : '';
   const canDelete = Boolean(currentKey && config.dynamicCollections[collection] && !isNew);
   const canRename = Boolean(currentKey && !isNew && (config.dynamicCollections[collection] || config.renamable.includes(currentKey)));
-  const livePattern = currentKey ? config.urlPatterns[collection] : null;
-  const liveUrl = currentKey && config.siteUrl && livePattern && !isNew ? `${config.siteUrl.replace(/\/$/, '')}/${slug === 'home' ? '' : livePattern.replace('{slug}', encodeURIComponent(slug))}` : '';
+  const liveUrl = currentKey && !isNew ? liveUrlFor(slug, config.siteUrl, config.urlPatterns[collection]) : '';
   const status = dirty ? 'Unsaved changes' : draftSaved ? 'Draft saved' : currentKey ? 'Published' : '';
 
   return <div className="app-shell">
