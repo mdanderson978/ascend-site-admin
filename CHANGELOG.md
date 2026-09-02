@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.11.1 - 2026-09-02
+
+`/api/content` and `/api/search` both parsed a FIELDS key by splitting it on
+every `/` and destructuring straight into `[col, slug]`, keeping only the
+first segment after the collection. That's exact for a flat key
+(`boardMembers/john-clark`), but a nested static page key's slug is itself
+allowed to contain `/` (`pages/about/index`, or two directories deep like
+`pages/awards/hall-of-fame/criteria`) - every nested key sharing that first
+segment collapsed onto the same truncated slug, which the sidebar's
+orphan-detection then duplicated once per colliding key (generically
+mislabeled, since the truncated slug doesn't match any real `pageLabels`
+entry), and 404s when opened, reaching for a file that was never at that
+truncated path. Found on the Australian Masters Athletics site
+(2026-09-02), which uses this nested key convention throughout - every
+site whose `admin.config.mjs` keys any static page more than one directory
+deep hit this the moment that page count grew past a handful, since the
+generic "Other" bucket duplicate count scales with however many sibling
+files share the truncated first segment.
+
+- Both endpoints now split on the *first* `/` only (`key.indexOf('/')` +
+  `slice`), preserving the full remainder as the slug - matching what
+  `resolveFields()` and `contentFile()` already expected.
+- Added a regression test covering both a two-deep and a three-deep nested
+  key in one fixture; confirmed it fails against the old code (collapsing
+  to the exact duplicate/truncated pattern observed live) and passes
+  against the fix.
+
 ## 2.11.0 - 2026-09-02
 
 A plain `select` field always got a hardcoded `— Choose —` placeholder

@@ -168,6 +168,55 @@ test('dynamic collections: sortFields orders sidebar entries automatically, with
   } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
 });
 
+// A static FIELDS key for a nested page (e.g. "pages/about/index", or a page
+// two directories deep like "pages/awards/hall-of-fame/criteria") has a slug
+// that itself contains "/" characters. /api/content and /api/search used to
+// split each key on "/" and destructure straight into [col, slug], which
+// silently keeps only the first segment after the collection and drops the
+// rest - every nested key sharing that first segment collapsed onto the same
+// truncated slug (e.g. "pages/about/index" and "pages/about/governance" both
+// became tree.pages entry "about"), which the sidebar's orphan-detection then
+// duplicated once per colliding key, mislabeled generically (humanizing just
+// that shared first segment), and 404s reaching for a file that was never at
+// that truncated path in the first place. Caught on the Australian Masters
+// Athletics site (2026-09-02), which uses this nested key convention
+// throughout. Covers both the two-deep and three-deep cases in one fixture.
+test('/api/content and /api/search preserve the full slug for a nested static page key, not just its first segment', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/content/pages/about'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src/content/pages/awards/hall-of-fame'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/content/pages/about/index.md'), '---\ntitle: About\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/pages/about/governance.md'), '---\ntitle: Governance\n---\n');
+  fs.writeFileSync(path.join(root, 'src/content/pages/awards/hall-of-fame/criteria.md'), '---\ntitle: HOF Criteria\n---\n');
+  const server = startAdmin({
+    root, port: 4433, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: {
+      'pages/home': [{ name: 'title', label: 'Title' }],
+      'pages/about/index': [{ name: 'title', label: 'Title', required: true }],
+      'pages/about/governance': [{ name: 'title', label: 'Title', required: true }],
+      'pages/awards/hall-of-fame/criteria': [{ name: 'title', label: 'Title', required: true }],
+    },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const tree = await (await fetch(base + '/api/content')).json();
+    // Each nested key must survive whole, as its own distinct tree entry -
+    // not truncated to "about"/"awards" and collapsed together.
+    assert.deepEqual(new Set(tree.pages), new Set(['home', 'about/index', 'about/governance', 'awards/hall-of-fame/criteria']));
+
+    const search = await (await fetch(base + '/api/search')).json();
+    // A correctly-resolved entry carries its real "Title" field value read
+    // from the actual file: resolveFields()/contentFile() only find that
+    // file when given the full, untruncated slug.
+    const titleValue = key => search[key]?.find(f => f.name === 'title')?.value;
+    assert.equal(titleValue('pages/about/index'), 'About');
+    assert.equal(titleValue('pages/about/governance'), 'Governance');
+    assert.equal(titleValue('pages/awards/hall-of-fame/criteria'), 'HOF Criteria');
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
 test('dynamic collections: sortFields without a valid sortDirection fails at startup, not silently', () => {
   const root = fixture();
   try {

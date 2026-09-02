@@ -894,7 +894,21 @@ export function startAdmin(config) {
       if (path_ === '/api/content' && req.method === 'GET') {
         const tree = {};
         for (const key of Object.keys(FIELDS)) {
-          const [col, slug] = key.split('/');
+          // Split on the FIRST "/" only, not every "/" - a nested static page
+          // key like "pages/about/index" or "pages/awards/hall-of-fame/criteria"
+          // has a slug that itself contains slashes. `key.split('/')` used to
+          // destructure straight into [col, slug], silently truncating to just
+          // the first path segment after the collection (col='pages',
+          // slug='about', dropping "/index" entirely) - every nested page under
+          // the same top-level directory collapsed onto that one truncated
+          // slug, which duplicated and mislabeled them in the sidebar's Other
+          // bucket and 404'd when opened, since no content file actually lives
+          // at that truncated path. Confirmed against the Australian Masters
+          // Athletics site (2026-09-02), which uses this nested key convention
+          // throughout (pages/*/index, pages/events/rules/*, etc.).
+          const slashIndex = key.indexOf('/');
+          const col = key.slice(0, slashIndex);
+          const slug = key.slice(slashIndex + 1);
           (tree[col] = tree[col] || []).push(slug);
         }
         // Dynamic collections have no static FIELDS entries — the files on
@@ -926,7 +940,13 @@ export function startAdmin(config) {
           }
         }
         for (const key of searchKeys) {
-          const [col, slug] = key.split('/');
+          // Same first-"/"-only split as /api/content above - see that
+          // comment. A truncated slug here meant resolveFields() and
+          // contentFile() were both being asked about a path with no
+          // corresponding real file, for every nested static page key.
+          const slashIndex = key.indexOf('/');
+          const col = key.slice(0, slashIndex);
+          const slug = key.slice(slashIndex + 1);
           const fields = resolveFields(col, slug) || [];
           let data = {}, body = '';
           const fp = contentFile(col, slug);
