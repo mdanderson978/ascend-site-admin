@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { liveUrlFor, splitKey, startNoteParts } from './content';
+import { liveUrlFor, parseFuzzyDate, splitKey, startNoteParts } from './content';
 
 describe('splitKey', () => {
   it('preserves a nested static page slug whole, not truncated to its first segment', () => {
@@ -45,6 +45,48 @@ describe('liveUrlFor', () => {
     expect(liveUrlFor('about/index', '', '{slug}')).toBe('');
     expect(liveUrlFor('about/index', 'https://example.com', null)).toBe('');
     expect(liveUrlFor('about/index', 'https://example.com', undefined)).toBe('');
+  });
+});
+
+describe('parseFuzzyDate', () => {
+  it('accepts ISO order with any of the supported delimiters', () => {
+    expect(parseFuzzyDate('2026-08-30')).toBe('2026-08-30');
+    expect(parseFuzzyDate('2026/08/30')).toBe('2026-08-30');
+    expect(parseFuzzyDate('2026.08.30')).toBe('2026-08-30');
+    expect(parseFuzzyDate('2026 08 30')).toBe('2026-08-30');
+  });
+
+  it('accepts Australian DD-MM-YYYY order, identified by the 4-digit year coming last', () => {
+    expect(parseFuzzyDate('30/08/2026')).toBe('2026-08-30');
+    expect(parseFuzzyDate('30-08-2026')).toBe('2026-08-30');
+    expect(parseFuzzyDate('30 08 2026')).toBe('2026-08-30');
+  });
+
+  it('pads single-digit day/month', () => {
+    expect(parseFuzzyDate('9/1/2026')).toBe('2026-01-09');
+  });
+
+  it('rejects a 2-digit year as ambiguous rather than guessing the century', () => {
+    expect(parseFuzzyDate('30-08-26')).toBeNull();
+  });
+
+  it('rejects US-style MM-DD-YYYY when the month value is out of range, instead of silently reading it as DD-MM', () => {
+    expect(parseFuzzyDate('08-30-2026')).toBeNull(); // "30" is not a valid month
+  });
+
+  it('rejects an impossible calendar date without ever constructing a Date object', () => {
+    expect(parseFuzzyDate('2026-02-30')).toBeNull();
+    expect(parseFuzzyDate('2026-13-01')).toBeNull();
+  });
+
+  it('accepts a real leap day and rejects Feb 29 on a non-leap year', () => {
+    expect(parseFuzzyDate('2024-02-29')).toBe('2024-02-29');
+    expect(parseFuzzyDate('2026-02-29')).toBeNull();
+  });
+
+  it('rejects unparseable garbage', () => {
+    expect(parseFuzzyDate('not a date')).toBeNull();
+    expect(parseFuzzyDate('')).toBeNull();
   });
 });
 

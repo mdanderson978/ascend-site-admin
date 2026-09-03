@@ -19,6 +19,14 @@ describe('validateEntry', () => {
     expect(validateEntry([{ name: 'price', label: 'Price', type: 'number' }], { price: '$14,300' })).toEqual({});
   });
 
+  it('accepts fuzzy date input in either ISO or Australian order, and rejects ambiguous/invalid input', () => {
+    const field = { name: 'date', label: 'Date', type: 'date' as const };
+    expect(validateEntry([field], { date: '2026-08-30' })).toEqual({});
+    expect(validateEntry([field], { date: '30/08/2026' })).toEqual({});
+    const errors = validateEntry([field], { date: '08-30-2026' });
+    expect(errors.date).toMatch(/isn't a valid date/);
+  });
+
   it('requires a choice for required select fields, same as any other required field', () => {
     const errors = validateEntry([
       { name: 'category', label: 'Category', type: 'select', required: true, options: [{ value: 'tiling', label: 'Tiling' }] },

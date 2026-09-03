@@ -4,6 +4,7 @@ import { ImageField, ImagesField, ListField, PdfField, PdfsField } from './Media
 import { MarkdownEditor } from './MarkdownEditor';
 import { IdentityCard } from './IdentityCard';
 import { BlocksField } from './BlocksField';
+import { parseFuzzyDate } from '../../lib/content';
 
 interface EntryFormProps {
   entry: EntryResponse;
@@ -26,6 +27,7 @@ export function validateEntry(fields: FieldConfig[], data: ContentData): Record<
     const empty = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
     if (field.required && empty) errors[field.name] = `${field.label} cannot be empty.`;
     if (field.type === 'number' && !empty && !Number.isFinite(Number(String(value).replace(/[$,\s]/g, '')))) errors[field.name] = `${field.label} must be a number.`;
+    if (field.type === 'date' && !empty && !parseFuzzyDate(String(value))) errors[field.name] = `${field.label} isn't a valid date. Use YYYY-MM-DD or DD/MM/YYYY, e.g. 2026-08-30 or 30/08/2026.`;
     if (field.maxLength && typeof value === 'string' && value.length > field.maxLength) errors[field.name] = `${field.label} is ${value.length - field.maxLength} characters too long.`;
     if (field.type === 'image' && value && typeof value === 'object' && !Array.isArray(value) && 'src' in value) {
       if (field.required && !value.src) errors[field.name] = `${field.label} needs a photo.`;
@@ -58,6 +60,7 @@ export function Field({ field, value, body, preview, config, entryKey, allData, 
   let control;
   if (type === 'boolean') control = <label className="toggle"><input id={id} type="checkbox" checked={Boolean(value)} onChange={event => onChange(event.target.checked)} /><span aria-hidden="true" /><strong>{value ? 'On' : 'Off'}</strong></label>;
   else if (type === 'number') control = <input id={id} type="text" inputMode="decimal" value={value == null ? '' : String(value)} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
+  else if (type === 'date') control = <input id={id} type="text" placeholder="YYYY-MM-DD" value={value == null ? '' : String(value)} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
   else if (type === 'text' || type === 'textarea') control = <textarea id={id} rows={4} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
   else if (type === 'markdown') control = <MarkdownEditor value={body} onChange={onBodyChange} config={config} pageKey={entryKey} data={allData} onNotice={onNotice} />;
   else if (type === 'image') control = <ImageField field={field} value={value} onChange={onChange} onNotice={onNotice} preview={typeof preview === 'string' ? preview : undefined} preset={config.imageSizes[field.size || field.imageType || 'hero']} />;

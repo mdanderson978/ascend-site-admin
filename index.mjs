@@ -485,6 +485,33 @@ export function startAdmin(config) {
     return IMAGE_SIZES[type] || IMAGE_SIZES.gallery;
   }
 
+  // Accepts flexible human date input for a `date` field — any of -, /, .
+  // or space as the delimiter, in either ISO (YYYY-MM-DD) or Australian
+  // (DD-MM-YYYY) order, determined by which group is 4 digits (the year).
+  // A 2-digit year, or input with no 4-digit group at either end, is
+  // genuinely ambiguous (is 08-30-2026 US-style MM-DD-YYYY, or a typo?) and
+  // is rejected rather than guessed at — a wrong guess would silently
+  // misfile a sermon on the wrong year's archive page, since
+  // sortDynamicSlugs() above sorts on this string verbatim. Deliberately
+  // never constructs a JS Date object — see toDateAwareString()'s comment
+  // above for the exact class of timezone bug that would reintroduce.
+  function parseFuzzyDate(input) {
+    if (typeof input !== 'string') return null;
+    const m = input.trim().match(/^(\d{1,4})[-/.\s]+(\d{1,2})[-/.\s]+(\d{1,4})$/);
+    if (!m) return null;
+    const [, a, b, c] = m;
+    let year, month, day;
+    if (a.length === 4) { year = a; month = b; day = c; }
+    else if (c.length === 4) { year = c; month = b; day = a; }
+    else return null;
+    const y = Number(year), mo = Number(month), d = Number(day);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+    const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if (d > daysInMonth[mo - 1]) return null;
+    return `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
   // Convert what the browser sent into what the .md file must store, per
   // field type. The critical one is `number`: a text input sends a STRING,
   // and gray-matter/js-yaml writes the JS string "1600" as the QUOTED YAML
@@ -497,6 +524,9 @@ export function startAdmin(config) {
     if (f.type === 'number') {
       const n = parseFloat(String(v).replace(/[$,\s]/g, ''));
       return Number.isFinite(n) ? n : v; // invalid input is caught by validateData
+    }
+    if (f.type === 'date' && typeof v === 'string') {
+      return parseFuzzyDate(v) ?? v; // invalid input is caught by validateData
     }
     if (f.type === 'list' && Array.isArray(v)) {
       // Drop fully-empty rows, but do NOT trim items — leading/trailing
@@ -539,6 +569,9 @@ export function startAdmin(config) {
       }
       if (f.type === 'number' && !empty && typeof v !== 'number') {
         errors.push(`"${f.label}" must be a number, e.g. 495 or 840.50 — no $ sign, commas or letters.`);
+      }
+      if (f.type === 'date' && !empty && (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v))) {
+        errors.push(`"${f.label}" isn't a valid date. Use YYYY-MM-DD or DD/MM/YYYY, e.g. 2026-08-30 or 30/08/2026.`);
       }
       if (f.type === 'blocks' && Array.isArray(v)) {
         const byType = Object.fromEntries((f.blockTypes || []).map(bt => [bt.id, bt]));

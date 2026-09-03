@@ -168,6 +168,54 @@ test('dynamic collections: sortFields orders sidebar entries automatically, with
   } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
 });
 
+// A `date` field accepts fuzzy human input (any of -, /, ., space as the
+// delimiter, ISO or Australian DD-MM-YYYY order) and coerceValue() always
+// normalizes it to canonical YYYY-MM-DD before it's written — this is what
+// sortDynamicSlugs()'s plain string comparison (and toDateAwareString())
+// depend on to sort correctly regardless of how the editor typed it in.
+test('date fields: fuzzy input is normalized to canonical YYYY-MM-DD and written quoted', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const server = startAdmin({
+    root, port: 4470, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid', fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { sermons: { label: 'Sermon', titleField: 'title', sortFields: ['date'], sortDirection: 'desc', fields: [{ name: 'title', label: 'Title' }, { name: 'date', label: 'Date', type: 'date' }] } },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const created = await req('/api/content/sermons/new', { method: 'POST', body: JSON.stringify({ data: { title: 'Australian Order', date: '30/08/2026' }, body: '' }) });
+    assert.equal(created.status, 200);
+    const { slug } = await created.json();
+    const raw = fs.readFileSync(path.join(root, 'src/content/sermons', `${slug}.md`), 'utf-8');
+    assert.match(raw, /date: '2026-08-30'\n/, 'DD-MM-YYYY input is normalized to canonical, quoted ISO form');
+
+    const fetched = await (await req(`/api/content/sermons/${slug}`)).json();
+    assert.equal(fetched.data.date, '2026-08-30');
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
+test('date fields: US-style and other ambiguous/invalid input is rejected with a friendly error, not silently misfiled', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const server = startAdmin({
+    root, port: 4471, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid', fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    dynamicCollections: { sermons: { label: 'Sermon', titleField: 'title', sortFields: ['date'], sortDirection: 'desc', fields: [{ name: 'title', label: 'Title' }, { name: 'date', label: 'Date', type: 'date' }] } },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const response = await req('/api/content/sermons/new', { method: 'POST', body: JSON.stringify({ data: { title: 'Bad Date', date: '08-30-2026' }, body: '' }) });
+    assert.equal(response.status, 400);
+    const { error } = await response.json();
+    assert.match(error, /isn't a valid date/);
+    assert.equal(fs.existsSync(path.join(root, 'src/content/sermons')), false, 'nothing was written to disk for the rejected entry');
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
 // A static FIELDS key for a nested page (e.g. "pages/about/index", or a page
 // two directories deep like "pages/awards/hall-of-fame/criteria") has a slug
 // that itself contains "/" characters. /api/content and /api/search used to
