@@ -58,6 +58,30 @@ export function liveUrlFor(slug: string, siteUrl: string, pattern: string | null
   return `${siteUrl.replace(/\/$/, '')}/${pattern.replace('{slug}', liveSlug)}`;
 }
 
+// Accepts flexible human date input for a `date` field — any of -, /, . or
+// space as the delimiter, in either ISO (YYYY-MM-DD) or Australian
+// (DD-MM-YYYY) order, determined by which group is 4 digits (the year). A
+// 2-digit year, or input with no 4-digit group at either end, is genuinely
+// ambiguous and rejected rather than guessed at. This copy exists purely for
+// immediate client-side validation feedback — index.mjs's parseFuzzyDate is
+// the authoritative server-side twin and the source of truth for what's
+// actually written to disk; keep the two in sync if either changes.
+export function parseFuzzyDate(input: string): string | null {
+  const m = input.trim().match(/^(\d{1,4})[-/.\s]+(\d{1,2})[-/.\s]+(\d{1,4})$/);
+  if (!m) return null;
+  const [, a, b, c] = m;
+  let year: string, month: string, day: string;
+  if (a.length === 4) { year = a; month = b; day = c; }
+  else if (c.length === 4) { year = c; month = b; day = a; }
+  else return null;
+  const y = Number(year), mo = Number(month), d = Number(day);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (d > daysInMonth[mo - 1]) return null;
+  return `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 export function breadcrumb(key: string, nav: NavigationSection[], labels: Record<string, string>): string {
   for (const section of nav) {
     if (section.items.some(item => item.key === key || (item.dynamic && key.startsWith(item.dynamic + '/')))) {

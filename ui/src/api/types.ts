@@ -5,7 +5,7 @@ export type ContentData = Record<string, ContentValue | undefined>;
 export interface ImageValue { src: string; alt?: string }
 export interface DocumentValue { label: string; url: string }
 
-export type FieldType = 'string' | 'text' | 'textarea' | 'number' | 'boolean' | 'markdown' | 'image' | 'images' | 'list' | 'pdf' | 'pdfs' | 'heading' | 'select' | 'blocks';
+export type FieldType = 'string' | 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'markdown' | 'image' | 'images' | 'list' | 'pdf' | 'pdfs' | 'heading' | 'select' | 'blocks';
 
 export interface SelectOption { value: string; label: string }
 

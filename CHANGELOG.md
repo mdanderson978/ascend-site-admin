@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.12.0 - 2026-09-03
+
+Added a `date` field type. Previously a date was just a plain `string`
+field with a hint telling the editor to type `YYYY-MM-DD` exactly -
+easy to get subtly wrong (a different delimiter, day/month swapped),
+and any collection using `sortFields` on that field sorts by plain
+string comparison, so a mis-typed date doesn't just look wrong, it
+silently sorts into the wrong place with no visible error.
+
+- `type: 'date'` accepts flexible human input: `-`, `/`, `.` or a space
+  as the delimiter, in either ISO (`YYYY-MM-DD`) or Australian
+  (`DD-MM-YYYY`) order, identified by which group is the 4-digit year.
+- Always normalized server-side to canonical `YYYY-MM-DD` before it's
+  written, regardless of how the editor typed it in - `30/08/2026`,
+  `30-08-2026` and `30.08.2026` all save identically.
+- A 2-digit year, or input with no 4-digit year group at either end
+  (e.g. US-style `08-30-2026`), is rejected with a friendly error
+  rather than guessed at - a wrong guess would silently misfile an
+  entry under the wrong sort position.
+- Client-side validation gives the same early feedback before save,
+  mirroring the existing `number` field's pattern.
+
 ## 2.11.1 - 2026-09-02
 
 `/api/content` and `/api/search` both parsed a FIELDS key by splitting it on
