@@ -4,7 +4,7 @@ import { ImageField, ImagesField, ListField, PdfField, PdfsField } from './Media
 import { MarkdownEditor } from './MarkdownEditor';
 import { IdentityCard } from './IdentityCard';
 import { BlocksField } from './BlocksField';
-import { parseFuzzyDate } from '../../lib/content';
+import { formatFriendlyDate, parseFuzzyDate } from '../../lib/content';
 
 interface EntryFormProps {
   entry: EntryResponse;
@@ -58,9 +58,19 @@ export function Field({ field, value, body, preview, config, entryKey, allData, 
   const id = `field-${idPrefix}${field.name.replace(/[^a-z0-9_-]/gi, '-')}`;
   const type = field.type || 'string';
   let control;
+  // Set only for type === 'date' below — an immediate, unambiguous "this is
+  // what got understood" confirmation (e.g. "Sunday, 30 August 2026"),
+  // since the input accepts several delimiters/orders and a silent
+  // misreading (day/month swapped) would otherwise only surface after
+  // Publish, if at all.
+  let datePreview: string | null = null;
   if (type === 'boolean') control = <label className="toggle"><input id={id} type="checkbox" checked={Boolean(value)} onChange={event => onChange(event.target.checked)} /><span aria-hidden="true" /><strong>{value ? 'On' : 'Off'}</strong></label>;
   else if (type === 'number') control = <input id={id} type="text" inputMode="decimal" value={value == null ? '' : String(value)} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
-  else if (type === 'date') control = <input id={id} type="text" placeholder="YYYY-MM-DD" value={value == null ? '' : String(value)} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
+  else if (type === 'date') {
+    const parsed = typeof value === 'string' && value ? parseFuzzyDate(value) : null;
+    datePreview = parsed ? formatFriendlyDate(parsed) : null;
+    control = <input id={id} type="text" placeholder="YYYY-MM-DD" value={value == null ? '' : String(value)} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
+  }
   else if (type === 'text' || type === 'textarea') control = <textarea id={id} rows={4} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />;
   else if (type === 'markdown') control = <MarkdownEditor value={body} onChange={onBodyChange} config={config} pageKey={entryKey} data={allData} onNotice={onNotice} />;
   else if (type === 'image') control = <ImageField field={field} value={value} onChange={onChange} onNotice={onNotice} preview={typeof preview === 'string' ? preview : undefined} preset={config.imageSizes[field.size || field.imageType || 'hero']} />;
@@ -85,6 +95,7 @@ export function Field({ field, value, body, preview, config, entryKey, allData, 
     <div className="form-field__label"><label htmlFor={type === 'boolean' ? id : id}>{field.label}{field.required && <em>Required</em>}</label>{field.maxLength && <span className={length > field.maxLength ? 'over' : ''}>{length} / {field.maxLength}</span>}</div>
     {field.hint && <p className="field-hint">{field.hint}</p>}
     {control}
+    {datePreview && <p className="field-date-preview">{datePreview}</p>}
     {error && <p className="field-error" role="alert">{error}</p>}
   </div>;
 }

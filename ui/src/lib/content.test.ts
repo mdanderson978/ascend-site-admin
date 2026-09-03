@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { liveUrlFor, parseFuzzyDate, splitKey, startNoteParts } from './content';
+import { formatFriendlyDate, liveUrlFor, parseFuzzyDate, splitKey, startNoteParts } from './content';
 
 describe('splitKey', () => {
   it('preserves a nested static page slug whole, not truncated to its first segment', () => {
@@ -87,6 +87,23 @@ describe('parseFuzzyDate', () => {
   it('rejects unparseable garbage', () => {
     expect(parseFuzzyDate('not a date')).toBeNull();
     expect(parseFuzzyDate('')).toBeNull();
+  });
+});
+
+describe('formatFriendlyDate', () => {
+  it('renders a canonical date as an unambiguous weekday + long date string', () => {
+    expect(formatFriendlyDate('2026-08-30')).toBe('Sunday, 30 August 2026');
+    expect(formatFriendlyDate('2026-01-05')).toBe('Monday, 5 January 2026');
+  });
+
+  it('handles a leap day correctly', () => {
+    expect(formatFriendlyDate('2024-02-29')).toBe('Thursday, 29 February 2024');
+  });
+
+  it('returns null for anything that is not already a canonical YYYY-MM-DD string', () => {
+    expect(formatFriendlyDate('30/08/2026')).toBeNull();
+    expect(formatFriendlyDate('not a date')).toBeNull();
+    expect(formatFriendlyDate('')).toBeNull();
   });
 });
 
