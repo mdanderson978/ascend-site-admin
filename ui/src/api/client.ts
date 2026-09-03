@@ -1,4 +1,4 @@
-import type { AdminConfig, ContentData, ContentTree, EntryResponse, HistoryVersion, Menu, MenuItem, MenuPageOption, MenusResponse, RenamePreview, RenameResult, RichHtmlImportResult, SearchIndex, UploadImage } from './types';
+import type { AdminConfig, ContentData, ContentTree, EntryResponse, HistoryVersion, MenuItem, MenuPageOption, MenusResponse, RenamePreview, RenameResult, RichHtmlImportResult, SearchIndex, UploadImage } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -35,10 +35,7 @@ export const api = {
   order: (collection: string, slugs: string[]) => request<{ ok: boolean }>(`/api/order/${collection}`, json({ slugs })),
   menus: () => request<MenusResponse>('/api/menus'),
   menuPages: () => request<{ pages: MenuPageOption[] }>('/api/menu-pages'),
-  createMenu: (name: string) => request<{ ok: boolean; menu: Menu; error?: string }>('/api/menus', json({ name })),
   saveMenu: (id: string, changes: { name?: string; items?: MenuItem[] }) => request<{ ok: boolean; error?: string }>(`/api/menus/${id}`, json(changes)),
-  deleteMenu: (id: string) => request<{ ok: boolean; error?: string }>(`/api/menus/${id}`, { method: 'DELETE' }),
-  assignMenuSlot: (slotKey: string, menuId: string | null) => request<{ ok: boolean; error?: string }>(`/api/menu-slots/${slotKey}`, json({ menuId })),
   uploadImage: (file: File, imageType: string, onProgress?: (percent: number) => void) => new Promise<UploadImage>((resolve, reject) => {
     const data = new FormData();
     data.append('file', file);
