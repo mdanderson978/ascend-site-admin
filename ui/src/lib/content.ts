@@ -82,6 +82,25 @@ export function parseFuzzyDate(input: string): string | null {
   return `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// Renders a canonical YYYY-MM-DD (the output of parseFuzzyDate, above) as an
+// unambiguous, immediate confirmation for the editor - e.g. "Sunday, 30
+// August 2026" - so a fuzzy date's day/month order is never left to guess
+// at until after Publish. `new Date(y, m-1, d)` is a LOCAL constructor (no
+// timezone/UTC-string parsing involved, unlike `new Date('2026-08-30')`),
+// and only its local getDay() accessor is read back - so this can't shift
+// the calendar date by a day the way toISOString() can (see index.mjs's
+// toDateAwareString comment for that specific trap).
+export function formatFriendlyDate(iso: string): string | null {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  const date = new Date(Number(y), Number(mo) - 1, Number(d));
+  return `${WEEKDAYS[date.getDay()]}, ${Number(d)} ${MONTHS[Number(mo) - 1]} ${y}`;
+}
+
 export function breadcrumb(key: string, nav: NavigationSection[], labels: Record<string, string>): string {
   for (const section of nav) {
     if (section.items.some(item => item.key === key || (item.dynamic && key.startsWith(item.dynamic + '/')))) {

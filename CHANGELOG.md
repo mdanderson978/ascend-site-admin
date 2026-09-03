@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.13.0 - 2026-09-03
+
+A `date` field (2.12.0) accepts several delimiters and both ISO and
+Australian day/month order, which means a mis-ordered or ambiguous
+value could previously only be caught by the server's rejection after
+Publish was clicked - nothing confirmed *how* fuzzy input was actually
+understood while the editor was still typing it.
+
+- Added a live preview line under any `date` field, shown the moment
+  the current input parses successfully - e.g. typing `30/08/2026`
+  immediately shows "Sunday, 30 August 2026" beneath the box. Weekday
+  + long month name + year is deliberately unambiguous regardless of
+  which order the raw input used.
+- New `formatFriendlyDate()` in `ui/src/lib/content.ts`, alongside
+  `parseFuzzyDate()`. Both avoid ever constructing a `Date` from an ISO
+  *string* (only from already-parsed y/m/d integers via the local
+  constructor), so this can't reintroduce the timezone-shift class of
+  bug `index.mjs`'s `toDateAwareString()` already guards against.
+
 ## 2.12.0 - 2026-09-03
 
 Added a `date` field type. Previously a date was just a plain `string`

@@ -118,6 +118,7 @@ a { color: inherit; }
 input:focus, textarea:focus, select:focus { border-color: var(--focus) !important; outline: 0; box-shadow: 0 0 0 3px rgb(44 127 105 / 13%); }
 [aria-invalid="true"] { border-color: var(--danger) !important; }
 .field-error { margin: .55rem 0 0; color: var(--danger); font-size: .78rem; font-weight: 650; }
+.field-date-preview { margin: .55rem 0 0; color: var(--success); font-size: .78rem; font-weight: 650; }
 .toggle { display: inline-flex; align-items: center; gap: .55rem; cursor: pointer; }
 .toggle input { position: absolute; opacity: 0; }
 .toggle > span { width: 43px; height: 24px; padding: 3px; border-radius: 20px; background: #b8c1bb; transition: background .15s; }
