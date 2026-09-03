@@ -1,7 +1,15 @@
 # Menu data contract
 
-The admin's Menus screen stores every menu the client creates in the
-content repo, alongside the content itself:
+The admin's Menus screen exists only on a site that declares at least one
+`menuSlots` entry in `admin.config.mjs` — a site with none never shows
+"Manage menus" at all, since it means the templates were never wired up to
+render anything from this system. Where it does exist, exactly one menu is
+auto-provisioned per declared slot the first time it's needed (named after
+the slot's own `label`) — the client can rename that menu and edit its
+items, but can never create an extra unassigned menu, delete a slot's only
+menu, or reassign a different menu into a slot. Every slot always has
+exactly one real menu; there is nothing else to assign. Stored in the
+content repo alongside the content itself:
 
 ```
 src/content/.site-admin/menus.json
@@ -47,13 +55,16 @@ Three item types, and `heading` allows exactly one level of `children`
   (only `page` and `link` items, never a nested `heading`) as its dropdown.
 
 `slotAssignments` maps a **developer-declared slot key** (see `menuSlots`
-in `admin.config.mjs` — the plain-English label a client sees when
-assigning a menu to that slot) to the id of the menu currently filling it.
-Slot keys are permanent; the menu assigned to one can be freely renamed,
-edited, or swapped for a different menu without the developer's template
-code ever needing to change. A slot with no entry in `slotAssignments`
-(or a menu id that no longer exists — the client deleted it) means render
-nothing for that slot.
+in `admin.config.mjs` — its `label` becomes both the admin's display name
+for the slot and that slot's auto-provisioned menu's initial name) to the
+id of the one menu filling it. Slot keys are permanent; the menu assigned
+to one can be freely renamed and have its items edited, without the
+developer's template code ever needing to change — but the assignment
+itself never changes after that menu is first auto-provisioned, since
+there is no second menu it could ever be swapped for. A slot with no
+entry in `slotAssignments` (only possible from hand-edited data, since the
+admin no longer offers any way to remove one) means render nothing for
+that slot until the admin is next opened, which re-provisions it.
 
 ## Why `stableId`, not a slug or resolved path
 

@@ -65,3 +65,20 @@ describe('buildNavigation', () => {
     expect(onReorder).toHaveBeenCalledWith('projects', ['second', 'first', 'hidden']);
   });
 });
+
+describe('Manage menus visibility', () => {
+  // A site whose templates were never wired up to render a menu from
+  // Menu Manager (config.menuSlots undeclared/empty - true of every site
+  // in the fleet today) must never surface a link that leads to a
+  // fully-functional-looking screen with nowhere for a created menu to go.
+  it('hides "Manage menus" when the site has declared no menu slots', () => {
+    render(<Sidebar config={config} tree={{ pages: ['home'] }} searchIndex={{}} activeKey={null} open onClose={() => {}} onOpenEntry={() => {}} onReorder={() => {}} onOpenMenus={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Manage menus' })).not.toBeInTheDocument();
+  });
+
+  it('shows "Manage menus" once the site declares at least one menu slot', () => {
+    const withSlots = { ...config, menuSlots: { header_primary: { label: 'Header' } } };
+    render(<Sidebar config={withSlots} tree={{ pages: ['home'] }} searchIndex={{}} activeKey={null} open onClose={() => {}} onOpenEntry={() => {}} onReorder={() => {}} onOpenMenus={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Manage menus' })).toBeInTheDocument();
+  });
+});

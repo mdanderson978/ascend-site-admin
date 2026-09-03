@@ -140,12 +140,18 @@
  *   menuSlots       optional; '<slotKey>' -> { label }, developer-declared
  *                   permanent IDs for where a source-repo template renders
  *                   a named menu (e.g. { header_primary: { label: 'Header
- *                   — Primary Nav' } }). The admin assigns which menu (see
- *                   src/content/.site-admin/menus.json, MENUS.md) currently
- *                   fills each slot; slot keys never change even when the
- *                   admin renames or replaces the assigned menu, so a
- *                   developer's template wiring never breaks from an
- *                   admin-side rename.
+ *                   — Primary Nav' } }). Each declared slot gets exactly
+ *                   one auto-provisioned menu (see
+ *                   src/content/.site-admin/menus.json, MENUS.md) the
+ *                   admin can rename and edit the items of — never a
+ *                   freely-creatable/deletable/reassignable pool, since a
+ *                   site's templates only ever have one real place a given
+ *                   slot's menu can go. Slot keys never change even if the
+ *                   admin renames that menu, so a developer's template
+ *                   wiring never breaks from an admin-side rename. A site
+ *                   that declares no menuSlots at all never shows "Manage
+ *                   menus" in the admin — its templates were never wired
+ *                   up to render anything from this system.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, history/restore, and page renaming (with 301-redirect
@@ -1202,12 +1208,23 @@ export function startAdmin(config) {
       }
 
       // ── Menus ─────────────────────────────────────────────────────────
-      // Admin-authored, freely add/rename/delete-able named menus (header,
-      // footer, etc.), stored as one JSON blob (menus.mjs) rather than
-      // per-slug content files — items can link to an existing page (by
-      // stable_id, so a later rename needs no rewrite here at all), an
-      // arbitrary URL/anchor, or be a non-clickable heading for a one-level
-      // dropdown group. See MENUS.md for the full consumption contract.
+      // Exactly one menu per developer-declared `config.menuSlots` entry —
+      // never a freely-creatable, unassigned pool. A site with no
+      // menuSlots declared has never had its templates wired up to render
+      // anything from this system at all, so a client-created menu there
+      // would silently do nothing; a site WITH slots declared has exactly
+      // one real place each menu can go, so letting the client create an
+      // extra unassigned one (or delete a slot's only menu, or swap which
+      // menu fills a slot from some other free-floating pool) was pure
+      // footgun with no legitimate use — every content repo actually in
+      // the fleet has zero menuSlots today, so this was live but unused
+      // anywhere, caught auditing the Essendon church's admin (2026-09-03).
+      // The client can still rename a slot's menu and edit its items —
+      // stored as one JSON blob (menus.mjs) rather than per-slug content
+      // files — items can link to an existing page (by stable_id, so a
+      // later rename needs no rewrite here at all), an arbitrary
+      // URL/anchor, or be a non-clickable heading for a one-level dropdown
+      // group. See MENUS.md for the full consumption contract.
       function resolveMenuItem(item) {
         if (item.type !== 'page') return item;
         const resolved = item.stableId ? resolveStableId(item.stableId) : null;
@@ -1222,6 +1239,24 @@ export function startAdmin(config) {
         };
       }
 
+      // Guarantees every declared slot has exactly one real, persisted menu
+      // — auto-creating an empty one (named after the slot's own label) the
+      // first time a slot is seen with no valid menu assigned. Mutates
+      // `store` in place; returns whether anything changed, so the caller
+      // only writes to disk when there was actually something new to save.
+      function ensureSlotMenus(store, menuSlots) {
+        let changed = false;
+        for (const [slotKey, slot] of Object.entries(menuSlots || {})) {
+          const assignedId = store.slotAssignments[slotKey];
+          if (assignedId && store.menus.some(m => m.id === assignedId)) continue;
+          const menu = { id: crypto.randomUUID(), name: slot.label || slotKey, items: [] };
+          store.menus.push(menu);
+          store.slotAssignments[slotKey] = menu.id;
+          changed = true;
+        }
+        return changed;
+      }
+
       if (path_ === '/api/menu-pages' && req.method === 'GET') {
         jsonResp(res, 200, { pages: allContentPages().filter(p => p.stableId).map(p => ({ key: p.key, title: p.title, stableId: p.stableId })) });
         return;
@@ -1229,18 +1264,8 @@ export function startAdmin(config) {
 
       if (path_ === '/api/menus' && req.method === 'GET') {
         const store = loadMenus(CONTENT);
+        if (ensureSlotMenus(store, config.menuSlots)) saveMenus(CONTENT, store);
         jsonResp(res, 200, { menus: store.menus.map(resolveMenu), slotAssignments: store.slotAssignments });
-        return;
-      }
-
-      if (path_ === '/api/menus' && req.method === 'POST') {
-        const { name } = await parseJsonBody(req);
-        if (!String(name || '').trim()) { jsonResp(res, 400, { ok: false, error: 'Enter a menu name.' }); return; }
-        const store = loadMenus(CONTENT);
-        const menu = { id: crypto.randomUUID(), name: String(name).trim(), items: [] };
-        store.menus.push(menu);
-        saveMenus(CONTENT, store);
-        jsonResp(res, 200, { ok: true, menu });
         return;
       }
 
@@ -1259,34 +1284,6 @@ export function startAdmin(config) {
           if (!Array.isArray(items)) { jsonResp(res, 400, { ok: false, error: 'Invalid menu items.' }); return; }
           menu.items = items;
         }
-        saveMenus(CONTENT, store);
-        jsonResp(res, 200, { ok: true });
-        return;
-      }
-
-      if (menuMatch && req.method === 'DELETE') {
-        const [, id] = menuMatch;
-        const store = loadMenus(CONTENT);
-        const before = store.menus.length;
-        store.menus = store.menus.filter(m => m.id !== id);
-        if (store.menus.length === before) { jsonResp(res, 404, { ok: false, error: 'Menu not found.' }); return; }
-        for (const slot of Object.keys(store.slotAssignments)) {
-          if (store.slotAssignments[slot] === id) delete store.slotAssignments[slot];
-        }
-        saveMenus(CONTENT, store);
-        jsonResp(res, 200, { ok: true });
-        return;
-      }
-
-      const menuSlotMatch = path_.match(/^\/api\/menu-slots\/([^/]+)$/);
-      if (menuSlotMatch && req.method === 'POST') {
-        const [, slotKey] = menuSlotMatch;
-        if (!(config.menuSlots || {})[slotKey]) { jsonResp(res, 400, { ok: false, error: 'Unknown menu slot.' }); return; }
-        const { menuId } = await parseJsonBody(req);
-        const store = loadMenus(CONTENT);
-        if (menuId !== null && !store.menus.some(m => m.id === menuId)) { jsonResp(res, 400, { ok: false, error: 'Menu not found.' }); return; }
-        if (menuId === null) delete store.slotAssignments[slotKey];
-        else store.slotAssignments[slotKey] = menuId;
         saveMenus(CONTENT, store);
         jsonResp(res, 200, { ok: true });
         return;

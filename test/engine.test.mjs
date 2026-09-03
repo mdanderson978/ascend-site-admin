@@ -698,7 +698,7 @@ test('rename: page history survives the rename via --follow', async t => {
   }
 });
 
-test('menus: create, save (rename + edit items), and delete a menu', async t => {
+test('menus: auto-provisions exactly one menu per declared slot; create/delete/reassign endpoints no longer exist', async t => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -712,14 +712,16 @@ test('menus: create, save (rename + edit items), and delete a menu', async t => 
     const base = `http://127.0.0.1:${server.address().port}`;
     const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
 
-    const created = await (await req('/api/menus', { method: 'POST', body: JSON.stringify({ name: 'Main Menu' }) })).json();
-    assert.equal(created.ok, true);
-    assert.equal(created.menu.name, 'Main Menu');
-    const id = created.menu.id;
+    const first = await (await req('/api/menus')).json();
+    assert.equal(first.menus.length, 1);
+    assert.equal(first.menus[0].name, 'Header', "auto-provisioned menu is named after the slot's own label");
+    assert.equal(first.slotAssignments.header_primary, first.menus[0].id);
+    const id = first.menus[0].id;
 
-    const list = await (await req('/api/menus')).json();
-    assert.equal(list.menus.length, 1);
-    assert.equal(list.menus[0].id, id);
+    // Idempotent - reloading doesn't provision a second menu or change the id.
+    const second = await (await req('/api/menus')).json();
+    assert.equal(second.menus.length, 1);
+    assert.equal(second.menus[0].id, id);
 
     const saved = await req(`/api/menus/${id}`, {
       method: 'POST',
@@ -731,15 +733,12 @@ test('menus: create, save (rename + edit items), and delete a menu', async t => 
     assert.equal(afterSave.menus[0].name, 'Header Menu');
     assert.deepEqual(afterSave.menus[0].items, [{ id: 'i1', type: 'link', url: '/contact', label: 'Contact' }]);
 
-    const slotSet = await req('/api/menu-slots/header_primary', { method: 'POST', body: JSON.stringify({ menuId: id }) });
-    assert.equal(slotSet.status, 200);
-    assert.equal((await (await req('/api/menus')).json()).slotAssignments.header_primary, id);
-
-    const deleted = await req(`/api/menus/${id}`, { method: 'DELETE' });
-    assert.equal(deleted.status, 200);
-    const afterDelete = await (await req('/api/menus')).json();
-    assert.equal(afterDelete.menus.length, 0);
-    assert.equal(afterDelete.slotAssignments.header_primary, undefined, 'deleting a menu clears any slot pointing at it');
+    // Creating an extra menu, deleting a slot's only menu, and reassigning a
+    // slot to a different menu are all gone - every declared slot always has
+    // exactly its one real, auto-provisioned menu with no other option.
+    assert.equal((await req('/api/menus', { method: 'POST', body: JSON.stringify({ name: 'Extra Menu' }) })).status, 404);
+    assert.equal((await req(`/api/menus/${id}`, { method: 'DELETE' })).status, 404);
+    assert.equal((await req('/api/menu-slots/header_primary', { method: 'POST', body: JSON.stringify({ menuId: id }) })).status, 404);
   } finally {
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }
@@ -760,8 +759,6 @@ test('menus: POST to a missing menu id 404s instead of crashing', async t => {
 
     const missing = await req('/api/menus/does-not-exist', { method: 'POST', body: JSON.stringify({ name: 'x' }) });
     assert.equal(missing.status, 404);
-    const missingDelete = await req('/api/menus/does-not-exist', { method: 'DELETE' });
-    assert.equal(missingDelete.status, 404);
   } finally {
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }
@@ -782,14 +779,15 @@ test('menus: a page-type item resolves through a rename with no write to menus.j
     fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
     dynamicCollections: { projects: { label: 'Project', titleField: 'title', fields: [{ name: 'title', label: 'Title' }] } },
     urlPatterns: { projects: 'projects/{slug}' },
+    menuSlots: { header_primary: { label: 'Header' } },
   });
   try {
     if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
     const base = `http://127.0.0.1:${server.address().port}`;
     const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
 
-    const created = await (await req('/api/menus', { method: 'POST', body: JSON.stringify({ name: 'Main Menu' }) })).json();
-    await req(`/api/menus/${created.menu.id}`, {
+    const { menus: [menu] } = await (await req('/api/menus')).json();
+    await req(`/api/menus/${menu.id}`, {
       method: 'POST',
       body: JSON.stringify({ items: [{ id: 'i1', type: 'page', stableId: 'fixed-test-id', label: 'First Project' }] }),
     });
@@ -835,14 +833,15 @@ test('menus: a heading item\'s nested children resolve stable_id too, including 
     fields: { 'pages/home': [{ name: 'title', label: 'Title' }], 'pages/services-hub': [{ name: 'title', label: 'Title' }] },
     dynamicCollections: { services: { label: 'Service', titleField: 'title', fields: [{ name: 'title', label: 'Title' }] } },
     urlPatterns: { pages: '{slug}', services: 'services-hub/{slug}' },
+    menuSlots: { header_primary: { label: 'Header' } },
   });
   try {
     if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
     const base = `http://127.0.0.1:${server.address().port}`;
     const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
 
-    const created = await (await req('/api/menus', { method: 'POST', body: JSON.stringify({ name: 'Main Menu' }) })).json();
-    await req(`/api/menus/${created.menu.id}`, {
+    const { menus: [menu] } = await (await req('/api/menus')).json();
+    await req(`/api/menus/${menu.id}`, {
       method: 'POST',
       body: JSON.stringify({
         items: [

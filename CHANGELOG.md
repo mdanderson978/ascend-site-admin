@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.14.0 - 2026-09-03
+
+Menu Manager (2.7.0) let a client freely create any number of named
+menus and manually assign one to each developer-declared slot -
+flexible, but with two real footguns neither caught before now, since
+no site in the fleet had actually adopted it yet: a site with no
+`menuSlots` declared at all still showed a fully-functional "Manage
+menus" link and "no menus yet, create one" screen, with literally
+nowhere for anything created there to render; and a site WITH slots
+declared could still end up with extra unassigned menus, or a slot
+pointing at nothing after a delete - both silent, both invisible until
+someone actually checked the live site. Found auditing the Essendon
+church's admin.
+
+- The "Manage menus" sidebar link, and the whole Menus screen, no
+  longer appear at all for a site with no `menuSlots` declared.
+- For a site that does declare slots, exactly one menu is
+  auto-provisioned per slot (named after the slot's own `label`) the
+  moment it's needed, and stays permanently assigned - the client can
+  rename it and edit its items, but there is no longer any way to
+  create an extra menu, delete a slot's only menu, or reassign a
+  slot to a different one. Every slot always has exactly one real
+  menu; there's nothing else it could be.
+- Removed `POST /api/menus` (create), `DELETE /api/menus/:id`, and
+  `POST /api/menu-slots/:slotKey` (reassign) entirely - not just
+  hidden client-side. `POST /api/menus/:id` (rename + edit items) is
+  unchanged.
+- No site in the fleet had `menuSlots` declared, so nothing currently
+  live is affected either way; a site adopting Menu Manager going
+  forward just declares slots and gets one ready-to-edit menu per
+  slot, no separate creation/assignment step.
+
 ## 2.13.1 - 2026-09-03
 
 The 2.12.0 and 2.13.0 PRs (the `date` field type and its live preview)
