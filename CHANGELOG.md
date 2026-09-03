@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.13.1 - 2026-09-03
+
+The 2.12.0 and 2.13.0 PRs (the `date` field type and its live preview)
+changed `ui/src` but never rebuilt `dist/admin` - unlike every prior
+UI-affecting release, which committed the rebuilt bundle alongside the
+source change. `npm run verify`'s own `npm run build` step exercises
+the build but doesn't persist its output back into the repo, so CI
+stayed green while the two tags shipped a `dist/admin` that still
+predates both features - any site pinned to v2.12.0 or v2.13.0 got the
+old plain-string date input in its actual browser UI, even though the
+server-side normalization/validation in `index.mjs` was correct.
+
+- Rebuilt and committed `dist/admin` with no source changes. Sites
+  should pin v2.13.1 (or later) to actually see the `date` field type
+  and its live preview in the admin UI.
+
 ## 2.13.0 - 2026-09-03
 
 A `date` field (2.12.0) accepts several delimiters and both ISO and
