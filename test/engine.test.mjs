@@ -90,6 +90,43 @@ test('V2 is served by default with a stable legacy fallback and protected assets
   } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
 });
 
+// githubRepo lets the post-publish DeployStatusBanner link straight at this
+// repo's GitHub Actions runs with zero new config on an ordinary site -
+// derived from the origin remote, never hand-configured.
+test('GET /api/config derives githubRepo from the origin remote, and exposes deployWorkflowFile (default and override)', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/mdanderson978/example-content.git'], { cwd: root });
+  const server = startAdmin({
+    root, port: 4472, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const config = await (await fetch(base + '/api/config')).json();
+    assert.equal(config.githubRepo, 'mdanderson978/example-content');
+    assert.equal(config.deployWorkflowFile, 'publish-deploy.yml', 'defaults to the filename every site in the fleet actually uses');
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
+test('GET /api/config returns a null githubRepo with no remote configured, and respects a configured deployWorkflowFile', async t => {
+  const root = fixture(); // fixture() never adds a remote
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const server = startAdmin({
+    root, port: 4473, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    deployWorkflowFile: 'deploy.yml',
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const config = await (await fetch(base + '/api/config')).json();
+    assert.equal(config.githubRepo, null, 'no remote configured - never a crash');
+    assert.equal(config.deployWorkflowFile, 'deploy.yml');
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
 test('legacy admin: deprecation warnings fire once at boot (adminUi) and once per route hit (/legacy), not per request', async t => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

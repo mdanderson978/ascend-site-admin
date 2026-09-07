@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.15.0 - 2026-09-08
+
+"Published successfully" (a toast that fades in a few seconds) only ever
+confirmed the git push itself succeeded - it said nothing about whether
+the downstream GitHub Actions build/deploy subsequently succeeded. That
+gap is exactly what let the Essendon Presbyterian Church incident
+(2.14.1) go unnoticed for two days: every publish kept reporting success
+while every actual deploy silently failed.
+
+Properly polling real deploy status from the engine would need a GitHub
+API token with Actions-read access, and there's no secrets story for
+where a client's own machine would keep one safely - not something to
+take on for this. Instead:
+
+- A successful Publish now shows a persistent banner (not a fading
+  toast) with GitHub's own live workflow status badge, embedded via a
+  plain `<img>` - since it renders in the editor's own browser, which
+  already has an authenticated github.com session from accepting their
+  collaborator invite, the badge shows real pass/fail status with zero
+  new infrastructure on the engine side.
+- A "View deploy details" link straight to the repo's Actions page is
+  always shown alongside it, never conditionally - reading the badge's
+  own pass/fail out of its SVG would need a credentialed cross-origin
+  fetch, a real CORS complication for no real benefit when the link is
+  right there either way.
+- `GET /api/config` now derives `githubRepo` ('owner/repo') from the
+  origin git remote automatically - no per-site config needed on an
+  ordinary site. New optional `deployWorkflowFile` config (defaults to
+  `publish-deploy.yml`, already true for every site in the fleet) covers
+  the rare site that names its deploy workflow something else.
+
 ## 2.14.1 - 2026-09-08
 
 `pruneOrphanUploads()` treated a `.gitkeep` (or any dotfile) the same as

@@ -13,7 +13,7 @@ afterEach(cleanup);
 const baseConfig: AdminConfig = {
   siteTitle: 'Test', browserTitle: 'Test', pageLabels: {}, navStructure: [], dynamicCollections: {},
   tasks: [], shortcodes: {}, siteUrl: 'https://example.com', urlPatterns: {}, renamable: [], externalLinkSurfaces: [],
-  crossListable: {}, menuSlots: {}, imageSizes: {}, startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
+  crossListable: {}, menuSlots: {}, githubRepo: null, deployWorkflowFile: 'publish-deploy.yml', imageSizes: {}, startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
 };
 
 // One menu per declared slot, auto-provisioned server-side - never a

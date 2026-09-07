@@ -8,7 +8,7 @@ afterEach(cleanup);
 
 const config: AdminConfig = {
   siteTitle: 'Test', browserTitle: 'Test', pageLabels: {}, navStructure: [], dynamicCollections: {},
-  tasks: [], shortcodes: {}, siteUrl: '', urlPatterns: {}, renamable: [], externalLinkSurfaces: [], crossListable: {}, menuSlots: {}, imageSizes: {},
+  tasks: [], shortcodes: {}, siteUrl: '', urlPatterns: {}, renamable: [], externalLinkSurfaces: [], crossListable: {}, menuSlots: {}, githubRepo: null, deployWorkflowFile: 'publish-deploy.yml', imageSizes: {},
   startScreenIntro: '', startScreenNote: '', altPlaceholder: 'Describe the photo',
 };
 

@@ -345,6 +345,11 @@ input:focus, textarea:focus, select:focus { border-color: var(--focus) !importan
 .publish-banner__header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
 .publish-banner__header strong { flex: 1; color: var(--danger); font-size: .85rem; }
 .publish-banner__output { max-height: 200px; margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); overflow-y: auto; border-radius: var(--radius-sm); background: var(--brand-950); color: #7ec898; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .72rem; line-height: 1.5; white-space: pre-wrap; }
+.publish-banner--success { border-color: var(--success); }
+.publish-banner--success .publish-banner__header strong { color: var(--success); }
+.deploy-status { display: flex; align-items: center; gap: var(--space-3); margin: 0; }
+.deploy-status img { height: 20px; }
+.deploy-status a { font-size: .82rem; font-weight: 650; white-space: nowrap; }
 
 .boot-state { min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: .8rem; color: var(--ink-soft); }
 .boot-state--error { flex-direction: column; text-align: center; }
