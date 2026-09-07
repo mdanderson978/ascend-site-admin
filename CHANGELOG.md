@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.14.1 - 2026-09-08
+
+`pruneOrphanUploads()` treated a `.gitkeep` (or any dotfile) the same as
+a real upload: unreferenced by any content and older than 48 hours means
+pruned. A `.gitkeep` is usually a deliberate placeholder committed so git
+can track an otherwise-empty `src/assets/uploads` or `public/documents`
+directory at all (git cannot track an empty directory) - pruning it
+breaks that purpose outright: the directory silently disappears from the
+repo the moment it holds zero real files again, which then fails a
+split-repo site's CI rsync step ("No such file or directory") - and every
+subsequent publish keeps failing the same way regardless of what content
+actually changed, since the pipeline dies before it even reaches the real
+changes. Live on the Essendon Presbyterian Church site for two days
+(2026-09-06 to 2026-09-08): a `.gitkeep` added specifically for this
+reason got pruned once it crossed the 48-hour threshold, and nothing
+Bogdan (the client) published in that window ever actually went live -
+the CMS still reported "Published OK" throughout, since that only ever
+confirmed the git push succeeded, never that the site actually rebuilt.
+
+- Pruning now skips any filename starting with `.` entirely, in both
+  `src/assets/uploads` and `public/documents`.
+
 ## 2.14.0 - 2026-09-03
 
 Menu Manager (2.7.0) let a client freely create any number of named
