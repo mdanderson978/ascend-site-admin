@@ -3,7 +3,7 @@ import { api } from './api/client';
 import type { AdminConfig, ContentTree, EntryResponse, HistoryVersion, SearchIndex } from './api/types';
 import { ConfirmDialog } from './components/Dialog';
 import { ExternalIcon, HistoryIcon, MenuIcon, PublishIcon, SaveIcon, TrashIcon } from './components/Icons';
-import { DeployStatusBanner } from './components/DeployStatusBanner';
+import { DeployStatusNote } from './components/DeployStatusNote';
 import { PublishBanner, type PublishFailure } from './components/PublishBanner';
 import { Sidebar } from './components/Sidebar';
 import { ToastRegion, type ToastMessage } from './components/Toasts';
@@ -188,6 +188,7 @@ export default function App() {
           {view === 'entry' && liveUrl && <a className="button button--quiet view-live" href={liveUrl} target="_blank" rel="noreferrer"><ExternalIcon /> View site</a>}
           {view === 'entry' && <button className="button button--quiet history-button" onClick={openHistory} disabled={!currentKey || isNew}><HistoryIcon /> History</button>}
           {view === 'entry' && canDelete && <button className="icon-button danger" onClick={() => setConfirm({ kind: 'delete' })} aria-label="Delete entry"><TrashIcon /></button>}
+          {deploySuccess && config.githubRepo && <DeployStatusNote githubRepo={config.githubRepo} deployWorkflowFile={config.deployWorkflowFile} />}
           <button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> {saving ? 'Saving…' : 'Save draft'}</button>
           <button className="button button--primary" disabled={publishing || dirty} onClick={publish}><PublishIcon /> {publishing ? 'Publishing…' : 'Publish'}</button>
         </div>
@@ -201,7 +202,6 @@ export default function App() {
     <HistoryPanel open={historyOpen} versions={versions} loading={historyLoading} onClose={() => setHistoryOpen(false)} onRestore={version => setConfirm({ kind: 'restore', version })} />
     {confirmDetails && <ConfirmDialog open title={confirmDetails.title} description={confirmDetails.description} confirmLabel={confirmDetails.label} danger={confirmDetails.danger} onCancel={() => setConfirm(null)} onConfirm={acceptConfirm} />}
     {publishFailure && <PublishBanner failure={publishFailure} onDismiss={() => setPublishFailure(null)} />}
-    {deploySuccess && config.githubRepo && <DeployStatusBanner githubRepo={config.githubRepo} deployWorkflowFile={config.deployWorkflowFile} onDismiss={() => setDeploySuccess(false)} />}
     <ToastRegion toasts={toasts} dismiss={dismissToast} />
   </div>;
 }
