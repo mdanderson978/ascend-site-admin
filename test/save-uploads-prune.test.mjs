@@ -300,6 +300,42 @@ test('publish prunes only old unreferenced uploads — body and frontmatter refe
   } finally { await shutdown(server); }
 });
 
+// A .gitkeep (or any dotfile) is never a real upload - most commonly a
+// placeholder deliberately committed so git can track an otherwise-empty
+// directory at all. Pruning one breaks that placeholder's whole purpose:
+// the directory silently disappears from the repo once it holds zero real
+// files again, which then fails a split-repo site's CI rsync step with "No
+// such file or directory" - and keeps failing on every subsequent publish
+// regardless of what content actually changed. This regressed live on the
+// Essendon church site (2026-09-06): a .gitkeep added specifically for
+// this reason got pruned once it crossed the 48-hour age threshold,
+// breaking every deploy for two days with the CMS still reporting
+// "Published OK" throughout (that only ever confirms the git push).
+test('publish never prunes a dotfile placeholder like .gitkeep, even when old and unreferenced', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const up  = n => path.join(root, 'src/assets/uploads', n);
+  const doc = n => path.join(root, 'public/documents', n);
+  fs.writeFileSync(up('.gitkeep'), '');
+  fs.writeFileSync(doc('.gitkeep'), '');
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  fs.utimesSync(up('.gitkeep'), threeDaysAgo, threeDaysAgo);
+  fs.utimesSync(doc('.gitkeep'), threeDaysAgo, threeDaysAgo);
+
+  const server = boot(root, 4424);
+  try {
+    const base = await ready(server);
+    const res = await fetch(base + '/api/git/push', {
+      method: 'POST',
+      headers: { Origin: base, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'test publish' }),
+    });
+    assert.equal(res.status, 200); // ok:false is fine — there is no remote; pruning already ran
+    assert.ok(fs.existsSync(up('.gitkeep')),  'uploads/.gitkeep must survive pruning regardless of age');
+    assert.ok(fs.existsSync(doc('.gitkeep')), 'documents/.gitkeep must survive pruning regardless of age');
+  } finally { await shutdown(server); }
+});
+
 // pruneOrphanUploads() does a raw regex scan over every .md file's full
 // text, not a field-aware traversal — this proves that's still true for the
 // new `blocks` field type (v3's page-builder feature) without needing any

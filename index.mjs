@@ -674,6 +674,22 @@ export function startAdmin(config) {
     const removed = [];
     for (const dir of [UPLOADS, DOCS]) {
       for (const name of fs.readdirSync(dir)) {
+        // A dotfile (.gitkeep, .gitignore, .DS_Store, ...) is never a real
+        // upload - most commonly a placeholder deliberately committed so
+        // git can track an otherwise-empty directory at all (git has no
+        // concept of an empty directory). Pruning one here breaks that
+        // placeholder's whole purpose: the directory silently disappears
+        // from the repo the moment it holds zero real files again, which
+        // then fails CI's `rsync public/documents/...` with "No such file
+        // or directory" - and every subsequent publish keeps failing the
+        // same way regardless of what content actually changed, since the
+        // pipeline dies before it even reaches the real changes. Confirmed
+        // live on the Essendon church site (2026-09-06): a .gitkeep added
+        // 2026-08-26 for exactly this reason got silently pruned once it
+        // crossed the 48-hour age threshold, breaking every deploy for two
+        // days with the CMS still reporting "Published OK" throughout
+        // (that only ever confirmed the git push, never the actual build).
+        if (name.startsWith('.')) continue;
         const p  = path.join(dir, name);
         const st = fs.statSync(p);
         if (!st.isFile() || referenced.has(name)) continue;
