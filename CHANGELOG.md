@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.15.1 - 2026-09-08
+
+2.15.0's post-publish banner embedded GitHub's workflow status badge
+directly, reasoning it would render using the editor's own
+already-authenticated github.com browser session. Checked before this
+shipped to any real site: that assumption doesn't hold. Nothing about
+a successful Publish (which only proves git's own cached credential
+works - a completely separate thing from a browser's github.com login
+cookie) guarantees the editor's browser has an active session at all,
+and a logged-out viewer gets an ugly broken-image icon or an opaque
+404, not a helpful sign-in prompt - worse than no status shown at all.
+
+- Replaced the embedded badge with a plain "Check deploy status" link
+  to the workflow's run history page. GitHub's own site already
+  handles "not signed in yet" correctly on its own - a logged-out
+  click lands on GitHub's login page, then redirects straight back to
+  the intended page on success; a logged-in editor goes straight
+  there. Either way real, authoritative status - just never assumed
+  to render inside the CMS itself.
+- `githubRepo`/`deployWorkflowFile` (2.15.0) are unchanged - only the
+  banner's own rendering changed.
+
 ## 2.15.0 - 2026-09-08
 
 "Published successfully" (a toast that fades in a few seconds) only ever
