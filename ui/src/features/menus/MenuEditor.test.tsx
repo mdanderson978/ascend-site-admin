@@ -14,7 +14,7 @@ afterEach(cleanup);
 const config: AdminConfig = {
   siteTitle: 'Test', browserTitle: 'Test', pageLabels: {}, navStructure: [], dynamicCollections: {},
   tasks: [], shortcodes: {}, siteUrl: 'https://example.com', urlPatterns: {}, renamable: [], externalLinkSurfaces: [],
-  crossListable: {}, menuSlots: {}, imageSizes: {}, startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
+  crossListable: {}, menuSlots: {}, githubRepo: null, deployWorkflowFile: 'publish-deploy.yml', imageSizes: {}, startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
 };
 
 const baseMenu: Menu = { id: 'menu-1', name: 'Main Menu', items: [{ id: 'i1', type: 'link', url: '/contact', label: 'Contact' }] };

@@ -152,6 +152,16 @@
  *                   that declares no menuSlots at all never shows "Manage
  *                   menus" in the admin — its templates were never wired
  *                   up to render anything from this system.
+ *   deployWorkflowFile  optional; the .github/workflows/*.yml filename
+ *                   that builds and deploys this site (default
+ *                   'publish-deploy.yml', true for every site in the
+ *                   fleet today — only set this if a site names its
+ *                   deploy workflow something else). Used to link the
+ *                   post-publish banner's live status badge and "View
+ *                   deploy details" link at the right GitHub Actions
+ *                   workflow — see DeployStatusBanner.tsx. The repo itself
+ *                   (owner/name) is never configured; it's derived from
+ *                   the origin git remote at boot.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, history/restore, and page renaming (with 301-redirect
@@ -267,6 +277,20 @@ export function startAdmin(config) {
     'git', ['-C', ROOT, ...args],
     { encoding: 'utf-8', stdio: 'pipe', ...options },
   );
+
+  // 'owner/repo', derived from the origin remote - lets the admin UI link
+  // straight to this repo's GitHub Actions runs after a publish, with no
+  // new config needed on ordinary sites. Computed once at boot (the remote
+  // never changes during a running session); null in the (rare, mostly
+  // test-fixture) case of no remote or a non-GitHub host, which callers
+  // must treat as "can't show deploy status here," never a crash.
+  const GITHUB_REPO = (() => {
+    try {
+      const url = git(['remote', 'get-url', 'origin']).trim();
+      const m = url.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/);
+      return m ? `${m[1]}/${m[2]}` : null;
+    } catch { return null; }
+  })();
 
   function isInside(parent, candidate) {
     const rel = path.relative(path.resolve(parent), path.resolve(candidate));
@@ -937,6 +961,8 @@ export function startAdmin(config) {
           externalLinkSurfaces: config.externalLinkSurfaces || [],
           crossListable:    config.crossListable || {},
           menuSlots:        config.menuSlots     || {},
+          githubRepo:       GITHUB_REPO,
+          deployWorkflowFile: config.deployWorkflowFile || 'publish-deploy.yml',
           imageSizes:       IMAGE_SIZES,
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',

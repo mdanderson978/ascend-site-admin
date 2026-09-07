@@ -3,6 +3,7 @@ import { api } from './api/client';
 import type { AdminConfig, ContentTree, EntryResponse, HistoryVersion, SearchIndex } from './api/types';
 import { ConfirmDialog } from './components/Dialog';
 import { ExternalIcon, HistoryIcon, MenuIcon, PublishIcon, SaveIcon, TrashIcon } from './components/Icons';
+import { DeployStatusBanner } from './components/DeployStatusBanner';
 import { PublishBanner, type PublishFailure } from './components/PublishBanner';
 import { Sidebar } from './components/Sidebar';
 import { ToastRegion, type ToastMessage } from './components/Toasts';
@@ -34,6 +35,7 @@ export default function App() {
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [publishFailure, setPublishFailure] = useState<PublishFailure | null>(null);
+  const [deploySuccess, setDeploySuccess] = useState(false);
 
   const notify = useCallback((message: string, kind: ToastMessage['kind'] = 'info') => {
     setToasts(current => [...current, { id: Date.now() + Math.random(), message, kind }]);
@@ -102,11 +104,19 @@ export default function App() {
 
   const publish = async () => {
     if (dirty) { notify('Save your draft before publishing.', 'error'); return; }
-    setPublishing(true); setPublishFailure(null);
+    setPublishing(true); setPublishFailure(null); setDeploySuccess(false);
     try {
       const response = await api.publish();
       if (!response.ok) { setPublishFailure({ summary: 'Something went wrong publishing your changes.', output: response.output }); return; }
-      setDraftSaved(false); notify('Published successfully. The live site is rebuilding now.', 'success');
+      setDraftSaved(false);
+      // A toast alone can't tell the editor whether the site actually went
+      // live - only that the git push succeeded. Where a repo could be
+      // derived (every real site), show the persistent deploy-status
+      // banner instead (real GitHub Actions status + a link straight to
+      // it); otherwise fall back to the plain toast so publishing still
+      // gives some feedback.
+      if (config?.githubRepo) setDeploySuccess(true);
+      else notify('Published successfully. The live site is rebuilding now.', 'success');
     } catch (error) { setPublishFailure({ summary: (error as Error).message }); }
     finally { setPublishing(false); }
   };
@@ -191,6 +201,7 @@ export default function App() {
     <HistoryPanel open={historyOpen} versions={versions} loading={historyLoading} onClose={() => setHistoryOpen(false)} onRestore={version => setConfirm({ kind: 'restore', version })} />
     {confirmDetails && <ConfirmDialog open title={confirmDetails.title} description={confirmDetails.description} confirmLabel={confirmDetails.label} danger={confirmDetails.danger} onCancel={() => setConfirm(null)} onConfirm={acceptConfirm} />}
     {publishFailure && <PublishBanner failure={publishFailure} onDismiss={() => setPublishFailure(null)} />}
+    {deploySuccess && config.githubRepo && <DeployStatusBanner githubRepo={config.githubRepo} deployWorkflowFile={config.deployWorkflowFile} onDismiss={() => setDeploySuccess(false)} />}
     <ToastRegion toasts={toasts} dismiss={dismissToast} />
   </div>;
 }

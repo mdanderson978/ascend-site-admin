@@ -95,6 +95,13 @@ export interface AdminConfig {
   externalLinkSurfaces: string[];
   crossListable: Record<string, { field: string; targetCollection: string; label?: string }>;
   menuSlots: Record<string, MenuSlot>;
+  /** 'owner/repo', derived server-side from the origin git remote. null if
+   *  there's no remote or it isn't a github.com URL (mainly test fixtures) -
+   *  the post-publish banner shows no deploy-status link/badge in that case. */
+  githubRepo: string | null;
+  /** The .github/workflows/*.yml filename that builds and deploys this
+   *  site - defaults to 'publish-deploy.yml' server-side. */
+  deployWorkflowFile: string;
   imageSizes: Record<string, ImagePreset>;
   startScreenIntro: string;
   startScreenNote: string;
