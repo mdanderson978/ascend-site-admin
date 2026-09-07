@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.15.2 - 2026-09-08
+
+2.15.0/1's post-publish deploy-status message was a separate floating,
+modal-styled banner - fixed position, its own card, a dismiss button.
+Reasonable for PublishBanner's failure case (a failed publish can mean
+the live site didn't update, so it deliberately stays on screen with
+room for the full error output) but unnecessary weight for a plain
+status link with nothing to inspect.
+
+- Replaced `DeployStatusBanner` with `DeployStatusNote`: a small inline
+  note next to the Publish button itself, in the topbar - no floating
+  overlay, no dismiss button, nothing else on screen affected.
+- Copy changed from "Published — your site is rebuilding now" (banner
+  header) to "Pushed to GitHub" (inline note) - more accurate either
+  way, since a successful git push is the only thing actually confirmed
+  at that point, not that the site is live.
+- `PublishBanner` (the failure case) is unchanged.
+
 ## 2.15.1 - 2026-09-08
 
 2.15.0's post-publish banner embedded GitHub's workflow status badge
