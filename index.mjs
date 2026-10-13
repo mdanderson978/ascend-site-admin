@@ -16,6 +16,13 @@
  *                   src/content, src/assets/uploads, public/documents.
  *   fields          (required) the FIELDS map: '<collection>/<slug>' → field
  *                   array. See the contract comment in references/admin.config.mjs.
+ *                   Field option `thumbnailField` (2.16.0): on a field that
+ *                   holds a YouTube link or id, names a sibling 'image' field
+ *                   the engine fills with the video's largest thumbnail
+ *                   (16:9 WebP in src/assets/uploads/youtube-<id>.webp) on
+ *                   save when it is empty, or when the link changes and the
+ *                   image is engine-made. An editor's own image is never
+ *                   replaced; a failed download never blocks the save.
  *   siteTitle       (required) e.g. 'Example Community Centre' — sidebar logo + console.
  *   developerName   (required) shown in client-facing error messages.
  *   developerEmail  (required) shown in client-facing error messages.
@@ -249,6 +256,21 @@ export function startAdmin(config) {
   }
   for (const [key, fields] of Object.entries(FIELDS)) validateBlockTypeConfig(fields, `fields["${key}"]`);
   for (const [col, d] of Object.entries(DYNAMIC)) validateBlockTypeConfig(d.fields, `dynamicCollections.${col}.fields`);
+
+  // `thumbnailField` (2.16.0) on a YouTube field names a sibling `image`
+  // field the engine fills with that video's thumbnail on save. Checked at
+  // boot so a typo fails loudly instead of silently never filling anything.
+  function validateThumbnailConfig(fields, where) {
+    for (const f of fields) {
+      if (!f.thumbnailField) continue;
+      const target = fields.find(t => t.name === f.thumbnailField);
+      if (!target || target.type !== 'image') {
+        throw new Error(`site-admin: ${where} field "${f.name}" has thumbnailField "${f.thumbnailField}", which must name an 'image' field in the same list.`);
+      }
+    }
+  }
+  for (const [key, fields] of Object.entries(FIELDS)) validateThumbnailConfig(fields, `fields["${key}"]`);
+  for (const [col, d] of Object.entries(DYNAMIC)) validateThumbnailConfig(d.fields, `dynamicCollections.${col}.fields`);
   const IMAGE_SIZES = { ...DEFAULT_IMAGE_SIZES, ...(config.imageSizes || {}) };
   const { siteTitle, developerName, developerEmail } = config;
 
@@ -741,6 +763,66 @@ export function startAdmin(config) {
     } catch (_) { /* non-fatal; publish will surface any real git problem */ }
   }
 
+  // ── YouTube thumbnails (2.16.0) ──────────────────────────────────────────
+  // A field with `thumbnailField: '<image field>'` holds a YouTube link (or
+  // bare id). On save, when that image field is empty, or the link changed
+  // and the current image is one the engine made itself, the video's
+  // largest thumbnail is downloaded, cropped to 16:9 (the 4:3 sizes carry
+  // black bars) and saved as an ordinary upload the image field points to.
+  // The site build then never contacts YouTube, and the editor can replace
+  // the image with their own (never overwritten). A failed download
+  // (offline, timeout) never blocks the save; the next save tries again.
+  const YT_THUMB_SIZES = [
+    { name: 'maxresdefault', w: 1280 },
+    { name: 'hq720', w: 1280 },
+    { name: 'sddefault', w: 640 },
+    { name: 'hqdefault', w: 480 },
+  ];
+  const YT_THUMB_PREFIX = 'youtube-';
+
+  function youtubeIdFrom(value) {
+    const s = String(value || '').trim();
+    if (/^[\w-]{11}$/.test(s)) return s;
+    const m = s.match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([\w-]{11})/);
+    return m ? m[1] : null;
+  }
+
+  async function downloadYoutubeThumbnail(id) {
+    for (const size of YT_THUMB_SIZES) {
+      const r = await fetch(`https://i.ytimg.com/vi/${id}/${size.name}.jpg`, { signal: AbortSignal.timeout(10000) });
+      if (!r.ok) continue;
+      const buf = Buffer.from(await r.arrayBuffer());
+      const outName = `${YT_THUMB_PREFIX}${id}.webp`;
+      await sharp(buf)
+        .resize({ width: size.w, height: Math.round(size.w * 9 / 16), fit: 'cover' })
+        .webp({ quality: 82 })
+        .toFile(path.join(UPLOADS, outName));
+      return '../../assets/uploads/' + outName;
+    }
+    return null;
+  }
+
+  // Mutates `merged`; returns true when an image field was (re)filled.
+  async function applyYoutubeThumbnails(fields, merged) {
+    let filled = false;
+    for (const f of fields) {
+      if (!f.thumbnailField) continue;
+      const id = youtubeIdFrom(merged[f.name]);
+      if (!id) continue;
+      const current = imgSrc(merged[f.thumbnailField]);
+      const engineMade = !current || path.basename(current).startsWith(YT_THUMB_PREFIX);
+      const stale = current && engineMade && path.basename(current) !== `${YT_THUMB_PREFIX}${id}.webp`;
+      if (current && !stale) continue;
+      try {
+        const src = await downloadYoutubeThumbnail(id);
+        if (src) { merged[f.thumbnailField] = { src, alt: '' }; filled = true; }
+      } catch (e) {
+        console.warn(`site-admin: could not fetch the YouTube thumbnail for ${id} (${e.message}); will retry on the next save.`);
+      }
+    }
+    return filled;
+  }
+
   // ── File upload handlers ─────────────────────────────────────────────────
 
   async function handleImageUpload(req) {
@@ -1155,6 +1237,7 @@ export function startAdmin(config) {
         let slug = base, n = 2;
         while (fs.existsSync(path.join(dir, slug + '.md'))) { slug = `${base}-${n++}`; }
 
+        await applyYoutubeThumbnails(fields, merged);
         fs.writeFileSync(path.join(dir, slug + '.md'), matter.stringify(body || '', ensureStableId(merged)), 'utf-8');
         jsonResp(res, 200, { ok: true, slug });
         return;
@@ -1383,8 +1466,11 @@ export function startAdmin(config) {
         const errors = validateData(fields, merged);
         if (errors.length) { jsonResp(res, 400, { ok: false, error: errors.join(' ') }); return; }
 
+        // reload: the engine filled a field the editor's form doesn't have
+        // yet (a YouTube thumbnail), so the UI should re-read the entry.
+        const reload = await applyYoutubeThumbnails(fields, merged);
         fs.writeFileSync(fp, matter.stringify(body || '', ensureStableId(merged)), 'utf-8');
-        jsonResp(res, 200, { ok: true });
+        jsonResp(res, 200, { ok: true, ...(reload && { reload: true }) });
         return;
       }
 

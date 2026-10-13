@@ -84,7 +84,8 @@ export default function App() {
         savedKey = `${currentKey.split('/')[0]}/${response.slug}`; setCurrentKey(savedKey);
       }
       setDirty(false); setDraftSaved(true); setErrors({}); await refreshNavigation(); notify('Draft saved.', 'success');
-      if (savedKey !== currentKey) setEntry(await api.entry(savedKey));
+      // reload: the server filled in a field itself (a YouTube thumbnail).
+      if (savedKey !== currentKey || response.reload) setEntry(await api.entry(savedKey));
     } catch (error) { notify((error as Error).message, 'error'); }
     finally { setSaving(false); }
   }, [entry, currentKey, saving, notify, refreshNavigation]);
