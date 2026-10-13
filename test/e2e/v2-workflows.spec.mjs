@@ -112,7 +112,12 @@ test('edit, upload, reorder, publish and restore through V2', async ({ page }) =
 
   await page.getByRole('button', { name: 'History' }).click();
   await expect(page.getByRole('heading', { name: 'Version history' })).toBeVisible();
-  await page.getByRole('button', { name: 'Restore' }).first().click();
+  // The other editor's overwritten page is in the history too (newest
+  // first: this publish, then theirs, then the original), so it can be
+  // recovered. Restore the original by name rather than by position.
+  const historyRow = (message) => page.locator('.history-list article').filter({ hasText: message });
+  await expect(historyRow('Concurrent content update').getByRole('button', { name: 'Restore' })).toBeVisible();
+  await historyRow('Initial content').getByRole('button', { name: 'Restore' }).click();
   await page.getByRole('button', { name: 'Restore version' }).click();
   await expect(page.getByText(/Previous version restored as a draft/)).toBeVisible();
   await expect(page.getByLabel('Page title')).toHaveValue('Home');
