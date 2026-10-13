@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.16.0 - 2026-10-14
+
+Sites that embed YouTube videos had their thumbnails hotlinked from
+i.ytimg.com by every visitor, or downloaded during each site build (which
+makes builds depend on YouTube, and CI caches expire after 7 days unused,
+about one publish interval for a weekly site).
+
+- New field option `thumbnailField: '<image field>'` on a field holding a
+  YouTube link or id. On save the engine downloads the video's largest
+  thumbnail (maxresdefault, then hq720, sddefault, hqdefault), crops it to
+  16:9 (the 4:3 sizes carry black bars) and saves it as an ordinary upload,
+  `src/assets/uploads/youtube-<id>.webp`, that the image field points to.
+  Committed with the content, so the site build never contacts YouTube.
+- Fills only an empty image field, or replaces one the engine made itself
+  when the link changes. An image the editor uploaded is never replaced.
+- A failed download (offline, timeout) never blocks the save; the next save
+  tries again. The save response carries `reload: true` when a thumbnail
+  was filled, and the UI re-reads the entry so it shows straight away.
+- Boot fails loudly if `thumbnailField` doesn't name an `image` field.
+- Opt-in: sites without `thumbnailField` are unaffected.
+
 ## 2.15.2 - 2026-09-08
 
 2.15.0/1's post-publish deploy-status message was a separate floating,
