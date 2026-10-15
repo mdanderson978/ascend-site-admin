@@ -60,6 +60,12 @@ a { color: inherit; }
 .entry-status { display: inline-flex; align-items: center; gap: .4rem; margin-left: .75rem; color: var(--success); font-size: .73rem; font-weight: 700; vertical-align: .2rem; }
 .deploy-status-note { margin-right: var(--space-3); color: var(--ink-soft); font-size: .78rem; white-space: nowrap; }
 .deploy-status-note a { color: var(--success); font-weight: 650; }
+.deploy-status-note--live { color: var(--success); font-weight: 650; }
+.publish-button { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Busy (sending / deploying) is a status, not "unavailable": keep the brand colour. */
+.publish-button[aria-busy="true"]:disabled { opacity: 1; color: white; background: var(--brand-800); border-color: var(--brand-800); cursor: progress; }
+.button-spinner { width: 14px; height: 14px; flex: none; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: button-spin .8s linear infinite; }
+@keyframes button-spin { to { transform: rotate(360deg); } }
 .entry-status i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .entry-status.dirty { color: #a15f1e; }
 .entry-status.draft { color: #6d5f34; }

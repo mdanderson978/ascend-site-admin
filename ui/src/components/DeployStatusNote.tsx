@@ -3,7 +3,11 @@
 // button that triggered it, not a separate floating banner/modal-styled
 // element competing for the editor's attention.
 //
-// "Pushed to GitHub" rather than "Published": at this point that's the
+// Since 2.17.0 this is the fallback after a publish (useDeployProgress):
+// the site has no /version.json to confirm the deploy, or it's taking far
+// longer than a normal build.
+//
+// "Changes sent" rather than "Published": at this point that's the
 // only thing actually confirmed. Whether the site is genuinely live
 // depends on the downstream GitHub Actions build/deploy, which this
 // engine has no way to check itself (that would need a GitHub API token
@@ -15,5 +19,5 @@
 // editor's browser has an active github.com session.
 export function DeployStatusNote({ githubRepo, deployWorkflowFile }: { githubRepo: string; deployWorkflowFile: string }) {
   const workflowUrl = `https://github.com/${githubRepo}/actions/workflows/${encodeURIComponent(deployWorkflowFile)}`;
-  return <span className="deploy-status-note">Pushed to GitHub — <a href={workflowUrl} target="_blank" rel="noreferrer">Check deploy status →</a></span>;
+  return <span className="deploy-status-note">Changes sent. <a href={workflowUrl} target="_blank" rel="noreferrer">Check deploy status →</a></span>;
 }

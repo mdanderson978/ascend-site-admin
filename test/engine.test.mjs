@@ -1023,3 +1023,49 @@ test('blocks: validateData rejects a missing required sub-field and an unrecogni
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }
 });
+
+// The Publish button's "Compiling and deploying website..." state ends when
+// the live site's /version.json reports the pushed commit (or a later one).
+test('GET /api/deploy-status compares the live site\'s version.json with the published commit', async t => {
+  const http = await import('node:http');
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const gitc = (...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd: root, encoding: 'utf8' }).trim();
+  gitc('add', '.'); gitc('commit', '-m', 'first');
+  const first = gitc('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(root, 'src/content/pages/home.md'), '---\ntitle: Home 2\n---\nWelcome\n');
+  gitc('commit', '-am', 'second');
+  const second = gitc('rev-parse', 'HEAD');
+
+  let liveCommit = first;
+  let serveVersion = true;
+  const site = http.createServer((req, res) => {
+    if (serveVersion && req.url.startsWith('/version.json')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ commit: liveCommit })); }
+    else { res.writeHead(404); res.end(); }
+  });
+  await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
+  const siteUrl = `http://127.0.0.1:${site.address().port}`;
+
+  const boot = (port, extra) => startAdmin({
+    root, port, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] }, ...extra,
+  });
+  const ready = async server => { if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); }); return `http://127.0.0.1:${server.address().port}`; };
+  const status = async (base, commit) => (await fetch(`${base}/api/deploy-status?commit=${commit}`)).json();
+
+  const noSite = boot(4474, {});
+  const withSite = boot(4475, { siteUrl });
+  try {
+    assert.deepEqual(await status(await ready(noSite), second), { supported: false }, 'no siteUrl: nothing to check');
+    const base = await ready(withSite);
+    assert.deepEqual(await status(base, 'not-a-sha'), { supported: false });
+    assert.deepEqual(await status(base, second), { supported: true, live: false }, 'the previous publish is still live');
+    liveCommit = second;
+    assert.deepEqual(await status(base, second), { supported: true, live: true });
+    assert.deepEqual(await status(base, first), { supported: true, live: true }, 'a later publish being live counts');
+    serveVersion = false;
+    assert.deepEqual(await status(base, second), { supported: false, live: false }, 'a site without version.json');
+  } finally {
+    for (const s of [noSite, withSite, site]) if (s.listening) await new Promise(resolve => s.close(resolve));
+  }
+});

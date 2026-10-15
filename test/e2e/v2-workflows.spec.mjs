@@ -105,7 +105,10 @@ test('edit, upload, reorder, publish and restore through V2', async ({ page }) =
   fs.rmSync(concurrent, { recursive: true, force: true });
 
   await page.getByRole('button', { name: 'Publish' }).first().click();
-  await expect(page.getByText(/Published successfully/)).toBeVisible();
+  // After the push the button itself reports the deploy (2.17.0); this
+  // fixture has no siteUrl, so it stays there until the fallback note.
+  await expect(page.getByRole('button', { name: /Compiling and deploying website/ }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /Compiling and deploying website/ }).first()).toBeDisabled();
   const branch = execFileSync('git', ['branch', '--show-current'], { cwd: root, encoding: 'utf8' }).trim();
   expect(execFileSync('git', [`--git-dir=${remote}`, 'show', `${branch}:src/content/pages/home.md`], { encoding: 'utf8' })).toContain('Updated home');
   expect(execFileSync('git', [`--git-dir=${remote}`, 'show', `${branch}:remote-note.txt`], { encoding: 'utf8' })).toContain('unrelated remote update');

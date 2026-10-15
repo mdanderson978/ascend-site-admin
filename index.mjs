@@ -96,6 +96,12 @@
  *                   'https://staging.example.com' while a rebuild hasn't
  *                   cut over DNS yet, or the real domain once it has). The
  *                   button is hidden entirely if this is omitted.
+ *                   Also where the post-publish deploy check looks for
+ *                   `<siteUrl>/version.json` ({"commit": "<sha>"}, written
+ *                   by the site's build): when it reports the commit just
+ *                   published (or a later one), the Publish button says the
+ *                   website is updated. Without it the button falls back to
+ *                   a link to the deploy workflow's runs.
  *   urlPatterns     optional; '<collection>' -> a path template using
  *                   '{slug}', e.g. { pages: '{slug}', services:
  *                   'services/{slug}' }. A collection with no entry here
@@ -1627,6 +1633,7 @@ export function startAdmin(config) {
         const msg = String(message || 'Content update').replace(/[\r\n]+/g, ' ').slice(0, 200);
         let gitOk     = false;
         let gitOutput = '';
+        let pushedCommit = null;
         try {
           // Sweep out uploads nothing references any more (git add below
           // stages the deletions), then commit local changes first so the
@@ -1660,6 +1667,7 @@ export function startAdmin(config) {
           const out = git(['push']);
           gitOk     = true;
           gitOutput = out || 'Changes pushed successfully.';
+          try { pushedCommit = git(['rev-parse', 'HEAD']).trim(); } catch (_) {}
         } catch (e) {
           gitOutput = e.friendly ? e.message : ((e.stdout || '') + (e.stderr || '') || e.message || `Something went wrong publishing your changes. Please try again or contact ${developerName} (${developerEmail}).`);
         }
@@ -1668,7 +1676,36 @@ export function startAdmin(config) {
         // so the push itself triggers the rebuild — no build hook, no
         // client-side secrets, no separate "push worked but hook failed"
         // state.
-        jsonResp(res, 200, { ok: gitOk, output: gitOutput });
+        jsonResp(res, 200, { ok: gitOk, output: gitOutput, commit: pushedCommit });
+        return;
+      }
+
+      // Is the commit just published live yet? The site's build writes
+      // <siteUrl>/version.json with the content commit it was built from;
+      // fetched here (server side: no CORS, no token, nothing stored) so the
+      // UI can poll it. A later commit counts too (someone published again
+      // straight after). supported:false when there's no siteUrl or the site
+      // doesn't publish a version file - the UI then falls back to the
+      // deploy-workflow link.
+      if (path_ === '/api/deploy-status' && req.method === 'GET') {
+        const commit = new URL(req.url, 'http://localhost').searchParams.get('commit') || '';
+        if (!config.siteUrl || !/^[0-9a-f]{7,40}$/i.test(commit)) { jsonResp(res, 200, { supported: false }); return; }
+        let liveCommit = null;
+        try {
+          const r = await fetch(new URL('/version.json?t=' + Date.now(), config.siteUrl), { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+          if (r.ok) liveCommit = (await r.json())?.commit || null;
+        } catch (_) { /* offline or not deployed yet: report not live */ }
+        if (liveCommit === null || !/^[0-9a-f]{7,40}$/i.test(String(liveCommit))) { jsonResp(res, 200, { supported: liveCommit !== null, live: false }); return; }
+        let live = liveCommit === commit;
+        if (!live) {
+          // A different commit is live: the previous version (still
+          // deploying), or a newer publish from someone else. Only a commit
+          // this copy doesn't have yet needs a fetch to tell which.
+          const known = () => { try { git(['cat-file', '-e', liveCommit + '^{commit}']); return true; } catch (_) { return false; } };
+          if (!known()) { try { git(['fetch', '--quiet']); } catch (_) {} }
+          if (known()) { try { git(['merge-base', '--is-ancestor', commit, liveCommit]); live = true; } catch (_) {} }
+        }
+        jsonResp(res, 200, { supported: true, live });
         return;
       }
 

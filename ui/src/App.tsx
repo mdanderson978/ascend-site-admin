@@ -4,6 +4,7 @@ import type { AdminConfig, ContentTree, EntryResponse, HistoryVersion, SearchInd
 import { ConfirmDialog } from './components/Dialog';
 import { ExternalIcon, HistoryIcon, MenuIcon, PublishIcon, SaveIcon, TrashIcon } from './components/Icons';
 import { DeployStatusNote } from './components/DeployStatusNote';
+import { formatElapsed, useDeployProgress } from './features/publish/useDeployProgress';
 import { PublishBanner, type PublishFailure } from './components/PublishBanner';
 import { Sidebar } from './components/Sidebar';
 import { ToastRegion, type ToastMessage } from './components/Toasts';
@@ -35,7 +36,7 @@ export default function App() {
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [publishFailure, setPublishFailure] = useState<PublishFailure | null>(null);
-  const [deploySuccess, setDeploySuccess] = useState(false);
+  const deploy = useDeployProgress();
 
   const notify = useCallback((message: string, kind: ToastMessage['kind'] = 'info') => {
     setToasts(current => [...current, { id: Date.now() + Math.random(), message, kind }]);
@@ -105,19 +106,16 @@ export default function App() {
 
   const publish = async () => {
     if (dirty) { notify('Save your draft before publishing.', 'error'); return; }
-    setPublishing(true); setPublishFailure(null); setDeploySuccess(false);
+    setPublishing(true); setPublishFailure(null); deploy.reset();
     try {
       const response = await api.publish();
       if (!response.ok) { setPublishFailure({ summary: 'Something went wrong publishing your changes.', output: response.output }); return; }
       setDraftSaved(false);
-      // A toast alone can't tell the editor whether the site actually went
-      // live - only that the git push succeeded. Where a repo could be
-      // derived (every real site), show the persistent deploy-status
-      // banner instead (real GitHub Actions status + a link straight to
-      // it); otherwise fall back to the plain toast so publishing still
-      // gives some feedback.
-      if (config?.githubRepo) setDeploySuccess(true);
-      else notify('Published successfully. The live site is rebuilding now.', 'success');
+      // The push only starts the site's build and deploy. The Publish
+      // button then says so ("Compiling and deploying website...") until the
+      // live site reports this commit (useDeployProgress), or falls back to
+      // the deploy-workflow link where that can't be checked.
+      deploy.start(response.commit);
     } catch (error) { setPublishFailure({ summary: (error as Error).message }); }
     finally { setPublishing(false); }
   };
@@ -176,6 +174,10 @@ export default function App() {
   const trail = view === 'entry' && currentKey ? breadcrumb(currentKey, config.navStructure, config.pageLabels) : '';
   const canDelete = Boolean(currentKey && config.dynamicCollections[collection] && !isNew);
   const canRename = Boolean(currentKey && !isNew && (config.dynamicCollections[collection] || config.renamable.includes(currentKey)));
+  // After a publish the button itself reports the build and deploy, until
+  // the live site has it or the editor saves something new to publish.
+  const deploying = deploy.phase === 'deploying';
+  const holdPublish = deploying && !draftSaved;
   const liveUrl = currentKey && !isNew ? liveUrlFor(slug, config.siteUrl, config.urlPatterns[collection]) : '';
   const status = dirty ? 'Unsaved changes' : draftSaved ? 'Draft saved' : currentKey ? 'Published' : '';
 
@@ -189,12 +191,17 @@ export default function App() {
           {view === 'entry' && liveUrl && <a className="button button--quiet view-live" href={liveUrl} target="_blank" rel="noreferrer"><ExternalIcon /> View site</a>}
           {view === 'entry' && <button className="button button--quiet history-button" onClick={openHistory} disabled={!currentKey || isNew}><HistoryIcon /> History</button>}
           {view === 'entry' && canDelete && <button className="icon-button danger" onClick={() => setConfirm({ kind: 'delete' })} aria-label="Delete entry"><TrashIcon /></button>}
-          {deploySuccess && config.githubRepo && <DeployStatusNote githubRepo={config.githubRepo} deployWorkflowFile={config.deployWorkflowFile} />}
+          {deploy.phase === 'live' && <span className="deploy-status-note deploy-status-note--live">Website updated{config.siteUrl && <> · <a href={config.siteUrl} target="_blank" rel="noreferrer">View site</a></>}</span>}
+          {deploy.phase === 'unconfirmed' && (config.githubRepo
+            ? <DeployStatusNote githubRepo={config.githubRepo} deployWorkflowFile={config.deployWorkflowFile} />
+            : <span className="deploy-status-note">Changes sent. The website is being updated.</span>)}
+          {deploying && !holdPublish && <span className="deploy-status-note">Still deploying your last publish… {formatElapsed(deploy.elapsed)}</span>}
+          <span className="sr-only" aria-live="polite">{publishing ? 'Sending changes' : deploying ? 'Compiling and deploying website' : deploy.phase === 'live' ? 'Website updated' : ''}</span>
           <button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> {saving ? 'Saving…' : 'Save draft'}</button>
-          <button className="button button--primary" disabled={publishing || dirty} onClick={publish}><PublishIcon /> {publishing ? 'Publishing…' : 'Publish'}</button>
+          <button className="button button--primary publish-button" aria-busy={publishing || holdPublish} disabled={publishing || dirty || holdPublish} onClick={publish}>{publishing || holdPublish ? <span className="button-spinner" aria-hidden="true" /> : <PublishIcon />} {publishing ? 'Sending changes…' : holdPublish ? `Compiling and deploying website… ${formatElapsed(deploy.elapsed)}` : 'Publish'}</button>
         </div>
       </header>
-      <div className="mobile-actions"><button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> Save draft</button><button className="button button--primary" disabled={publishing || dirty} onClick={publish}><PublishIcon /> Publish</button></div>
+      <div className="mobile-actions"><button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> Save draft</button><button className="button button--primary publish-button" aria-busy={publishing || holdPublish} disabled={publishing || dirty || holdPublish} onClick={publish}>{publishing || holdPublish ? <span className="button-spinner" aria-hidden="true" /> : <PublishIcon />} {publishing ? 'Sending…' : holdPublish ? `Deploying… ${formatElapsed(deploy.elapsed)}` : 'Publish'}</button></div>
       <div className="content-scroll">
         {view === 'menus' ? <MenuManager config={config} onOpenEntry={openEntry} onEntryCreated={refreshNavigation} onNotice={notify} /> :
         entryLoading ? <div className="loading-page"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div> : entry ? <EntryForm entry={entry} config={config} errors={errors} canRename={canRename} liveUrl={liveUrl} onRenamed={onRenamed} onDataChange={data => mutateEntry({ ...entry, data })} onBodyChange={body => mutateEntry({ ...entry, body })} onNotice={notify} /> : <section className="welcome-card"><span className="eyebrow">Ascend Site Admin 2.0</span><h2>What would you like to update?</h2><p>{config.startScreenIntro}</p>{config.tasks.length > 0 && <div className="task-grid">{config.tasks.map(task => <button key={`${task.goto}-${task.field || ''}`} onClick={() => openEntry(task.goto, task.field)}><span>{task.label}</span><strong>Open →</strong></button>)}</div>}<div className="welcome-note">{startNoteParts(config.startScreenNote).map((part, index) => part.break ? <br key={index} /> : part.strong ? <strong key={index}>{part.text}</strong> : <Fragment key={index}>{part.text}</Fragment>)}</div></section>}
