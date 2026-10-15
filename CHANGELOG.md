@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.17.0 - 2026-10-15
+
+After Publish, the button only said "Publishing..." for the few seconds the
+git push took, then a small "Pushed to GitHub" note. Editors had no sign
+that the site was still being built, or when their change was actually
+live (a cold build that re-encodes every image can take half an hour).
+
+- The Publish button now reports the whole publish: "Sending changes..."
+  during the push, then "Compiling and deploying website..." with a
+  running timer ("Deploying..." in the narrow mobile bar). While it's busy
+  it keeps the brand colour (aria-busy) instead of the greyed-out
+  disabled look.
+- New `GET /api/deploy-status?commit=<sha>`: fetches `<siteUrl>/version.json`
+  (server side, no token) and reports whether the live site runs that
+  commit or a later one. `/api/git/push` now returns the pushed `commit`.
+  When the live site has it, the button returns to Publish with "Website
+  updated · View site" beside it.
+- Sites opt in by having their build write `version.json` =
+  `{"commit": "<content repo commit>"}` (GitHub Actions' GITHUB_SHA in the
+  publish workflow). Without it (or without `siteUrl`), the button shows
+  the deploying state for 2 minutes, then the existing deploy-workflow
+  link, reworded to "Changes sent. Check deploy status".
+- Saving a new draft mid-deploy re-enables Publish; a note keeps showing
+  the earlier deploy's progress.
+
 ## 2.16.0 - 2026-10-14
 
 Sites that embed YouTube videos had their thumbnails hotlinked from
