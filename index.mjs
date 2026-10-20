@@ -142,8 +142,8 @@
  *   crossListable   optional; '<collection>' -> { field, targetCollection,
  *                   label? }, for a collection whose entries can ALSO be
  *                   cross-listed on another collection's hub grid via
- *                   their own boolean field (e.g. LPR's flagship
- *                   pages/pool-tiling-melbourne setting
+ *                   their own boolean field (e.g. a site's flagship
+ *                   pages/<service-page> setting
  *                   also_in_services: true to also appear as a card on
  *                   the Services hub). Purely informational — shown as a
  *                   badge on the entry's identity card ("Also shown on:
@@ -736,7 +736,7 @@ export function startAdmin(config) {
         // or directory" - and every subsequent publish keeps failing the
         // same way regardless of what content actually changed, since the
         // pipeline dies before it even reaches the real changes. Confirmed
-        // live on the Essendon church site (2026-09-06): a .gitkeep added
+        // live on a client site (2026-09-06): a .gitkeep added
         // 2026-08-26 for exactly this reason got silently pruned once it
         // crossed the 48-hour age threshold, breaking every deploy for two
         // days with the CMS still reporting "Published OK" throughout
@@ -1072,8 +1072,8 @@ export function startAdmin(config) {
           // the same top-level directory collapsed onto that one truncated
           // slug, which duplicated and mislabeled them in the sidebar's Other
           // bucket and 404'd when opened, since no content file actually lives
-          // at that truncated path. Confirmed against the Australian Masters
-          // Athletics site (2026-09-02), which uses this nested key convention
+          // at that truncated path. Confirmed against a client
+          // site (2026-09-02) that uses this nested key convention
           // throughout (pages/*/index, pages/events/rules/*, etc.).
           const slashIndex = key.indexOf('/');
           const col = key.slice(0, slashIndex);
@@ -1349,7 +1349,7 @@ export function startAdmin(config) {
       // menu fills a slot from some other free-floating pool) was pure
       // footgun with no legitimate use — every content repo actually in
       // the fleet has zero menuSlots today, so this was live but unused
-      // anywhere, caught auditing the Essendon church's admin (2026-09-03).
+      // anywhere, caught auditing a client site's admin (2026-09-03).
       // The client can still rename a slot's menu and edit its items —
       // stored as one JSON blob (menus.mjs) rather than per-slug content
       // files — items can link to an existing page (by stable_id, so a

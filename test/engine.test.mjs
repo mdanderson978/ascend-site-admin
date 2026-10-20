@@ -20,7 +20,7 @@ const packageVersion = JSON.parse(fs.readFileSync(new URL('../package.json', imp
 // Menu Manager feature) was never added to `files`, so every site that
 // installed v2.7.0/2.8.0 got `ERR_MODULE_NOT_FOUND` the moment the admin
 // server booted, since index.mjs imports it unconditionally at module load
-// time. Caught only when Essendon Presbyterian Church's content repo
+// time. Caught only when a client site's content repo
 // upgraded past v2.6.0 for the first time (2026-09-01) - no site had
 // bumped that far until then. This test makes that whole bug class
 // impossible to reintroduce silently.
@@ -263,8 +263,8 @@ test('date fields: US-style and other ambiguous/invalid input is rejected with a
 // became tree.pages entry "about"), which the sidebar's orphan-detection then
 // duplicated once per colliding key, mislabeled generically (humanizing just
 // that shared first segment), and 404s reaching for a file that was never at
-// that truncated path in the first place. Caught on the Australian Masters
-// Athletics site (2026-09-02), which uses this nested key convention
+// that truncated path in the first place. Caught on a client
+// site (2026-09-02) that uses this nested key convention
 // throughout. Covers both the two-deep and three-deep cases in one fixture.
 test('/api/content and /api/search preserve the full slug for a nested static page key, not just its first segment', async t => {
   const root = fixture();

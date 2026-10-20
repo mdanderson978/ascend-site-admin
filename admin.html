@@ -1214,7 +1214,7 @@ const BUILTIN_SHORTCODES = [
       cancelMsg: 'Video not added',
       fields: [
         { label: 'YouTube video link', required: true, placeholder: 'https://www.youtube.com/watch?v=…' },
-        { label: 'Video title', hint: 'optional — helps screen readers; a generic title is used if left blank', placeholder: 'e.g. Pool Renovation Timelapse' },
+        { label: 'Video title', hint: 'optional — helps screen readers; a generic title is used if left blank', placeholder: 'e.g. Project timelapse' },
       ],
     },
     build: ([url, title]) => {
@@ -1278,7 +1278,7 @@ const BUILTIN_SHORTCODES = [
           type: 'textarea',
           rows: 5,
           hint: 'optional — this appears in the visitor\'s messaging app and can still be edited before sending',
-          placeholder: 'e.g. Hi! I would like to discuss renovating my swimming pool.',
+          placeholder: 'e.g. Hi! I would like to ask about a quote.',
           remember: true,
         },
         { label: 'Button text', value: 'Text Message', placeholder: 'e.g. Text Message' },
@@ -2259,7 +2259,7 @@ function renderMarkdown(f) {
   // discoverable than expecting anyone to know the markdown title form, and
   // centered on screen so it's visible however far down the body they were.
   // opts.linked: true builds a clickable thumbnail — [![alt](src)](url) —
-  // instead of a plain photo, e.g. Andrew's "Completed Projects" thumbnails
+  // instead of a plain photo, e.g. a "Completed Projects" grid of thumbnails
   // that click through to a gallery page (site support for the syntax
   // varies by site; harmless as a plain linked image elsewhere).
   function showPhotoPanel(json, insertAt, opts = {}) {
@@ -2275,11 +2275,11 @@ function renderMarkdown(f) {
       <img src="${json.preview}" alt="">
       <div class="md-photo-fields">
         <label>Photo description <span class="md-photo-req">(required — shows to Google &amp; screen readers)</span>
-          <input type="text" class="md-photo-alt" placeholder="e.g. Fully tiled pool renovation in Hampton">
+          <input type="text" class="md-photo-alt" placeholder="e.g. Finished timber deck after oiling">
         </label>
         ${linked ? `
         <label>Links to <span class="md-photo-req">(required — where clicking the thumbnail sends visitors)</span>
-          <input type="text" class="md-photo-link" placeholder="e.g. /pool-renovation-photo-galleries/hampton-project">
+          <input type="text" class="md-photo-link" placeholder="e.g. /our-work/kitchen-project">
         </label>` : `
         <label>Tooltip <span class="md-photo-req">(optional — appears when a visitor hovers the photo)</span>
           <input type="text" class="md-photo-title" placeholder="e.g. Completed in 3 weeks — call us for a quote">

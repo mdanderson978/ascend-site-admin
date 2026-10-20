@@ -4,11 +4,11 @@
 
 Ascend Site Admin 2.0 will replace the current single-file browser interface with a polished React application while retaining the proven Node.js content engine.
 
-The goal is a CMS that feels like a professional desktop application without disrupting how Andrew launches it, edits content, uploads media, or publishes changes.
+The goal is a CMS that feels like a professional desktop application without disrupting how the pilot client launches it, edits content, uploads media, or publishes changes.
 
 ## Product principles
 
-- Keep Andrew's workflow simple. Starting and using the CMS should work the same way it does today.
+- Keep the client's workflow simple. Starting and using the CMS should work the same way it does today.
 - Preserve complete compatibility with existing site content and `admin.config.mjs` files.
 - Improve the interface without coupling the CMS to any one client website.
 - Make important actions - saving, publishing, deleting, restoring and reordering - clear and difficult to trigger accidentally.
@@ -86,7 +86,7 @@ Version 2.0 must initially preserve:
 - Existing content collection files and frontmatter
 - Existing upload and document locations
 - Existing shortcode definitions
-- Current launch scripts used by Andrew
+- Current launch scripts used by the pilot client
 - Current localhost-only security model
 
 No content migration should be required for the first 2.0 release.
@@ -149,7 +149,7 @@ The exact structure may change during implementation, but frontend source, compi
 ### Phase 5: Verification and release
 
 - Run feature-parity checks against the legacy interface.
-- Test with Andrew's site and at least one additional configured site.
+- Test with the pilot site and at least one additional configured site.
 - Add browser-level tests for critical editing and publishing workflows.
 - Check responsive behaviour and keyboard accessibility.
 - Make V2 the default interface while retaining a short-lived legacy fallback.
@@ -186,7 +186,7 @@ Publishing tests must not push to a real production repository.
 - Continue using immutable Git version tags for consuming sites.
 - Build and verify frontend assets before creating a release tag.
 - Keep the last stable 1.x tag available for immediate rollback.
-- Upgrade Andrew's site to a specific 2.x tag only after acceptance testing.
+- Upgrade the pilot site to a specific 2.x tag only after acceptance testing.
 - Document any future configuration changes with defaults that preserve older sites.
 
 ## Out of scope for the initial 2.0 release
@@ -204,7 +204,7 @@ These can be considered later without delaying the core interface rebuild.
 
 Ascend Site Admin 2.0 is ready when:
 
-- Andrew can launch it through his existing workflow.
+- The pilot client can launch it through their existing workflow.
 - All currently supported field types and content operations work in the React interface.
 - Existing site configuration and content work without migration.
 - Drag ordering, uploads, drafts, history and publishing have been verified end to end.
