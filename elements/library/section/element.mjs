@@ -1,4 +1,5 @@
 import { defineElement, general } from '../../core/registry.mjs';
+import { richTextToPlain } from '../../core/sanitize.mjs';
 
 // Host width (px) that each content width is capped at, for image `sizes`.
 const HOST_WIDTH = { narrow: 'narrowMax', default: 'containerMax', wide: 'wideMax', full: null };
@@ -11,7 +12,7 @@ function hasLongText(children = []) {
     if (child.type !== 'prose' || child.props?.hidden) continue;
     const html = String(child.props?.html ?? '');
     paragraphs += (html.match(/<(p|li)\b/g) || []).length;
-    chars += html.replace(/<[^>]+>/g, '').length;
+    chars += richTextToPlain(html).length;
   }
   return paragraphs > 3 || chars > 450;
 }

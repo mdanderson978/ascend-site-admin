@@ -11,6 +11,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
+import yaml from 'js-yaml';
 import { renderLayout, saveLayout, structuredDataHtml } from '../elements/index.mjs';
 import { elementCss } from '../elements/css.mjs';
 import { prepareMedia, AVIF_QUALITY, LADDER, WEBP_QUALITY } from './media.mjs';
@@ -33,8 +34,10 @@ function layoutToYaml(layout) {
   return matter.stringify('', { layout }).replace(/^---\r?\n/, '').replace(/\r?\n---\s*$/, '').trim() + '\n';
 }
 
+// The editor's text is untrusted input: parse it with js-yaml's safeLoad
+// (plain data only), never gray-matter, which evaluates `---js` front matter.
 function yamlToLayout(text) {
-  const data = matter(`---\n${text}\n---\n`).data;
+  const data = yaml.safeLoad(String(text));
   if (data && data.layout) return data.layout;
   if (data && Array.isArray(data.children)) return data;
   throw new Error('Expected a "layout:" key at the top.');
