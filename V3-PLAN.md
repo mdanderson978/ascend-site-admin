@@ -285,7 +285,7 @@ Host-specific behaviour is injected:
 
 | Hook | Astro build | Admin preview |
 |---|---|---|
-| `resolveImage(src, opts)` | Astro `getImage()`: WebP/AVIF, srcset, width/height, focal point | Admin serves the local upload with the same attributes |
+| `resolveImage(src, opts)` | Reads the committed media manifest: AVIF srcset, WebP fallback, width/height, focal point | Same manifest; images not yet published are served by the admin |
 | `resolveLink(ref)` | Source repo routing | `urlPatterns` from `admin.config.mjs`, plus `data-preview-link` to block navigation |
 | `collection(name, query)` | `getCollection()` | Engine reads the same content files |
 | `mode` | `'build'` | `'preview'`: adds `data-node` ids for selection |
@@ -563,8 +563,10 @@ The **Add** dialog has three tabs:
 
 ### Images
 
-- Upload pipeline as today (sharp in the admin), plus a **suggested focal
-  point** from sharp's `attention` strategy, which the client can adjust.
+- Upload pipeline as today (sharp in the admin), extended to produce the AVIF
+  set and WebP fallback at upload (see Performance by construction), plus a
+  **suggested focal point** from sharp's `attention` strategy, which the client
+  can adjust.
 - The client never chooses formats, sizes or loading behaviour. The build
   handles all of it (see Performance by construction).
 - Clients who want a stock photo download it themselves and upload it like any
@@ -730,16 +732,61 @@ correct sizes, one clear high-priority hero image, inlined CSS and
 non-swapping fonts. 3.0 builds all of that into the output so it can't be
 forgotten.
 
-### Images (Astro's image pipeline, AVIF first)
+### Images (AVIF, encoded once at upload)
 
-- Every image renders as `<picture>` with **AVIF** and **WebP** sources and a
-  fallback `<img>`, generated at build by Astro's image pipeline (`getImage()`,
-  sharp). Default AVIF quality is about 50 (proven on fleet photos); one engine
-  setting, not per image.
+**Decision: images are encoded once, at upload, and committed. Builds never
+encode images.**
+
+Why not let Astro encode at build: Astro does cache processed images between
+builds (in `node_modules/.astro`), but the deploy runs on a fresh GitHub
+Actions machine and `npm ci` deletes `node_modules`, so every publish
+re-encodes every image on the site at every width. A cache step would help
+only partly, because GitHub evicts caches unused for 7 days (about one publish
+interval for a weekly site), so many publishes would still be cold. Encoding at
+upload makes every publish fast regardless.
+
+- **At upload,** the admin (sharp, already in the engine) encodes from the
+  client's original photo:
+  - **AVIF at a fixed width ladder** (400, 800, 1200, 1600, 1920), capped at the
+    original's width. Quality about 50 (proven on fleet photos), one engine
+    setting, not per image.
+  - **One WebP fallback** at the largest width, for browsers without AVIF
+    (mainly iPhones and iPads stuck on iOS 15 or earlier, roughly 5% of visitors,
+    more for older audiences). AVIF-capable browsers never download it.
+  - The client sees a progress indicator; this takes a few seconds per photo.
+- **Committed to the content repo** with everything else on Publish, because
+  the build machine only sees what's in the two repos. Files live in
+  `public/media/` (added to the copy step in `publish-deploy.yml`) so Astro
+  serves them as-is and never reprocesses them.
+- **Fingerprinted names** (`deck-a1b2c3-800.avif`, `deck-a1b2c3.webp`) so the
+  site can mark them cacheable forever, and a replaced photo automatically gets
+  new URLs.
+- **A manifest** (`public/media/manifest.json`) records each image's
+  fingerprint, available widths, intrinsic width and height and focal point, so
+  both the admin preview and the build write `<picture>` markup without decoding
+  any image.
+- **The existing upload** in `src/assets/uploads/` stays as the master and
+  keeps 2.x image fields working unchanged.
+- **Pruning** treats an upload, its AVIF set and its WebP fallback as one unit:
+  removed together, never leaving stray variants.
+- **Changing the ladder or quality later** is a one-off regeneration script
+  (from the masters), committed once.
+- **Repo size:** the AVIF set plus fallback is estimated at one to two times
+  the size of the existing single WebP per image (for the pilot site, roughly
+  15 to 20 MB on top of 14 MB of uploads). To be confirmed on real photos in
+  phase 1. Git LFS and external storage (R2) were rejected: LFS adds setup on
+  every client machine and in CI, and external storage would need credentials on
+  client machines.
+- **Existing sites** get a one-off script that generates sets for current
+  uploads (from their stored WebP; second-generation loss is acceptable).
+
+At render time:
+
+- Every image renders as `<picture>` with an AVIF `<source>` (full srcset from
+  the manifest) and the WebP as the `<img>` fallback.
 - **`sizes` is computed automatically** from where the image sits: the
   renderer knows the container width, column fraction and section width, so it
-  writes accurate `sizes` that hand-coding often gets wrong. srcset widths come
-  from a fixed ladder (for example 400 to 2000) capped at the source's width.
+  writes accurate `sizes` that hand-coding often gets wrong.
 - **The LCP image is handled automatically:** the first image in the first
   section (or the hero background) is `loading="eager"` with
   `fetchpriority="high"`; every other image is lazy with `decoding="async"`.
@@ -747,12 +794,8 @@ forgotten.
 - **Hero and section backgrounds are real `<img>` elements** with
   `object-fit` and `object-position` from the focal point, never CSS
   `background-image`, so the browser can discover and prioritise them.
-- Width and height always set, plus `aspect-ratio` on media frames, so layout
-  shift is zero.
-- **Build time:** AVIF encoding is slow, and a cold build already takes a long
-  time on image-heavy sites. `publish-deploy.yml` caches Astro's image cache
-  (`node_modules/.astro`, keyed on the uploads folder) so only new or changed
-  images are encoded on each publish.
+- Width and height always set (from the manifest), plus `aspect-ratio` on
+  media frames, so layout shift is zero.
 
 ### CSS, fonts and scripts
 
@@ -832,7 +875,8 @@ requirement, not a later phase.
   removed. Progress is visible as "N pages still have legacy content".
 - Source repos add, once: `<BuilderLayout>`, the clamp token mapping, the brand
   definition and its `brand.json` output, the font setup, `inlineStylesheets`,
-  and in `publish-deploy.yml` the engine version step and the image cache.
+  and in `publish-deploy.yml` the engine version step and the `public/media/`
+  copy step.
   Per-site `BlockList.astro` and block zod members can then be deleted.
 - `verifySite` gains checks: every stored layout loads and migrates, every node
   type is known, every page renders, and engine pins agree.
@@ -850,9 +894,11 @@ The pilot site leads: it has real, measured demand and the most to gain.
   lint.
 - Brand definition, `brand.json` output and the admin's brand reader.
 - Section, Article, Prose, Heading, Image, Buttons, Callout, FAQ.
+- AVIF set and WebP fallback generated at upload, media manifest, pruning as a
+  unit, and the backfill script for existing uploads.
 - Astro host adapter and `<BuilderLayout>`, with AVIF `<picture>` output,
   automatic `sizes` and automatic LCP handling.
-- `publish-deploy.yml` version step and image cache; `verifySite` pin and font
+- `publish-deploy.yml` version step and media copy step; `verifySite` pin and font
   checks; performance budget tests.
 
 **Done when:** a hand-written YAML layout renders identically in a test Astro
@@ -954,7 +1000,8 @@ Every phase also passes the Interface quality bar's design review gate.
 | Shared markup feels less bespoke per site | Variants and tokens; truly bespoke work stays as site-specific elements |
 | Option creep makes the editor YOOtheme-complex | Each client-visible field needs a reason; the rest goes to Advanced |
 | Tiptap bundle size | Lazy load per editor; only needed extensions |
-| AVIF encoding makes publishes slow | Astro image cache persisted in the deploy workflow; only new images encode |
+| AVIF encoding makes publishes slow | Encoded once at upload and committed; builds never encode images |
+| Content repo grows with image variants | Fixed width ladder, AVIF at about q50, pruning as a unit; size measured in phase 1 |
 | Inlined CSS grows as elements are added | Per-element CSS and an enforced size budget |
 | `brand.json` and the source CSS disagree | Both generated from the same brand definition in the source build |
 | Clients delete key structure | Section locking, undo, Git history and restore |
@@ -984,7 +1031,9 @@ may be copied into this repository.
 - **Brand** is developer-defined in the source repo and never client-editable;
   editors choose only from the brand's named colours.
 - **`clamp()` everywhere** for type and spacing, from clamp-css tokens.
-- **Images** use Astro's image pipeline with AVIF first.
+- **Images** are encoded once at upload (AVIF width ladder plus one WebP
+  fallback), committed to the content repo with fingerprinted names, and never
+  encoded during builds.
 - **PageSpeed 100** is a property of the output, verified by tests and PSI, not
   a second pass.
 - **ChatGPT** is supported through copy-paste prompts and validated import; no
