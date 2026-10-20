@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Element Playground</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark" aria-hidden="true">A</span><span>Element Playground</span><span class="pill">V3 · phase 1</span></div>
+  <div class="controls">
+    <label class="field"><span>Sample</span><select id="sample"></select></label>
+    <div class="segmented" role="group" aria-label="Render mode">
+      <button type="button" data-mode="build" aria-pressed="true">Website</button>
+      <button type="button" data-mode="preview" aria-pressed="false">Editor preview</button>
+    </div>
+    <label class="field"><span>Site brand</span><select id="theme"></select></label>
+  </div>
+  <a class="button" id="open-page" href="/page" target="_blank" rel="noopener">Open as a real page <span aria-hidden="true">↗</span></a>
+</header>
+
+<div class="workspace">
+  <aside class="editor" aria-label="Layout editor">
+    <div class="sample-info">
+      <h1 id="sample-title">Loading…</h1>
+      <p id="sample-desc"></p>
+    </div>
+    <div class="editor-head">
+      <span>Layout, as stored in the page's frontmatter</span>
+      <button type="button" class="link-button" id="reset">Reset sample</button>
+    </div>
+    <textarea id="yaml" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Layout YAML"></textarea>
+    <div class="status" id="status" role="status">Starting…</div>
+  </aside>
+
+  <section class="output" aria-label="Output">
+    <div class="output-bar">
+      <nav class="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="page" aria-selected="true">Page</button>
+        <button type="button" role="tab" data-tab="html" aria-selected="false">HTML</button>
+        <button type="button" role="tab" data-tab="saved" aria-selected="false">Saved</button>
+        <button type="button" role="tab" data-tab="problems" aria-selected="false">Problems <span class="count" id="problem-count">0</span></button>
+        <button type="button" role="tab" data-tab="seo" aria-selected="false">SEO</button>
+        <button type="button" role="tab" data-tab="images" aria-selected="false">Images</button>
+      </nav>
+      <div class="segmented devices" role="group" aria-label="Screen width">
+        <button type="button" data-device="phone" aria-pressed="false">Phone</button>
+        <button type="button" data-device="tablet" aria-pressed="false">Tablet</button>
+        <button type="button" data-device="laptop" aria-pressed="true">Laptop</button>
+        <button type="button" data-device="fit" aria-pressed="false">Fit</button>
+      </div>
+    </div>
+
+    <div class="panels">
+      <div class="panel" data-panel="page">
+        <div class="stage" id="stage">
+          <div class="frame-box" id="frame-box"><iframe id="frame" title="Rendered page"></iframe></div>
+        </div>
+        <div class="device-label" id="device-label"></div>
+      </div>
+      <div class="panel scroll" data-panel="html" hidden>
+        <div class="panel-head"><h2>Published HTML</h2><p id="html-meta"></p></div>
+        <pre class="code" id="html-out"></pre>
+      </div>
+      <div class="panel scroll" data-panel="saved" hidden>
+        <div class="panel-head"><h2>What gets saved</h2><p id="saved-meta"></p></div>
+        <pre class="code" id="saved-out"></pre>
+      </div>
+      <div class="panel scroll" data-panel="problems" hidden>
+        <div class="panel-head"><h2>Problems</h2><p>Reported to the editor; none of them break the page. Click one to find it.</p></div>
+        <ul class="problems" id="problems-out"></ul>
+      </div>
+      <div class="panel scroll" data-panel="seo" hidden>
+        <div class="panel-head"><h2>Heading outline</h2><p>Every heading on the page, as search engines and screen readers see the structure.</p></div>
+        <ol class="outline" id="outline-out"></ol>
+        <div class="panel-head"><h2>Structured data</h2><p>JSON-LD written once per page.</p></div>
+        <pre class="code" id="sd-out"></pre>
+      </div>
+      <div class="panel scroll" data-panel="images" hidden>
+        <div class="panel-head"><h2>Image encoding</h2><p id="images-meta"></p></div>
+        <div class="table-wrap"><table class="table" id="images-out"></table></div>
+      </div>
+    </div>
+  </section>
+</div>
+<script src="/app.js" type="module"></script>
+</body>
+</html>

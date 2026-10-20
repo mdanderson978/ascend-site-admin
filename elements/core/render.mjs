@@ -85,17 +85,20 @@ function defaultLink(ref) {
 }
 
 // Reserve every explicit anchor first, so generated heading ids never take a
-// name an editor chose on purpose.
+// name an editor chose on purpose. The output must stay valid HTML even when
+// the anchor isn't: an invalid one is slugified and a duplicate gets a suffix
+// (both are also reported, by save and here).
 function reserveAnchors(layout, registry, state) {
   walk(layout.children, node => {
     const def = registry.get(node.type);
     if (!def) return false;
-    if (node.props?.anchor) {
-      if (state.ids.has(node.props.anchor)) {
-        state.problems.push({ id: node.id, type: node.type, field: 'anchor', message: `The anchor name "${node.props.anchor}" is used more than once on this page.` });
-      }
-      state.ids.add(node.props.anchor);
+    const wanted = String(node.props?.anchor ?? '').trim();
+    if (!wanted) return;
+    const base = /^[a-z][a-z0-9-]*$/.test(wanted) ? wanted : slugify(wanted);
+    if (state.ids.has(base)) {
+      state.problems.push({ id: node.id, type: node.type, field: 'anchor', message: `The anchor name "${wanted}" is used more than once on this page.` });
     }
+    state.anchors.set(node.id, uniqueId(base, state));
   });
 }
 
@@ -170,6 +173,11 @@ async function renderNode(node, ctx, env) {
   if (node.placeholder) ph.used = true;
   const props = ph.props;
   const selectable = preview && !node.placeholder;
+  const anchorId = state.anchors.get(node.id) || null;
+  // Placeholder samples are demo content, not the editor's: they never raise problems.
+  const report = entry => {
+    if (!node.placeholder) state.problems.push(entry);
+  };
 
   let children = raw('');
   let firstHeadingId = null;
@@ -219,14 +227,14 @@ async function renderNode(node, ctx, env) {
     root(map = {}, { anchor = true } = {}) {
       return attrs({
         ...map,
-        id: (anchor && props.anchor) || map.id || null,
+        id: (anchor && anchorId) || map.id || null,
         'data-node': selectable ? node.id : null,
         'data-element': selectable ? node.type : null,
       });
     },
     /** Id for a heading this element renders; registers it for aria-labelledby and the outline. */
     headingId(text) {
-      const id = props.anchor || uniqueId(slugify(text), state);
+      const id = anchorId || uniqueId(slugify(text), state);
       const frame = state.headingFrames[state.headingFrames.length - 1];
       if (frame) frame.push(id);
       return id;
@@ -260,12 +268,12 @@ async function renderNode(node, ctx, env) {
       if (!isFilled(src)) return null;
       const info = await host.resolveImage?.(src);
       if (!info) {
-        state.problems.push({ id: node.id, type: node.type, field, message: `The image "${src}" couldn't be found.` });
+        report({ id: node.id, type: node.type, field, message: `The image "${src}" couldn't be found.` });
         return null;
       }
       const alt = options.decorative ? '' : String(options.alt ?? '').trim();
       if (!options.decorative && !alt) {
-        state.problems.push({ id: node.id, type: node.type, field, message: 'An image is missing its description (alt text).' });
+        report({ id: node.id, type: node.type, field, message: 'An image is missing its description (alt text).' });
       }
       const isLcp = !!(state.lcp && state.lcp.id === node.id && state.lcp.field === field);
       const sizes = options.sizes || sizesFor(ctx.width || { max: host.containerMax });
@@ -292,7 +300,7 @@ async function renderNode(node, ctx, env) {
       (state.collected[kind] ||= []).push(entry);
     },
     problem(message, field) {
-      state.problems.push({ id: node.id, type: node.type, field, message });
+      report({ id: node.id, type: node.type, field, message });
     },
   };
 
@@ -344,6 +352,7 @@ export async function renderLayout(input, host, registry) {
   const layout = loadLayout(input, registry);
   const state = {
     ids: new Set(),
+    anchors: new Map(),
     css: new Set(),
     headings: [],
     headingFrames: [],

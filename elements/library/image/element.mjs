@@ -41,9 +41,14 @@ export default defineElement({
     Style: ['ratio'],
     Advanced: ['anchor', 'hidden', 'label'],
   },
-  async render({ props, h, cls, root, picture, link }) {
-    const href = link(props.link);
-    // A linked photo is never decorative: its description is the link's name.
+  async render({ props, h, cls, root, picture, link, problem }) {
+    // A link's only name is the photo's description. Without one the link
+    // would be unnamed for screen readers, so it's left off until there is one.
+    let href = link(props.link);
+    if (href && !String(props.alt ?? '').trim()) {
+      problem('A linked photo needs a description so screen readers can say where the link goes. The link is left off until it has one.', 'alt');
+      href = null;
+    }
     const pic = await picture('image', {
       alt: props.alt,
       decorative: props.decorative && !href,

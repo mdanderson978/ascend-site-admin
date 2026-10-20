@@ -67,10 +67,12 @@ export const button = defineElement({
   render({ props, h, cls, root, link, preview, problem }) {
     const label = String(props.text ?? '').trim();
     if (!label) return null;
-    const href = link(props.link) || (preview ? '#' : null);
+    let href = link(props.link);
     if (!href) {
+      // Reported in both modes, so the editor sees what publishing would hit.
       problem(`The "${label}" button has nowhere to go yet.`, 'link');
-      return null;
+      if (!preview) return null;
+      href = '#';
     }
     const classes = cls('ab-btn', `ab-btn--${props.style}`);
     const target = props.newTab ? { target: '_blank', rel: 'noopener' } : {};

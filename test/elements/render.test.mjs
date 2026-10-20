@@ -70,6 +70,7 @@ test('empty elements render nothing in build mode and placeholders in preview, a
   assert.match(preview.html, /A clear, helpful heading/);
   assert.match(preview.html, /How long does it take\?/);
   assert.equal((preview.html.match(/data-node="[^"]*-ph\d+"/g) || []).length, 0, 'sample children are not selectable nodes');
+  assert.ok(!preview.problems.some(p => /-ph\d+$/.test(p.id)), 'sample children never raise problems');
   await assertValidHtml(preview.html, 'placeholders');
 });
 
@@ -157,6 +158,26 @@ test('heading ids are unique, explicit anchors are never taken, and sections are
   const labels = [...out.html.matchAll(/<section [^>]*aria-labelledby="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(labels, ['pricing-2', 'pricing', 'h-2026-rates']);
   assert.equal((out.html.match(/id="h-2026-rates"/g) || []).length, 1, 'kicker headings carry the id once');
+});
+
+test('duplicate or malformed anchors are reported but still produce valid, unique ids', async () => {
+  const out = await renderLayout(
+    {
+      children: [
+        section([
+          { type: 'heading', props: { text: 'A', anchor: 'same' } },
+          { type: 'heading', props: { text: 'B', anchor: 'same' } },
+          { type: 'heading', props: { text: 'C', anchor: 'Not A Valid Anchor!' } },
+          { type: 'callout', props: { text: '<p>x</p>', anchor: 'same' } },
+        ]),
+      ],
+    },
+    avifHost(),
+  );
+  const ids = [...out.html.matchAll(/ id="([^"]+)"/g)].map(m => m[1]);
+  assert.deepEqual(ids, ['same', 'same-2', 'not-a-valid-anchor', 'same-3']);
+  assert.equal(out.problems.filter(p => /used more than once/.test(p.message)).length, 2);
+  await assertValidHtml(out.html, 'bad anchors');
 });
 
 test('links resolve from references, and unsafe or missing links never render', async () => {

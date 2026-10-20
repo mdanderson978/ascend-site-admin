@@ -20,6 +20,9 @@ admin uses it yet, so existing sites are unaffected.
 - Tests: HTML validity of every element in build and preview mode, the
   clamp-token CSS lint, migrations, idempotent saving and sanitising.
   `html-validate` added as a dev dependency.
+- `npm run playground`: a local test bench (not shipped) for trying the
+  elements in a browser as the published site and as the editor preview,
+  across screen widths and site brands, with real AVIF/WebP encoding.
 
 ## 2.17.0 - 2026-10-15
 

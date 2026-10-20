@@ -9,6 +9,23 @@ The library is plain ESM (`.mjs` with JSDoc) with no Node built-ins, so it
 loads unchanged in Node (the admin), the browser (the admin preview, via Vite)
 and Astro builds. Node-only helpers live in `css.mjs`.
 
+## Try it: the playground
+
+```sh
+npm run playground                          # http://127.0.0.1:4330
+npm run playground -- --photos "C:\photos"   # measure real photos (read in place, never copied)
+npm run playground -- --host 0.0.0.0         # reachable on the LAN, e.g. to test on a real phone
+```
+
+A local test bench (not shipped in the package). Sample pages render through
+this library as the published site and as the editor preview, at phone,
+tablet and laptop widths, under several site brands. Edit the layout YAML and
+the page re-renders; click anything in the editor preview to find its YAML.
+Tabs show the published HTML, what gets saved, problems, the heading outline
+and structured data, and the AVIF/WebP sizes. "Open as a real page" serves the
+published version on its own, for Lighthouse or a close look. The samples are
+also test fixtures (`test/elements/playground.test.mjs`).
+
 ## Layout data
 
 Stored in a page's frontmatter under `layout`, written by `saveLayout()`:
