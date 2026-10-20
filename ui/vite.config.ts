@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite';
+// vitest/config's defineConfig is Vite's, plus the `test` block's types.
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
