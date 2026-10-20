@@ -190,7 +190,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
-import matter from 'gray-matter';
+import matter from './safe-matter.mjs';
 import sharp from 'sharp';
 import Busboy from 'busboy';
 import { sortChatGptHtml } from './rich-html.mjs';
@@ -487,6 +487,24 @@ export function startAdmin(config) {
   // gets a stable_id on first boot after upgrading. Runs after the startup
   // pull so it never stamps a fresh ID onto content about to be replaced by
   // a teammate's already-ID'd version from origin.
+  // A content file that can't be read safely (malformed YAML, or JavaScript
+  // front matter, which safe-matter refuses to run) is skipped by whole-site
+  // scans instead of taking the admin, search or the menu picker down with
+  // it, and is never rewritten. Logged once per file per session; opening
+  // that one page still shows the reason.
+  const reportedUnreadable = new Set();
+  function readContentOrSkip(fp) {
+    try {
+      return matter(fs.readFileSync(fp, 'utf-8'));
+    } catch (e) {
+      if (!reportedUnreadable.has(fp)) {
+        reportedUnreadable.add(fp);
+        console.warn(`  ! Skipped ${path.relative(ROOT, fp)}: ${e.message}`);
+      }
+      return null;
+    }
+  }
+
   function backfillStableIds() {
     if (!fs.existsSync(CONTENT)) return 0;
     let touched = 0;
@@ -496,7 +514,8 @@ export function startAdmin(config) {
       for (const file of fs.readdirSync(dir)) {
         if (!file.endsWith('.md')) continue;
         const fp = path.join(dir, file);
-        const parsed = matter(fs.readFileSync(fp, 'utf-8'));
+        const parsed = readContentOrSkip(fp);
+        if (!parsed) continue;
         if (typeof parsed.data.stable_id === 'string' && parsed.data.stable_id) continue;
         parsed.data.stable_id = crypto.randomUUID();
         fs.writeFileSync(fp, matter.stringify(parsed.content, parsed.data), 'utf-8');
@@ -527,7 +546,9 @@ export function startAdmin(config) {
       for (const file of fs.readdirSync(dir)) {
         if (!file.endsWith('.md')) continue;
         const slug = file.slice(0, -3);
-        const { data } = matter(fs.readFileSync(path.join(dir, file), 'utf-8'));
+        const parsed = readContentOrSkip(path.join(dir, file));
+        if (!parsed) continue;
+        const { data } = parsed;
         pages.push({ collection, slug, key: `${collection}/${slug}`, title: typeof data.title === 'string' ? data.title : slug, stableId: typeof data.stable_id === 'string' ? data.stable_id : null });
       }
     }
@@ -1119,7 +1140,11 @@ export function startAdmin(config) {
           const fields = resolveFields(col, slug) || [];
           let data = {}, body = '';
           const fp = contentFile(col, slug);
-          if (fs.existsSync(fp)) ({ data, content: body } = matter(fs.readFileSync(fp, 'utf-8')));
+          if (fs.existsSync(fp)) {
+            const parsed = readContentOrSkip(fp);
+            if (!parsed) continue;
+            ({ data, content: body } = parsed);
+          }
           index[key] = fields
             .filter(f => f.type !== 'heading')
             .flatMap(f => {
@@ -1495,9 +1520,13 @@ export function startAdmin(config) {
         const dir = path.join(CONTENT, collection);
         const existing = fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => name.endsWith('.md')).map(name => name.slice(0, -3)).sort() : [];
         if ([...slugs].sort().join('\0') !== existing.join('\0')) { jsonResp(res, 400, { error: 'Entry order is incomplete.' }); return; }
-        for (const [index, slug] of slugs.entries()) {
+        // Read every entry before writing any, so one unreadable file
+        // refuses the whole reorder instead of leaving it half-applied.
+        const entries = slugs.map(slug => {
           const filename = contentFile(collection, slug);
-          const parsed = matter(fs.readFileSync(filename, 'utf-8'));
+          return { filename, parsed: matter(fs.readFileSync(filename, 'utf-8')) };
+        });
+        for (const [index, { filename, parsed }] of entries.entries()) {
           parsed.data[dyn.orderField] = index + 1;
           fs.writeFileSync(filename, matter.stringify(parsed.content, parsed.data), 'utf-8');
         }
@@ -1520,14 +1549,18 @@ export function startAdmin(config) {
         const { order } = await parseJsonBody(req);
         if (!Array.isArray(order)) { jsonResp(res, 400, { error: 'Invalid order payload.' }); return; }
 
-        const updated = [];
+        // Read every entry before writing any (see the reorder endpoint above).
+        const pending = [];
         for (const entry of order) {
           const slug  = entry?.slug;
           const value = entry?.value;
           if (typeof slug !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(slug) || !Number.isFinite(value)) continue;
           const fp = contentFile(collection, slug);
           if (!fs.existsSync(fp)) continue;
-          const { data, content: body } = matter(fs.readFileSync(fp, 'utf-8'));
+          pending.push({ slug, value, fp, parsed: matter(fs.readFileSync(fp, 'utf-8')) });
+        }
+        const updated = [];
+        for (const { slug, value, fp, parsed: { data, content: body } } of pending) {
           data[dyn.orderField] = value;
           fs.writeFileSync(fp, matter.stringify(body, data), 'utf-8');
           updated.push(slug);

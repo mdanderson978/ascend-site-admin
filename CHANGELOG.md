@@ -1,6 +1,29 @@
 # Changelog
 
-## Unreleased
+## 2.18.0 - 2026-10-21
+
+### Security: content files can no longer run code
+
+The admin read content files with gray-matter, which by default treats a
+file whose front matter opens with `---js` (or `---javascript`, any casing)
+as JavaScript and runs it with `eval()`. Anyone able to get such a file into
+a content repo (a compromised GitHub account, a careless merge) could run
+code on the editor's computer the next time the admin opened. No such file
+is known to exist; this closes the hole.
+
+- New `safe-matter.mjs` wraps gray-matter with its JavaScript engine
+  replaced by one that refuses. YAML (the norm) and JSON front matter work
+  exactly as before. Everything in the engine reads files through it, and
+  a test fails if anything imports gray-matter directly.
+- A file that can't be read safely (JavaScript front matter, or malformed
+  YAML) no longer takes the admin down at launch: the startup `stable_id`
+  backfill, search and the menu page picker skip it and log
+  `! Skipped <file>: <reason>` once. It is never rewritten. Opening that
+  page shows the reason instead.
+- Reordering a collection reads every entry before writing any, so one
+  unreadable file refuses the whole reorder instead of half-applying it.
+
+### V3 page-builder element library (not yet used by the admin)
 
 First part of V3 phase 1: the page-builder element library, exported as
 `site-admin/elements` (and `site-admin/elements/css` for Node). Nothing in the

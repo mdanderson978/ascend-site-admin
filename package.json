@@ -1,6 +1,6 @@
 {
   "name": "site-admin",
-  "version": "2.17.0",
+  "version": "2.18.0",
   "description": "Ascend Web Design's local CMS admin engine for split-repo Astro sites. Consumed by content repos as a git dependency pinned to a version tag.",
   "type": "module",
   "main": "index.mjs",
@@ -17,6 +17,7 @@
     "redirects.mjs",
     "linkFixer.mjs",
     "menus.mjs",
+    "safe-matter.mjs",
     "verify-site.mjs",
     "elements",
     "dist/admin"
@@ -35,7 +36,7 @@
     "dev:ui": "vite --config ui/vite.config.ts",
     "playground": "node playground/server.mjs",
     "typecheck": "tsc -p ui/tsconfig.json",
-    "test": "node --test test/engine.test.mjs test/shortcode-registry.test.mjs test/save-uploads-prune.test.mjs test/youtube-thumbnail.test.mjs test/rich-html.test.mjs test/elements/html-sanitize.test.mjs test/elements/pipeline.test.mjs test/elements/render.test.mjs test/elements/css-package.test.mjs test/elements/playground.test.mjs && npm run test:ui",
+    "test": "node --test test/engine.test.mjs test/shortcode-registry.test.mjs test/save-uploads-prune.test.mjs test/youtube-thumbnail.test.mjs test/rich-html.test.mjs test/safe-matter.test.mjs test/elements/html-sanitize.test.mjs test/elements/pipeline.test.mjs test/elements/render.test.mjs test/elements/css-package.test.mjs test/elements/playground.test.mjs && npm run test:ui",
     "test:ui": "vitest run --config ui/vite.config.ts",
     "test:e2e": "playwright test --config playwright.config.mjs",
     "prepack": "npm run build",

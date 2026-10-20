@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import matter from 'gray-matter';
+import matter from '../safe-matter.mjs';
 import { sortChatGptHtml } from '../rich-html.mjs';
 
 const root = path.resolve(process.argv[2] || '');
