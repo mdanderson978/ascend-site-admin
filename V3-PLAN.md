@@ -245,8 +245,8 @@ Gaps:
 ```text
                    engine package: site-admin (this repo)
       ┌──────────────────────────────────────────────────────────┐
-      │ elements/<name>/  schema.ts  render.ts  style.css         │
-      │                   migrations.ts  presets/  icon.svg       │
+      │ elements/library/<name>/  element.mjs  style.css          │
+      │                           presets/  icon.svg              │
       │ core/  tree, transforms, renderer, zod export, AI import  │
       └──────────────┬─────────────────────────────┬─────────────┘
                      │ pinned by content repo      │ same version, installed
@@ -261,13 +261,19 @@ Gaps:
 Each element is defined once and shipped once, which removes the three-way
 contract for standard elements.
 
-### Decision: elements render with plain TypeScript, not `.astro`
+### Decision: elements render with plain JavaScript, not `.astro`
 
 For the preview to be the real output, the admin must run the exact renderer
 the build runs, on a machine with no Astro source. `.astro` components need the
 Astro compiler and Vite, too heavy to ship inside the admin. Each element's
-`render.ts` is therefore a plain async function returning an HTML string,
-written with an escaping `html` tagged template and a class helper:
+`render()` is therefore a plain async function returning an HTML string,
+written with an escaping `h` tagged template and a class helper.
+
+The library is plain ESM (`.mjs` with JSDoc types), not TypeScript: the same
+files must load unchanged in Node (the admin), Vite (the admin UI) and Astro
+builds from `node_modules`, and Node does not strip TypeScript types inside
+`node_modules`. It also matches the rest of the engine. (Implemented in phase 1;
+the sketch below shows the shape.)
 
 ```ts
 export default defineRender<HeadingProps>(async ({ props, h, cls }) => {
@@ -312,7 +318,7 @@ publishing and the link fixer keep working.
 
 ```yaml
 layout:
-  version: 3.0.0
+  schema: 1
   children:
     - type: section
       id: n7f3k2
@@ -338,7 +344,9 @@ Rules:
   schema (`allowedChildren`), so clients can't build arbitrary structures.
 - **Stable node ids** on every node, kept on save. They key preview patching,
   selection, undo and comments, and make Git diffs easier to follow.
-- **Version stamp** on the root only.
+- **Schema number** on the root only: an integer that changes only when a
+  migration is added (not the engine's semver, which would rewrite every saved
+  page on each engine release).
 - **Links** are stored as references (`{ page: 'services/renovations' }`), so
   renames go through the existing rename and link-fixer flow.
 
@@ -386,20 +394,21 @@ Ported in spirit from YOOtheme's `Builder` (fresh code, see Licensing):
 | save | validate against schema, sanitise prose, optimise (drop empty, null and default props, sort keys), stamp version | admin |
 | render | drop `status: hidden`, placeholders (preview only), collapse empty containers, visibility classes, tone context, heading ids and outline, table of contents | admin preview, build |
 
-Migrations live with each element:
+Migrations live with each element, keyed by the schema number they upgrade to:
 
-```ts
-// elements/cards/migrations.ts
-export default {
-  '3.2.0': node => { node.props.columns ??= 3; },
-  '3.4.0': node => { rename(node.props, 'img_ratio', 'image_ratio'); },
-};
+```js
+// in elements/library/cards/element.mjs
+migrations: {
+  2: node => { node.props.columns ??= 3; },
+  3: node => { node.props.image_ratio = node.props.img_ratio; delete node.props.img_ratio; },
+},
 ```
 
 ### Element schema
 
-An element folder contains `schema.ts`, `render.ts`, `style.css`,
-`migrations.ts`, `icon.svg`, `thumb.webp` (picker preview) and `presets/`.
+An element folder contains `element.mjs` (definition, render and migrations),
+`style.css`, and later `icon.svg`, `thumb.webp` (picker preview) and `presets/`.
+See `elements/README.md` for the rules every element follows.
 
 ```ts
 export default defineElement({
@@ -473,7 +482,7 @@ doesn't fit the schema cannot exist.
 2. **Styles.** All element CSS (wrapped in a cascade layer) is injected after
    the site's CSS, so elements not yet used on the live site still preview
    correctly. Brand and clamp tokens come from the deployed site's own CSS.
-3. **Render in the browser.** `render.ts` runs in the editor directly, with no
+3. **Render in the browser.** The element library runs in the editor directly, with no
    server round trip per keystroke. Unpublished images come from the admin's
    upload route.
 4. **Patch, don't reload.** Each render is morphed into the iframe with
@@ -556,6 +565,11 @@ The **Add** dialog has three tabs:
     are highlighted so editing one card visibly applies to the set.
 - **Sidebar form** with Content and Style tabs for everything else.
 - **Outline panel:** page tree with drag, duplicate, hide, delete, rename label.
+- **Drag sections on the page** (Nicepage's "move blocks"): each section in the
+  preview has a grab handle; drag it up or down with a clear drop indicator
+  and the page animating into place. Every section also has **Move up / Move
+  down** buttons, so reordering works by keyboard, on touch screens and for
+  anyone who finds dragging fiddly. A mis-drop is one Ctrl+Z away.
 - **Undo and redo** (Ctrl+Z / Ctrl+Shift+Z), separate from Git history.
 - **Copy and paste** nodes between pages; **copy and paste style** between
   elements of the same type.
@@ -657,7 +671,7 @@ from the evidence above.
 
 | Group | Element | Notes |
 |---|---|---|
-| Layout | Section | tone, spacing, width, background image (a real `<img>`, not CSS) with focal point and overlay |
+| Layout | Section | tone, content alignment (left or centre; headings, text and buttons follow it and can override it), spacing, width, background image (a real `<img>`, not CSS) with focal point and overlay |
 | Layout | Article | prose + components flow (article mode) |
 | Layout | Columns | visual layout picker, gap, vertical align, mobile stack order |
 | Text | Heading | level vs size, optional kicker (**pilot**) |
@@ -911,8 +925,10 @@ test page built from these elements scores 100 on PageSpeed Insights (mobile).
 - `layout` field type in the engine and UI.
 - Tiptap article editor with component blocks, `/` menu, strict schema and
   paste normalisation.
-- Outline panel, schema-generated forms with tabs, conditions, token fields,
-  visual selects, items lists and the link field.
+- Outline panel (with drag to reorder), schema-generated forms with tabs,
+  conditions, token fields, visual selects, items lists and the link field.
+- Move up / Move down on every section and item, so reordering never depends
+  on dragging.
 - Undo/redo and local draft autosave.
 - Remaining pilot-driven elements: Table of contents, Byline, Gallery,
   Before/after, Glossary, Steps, Swatches, Related links, CTA band, Service
@@ -937,6 +953,8 @@ how much legacy HTML remains.
 - Shell fetch and cache, style injection, in-browser render, idiomorph patching.
 - Hover and click selection, breadcrumb, device widths.
 - Inline text editing and floating toolbars, sibling highlighting.
+- Drag sections up and down directly on the page, with a drop indicator and
+  animated reflow.
 
 **Done when:** typing updates the preview within one frame with no flicker,
 clicking any element selects it, and preview HTML matches the built site's HTML

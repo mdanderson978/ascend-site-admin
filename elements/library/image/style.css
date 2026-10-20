@@ -1,0 +1,25 @@
+@layer ascend-elements {
+  .ab-image { margin: 0; }
+  .ab-image__img {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    border-radius: var(--ab-radius);
+    object-fit: cover;
+    object-position: var(--ab-focal, 50% 50%);
+  }
+  .ab-image__img--landscape { aspect-ratio: 3 / 2; }
+  .ab-image__img--wide { aspect-ratio: 16 / 9; }
+  .ab-image__img--square { aspect-ratio: 1; }
+  .ab-image__img--portrait { aspect-ratio: 4 / 5; }
+
+  .ab-image__link { display: block; border-radius: var(--ab-radius); }
+  .ab-image__link:focus-visible { outline: 3px solid var(--ab-tone-link); outline-offset: 3px; }
+
+  .ab-image__caption {
+    margin-block-start: var(--ab-space-2xs);
+    color: var(--ab-tone-muted);
+    font-size: var(--ab-step--1);
+    line-height: 1.5;
+  }
+}

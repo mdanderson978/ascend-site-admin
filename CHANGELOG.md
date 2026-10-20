@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+First part of V3 phase 1: the page-builder element library, exported as
+`site-admin/elements` (and `site-admin/elements/css` for Node). Nothing in the
+admin uses it yet, so existing sites are unaffected.
+
+- Layout tree with a load/save pipeline: integer schema migrations, defaults,
+  unique node ids, rich-text sanitising, and an optimiser that stores only
+  chosen values in a stable order (re-saving is a no-op).
+- One renderer for the site build and the admin preview, with the
+  cross-cutting rules built in: AVIF `<picture>` with a WebP fallback,
+  automatic `sizes`, exactly one LCP image, unique heading ids, collapsing of
+  empty blocks, and one FAQPage JSON-LD object per page.
+- Schema-bound rich text: paragraphs, bold, italic, links and lists (plus
+  H2/H3 in articles) survive; everything else is unwrapped or dropped.
+- First elements: Section, Article, Text, Heading, Image, Buttons, Callout
+  and FAQ, styled only with clamp() tokens that default to clamp-css names.
+- Content alignment: a section can be left-aligned or centred. Headings,
+  text and button rows follow it ("Same as section") or override it;
+  centred text gets a shorter line, lists inside it keep left-aligned
+  items, and callouts, FAQs and articles stay left-aligned. A centred
+  section with a lot of text raises a readability warning.
+- Tests: HTML validity of every element in build and preview mode, the
+  clamp-token CSS lint, migrations, idempotent saving and sanitising.
+  `html-validate` added as a dev dependency.
+- `npm run playground`: a local test bench (not shipped) for trying the
+  elements in a browser as the published site and as the editor preview,
+  across screen widths and site brands, with real AVIF/WebP encoding.
+
 ## 2.17.0 - 2026-10-15
 
 After Publish, the button only said "Publishing..." for the few seconds the

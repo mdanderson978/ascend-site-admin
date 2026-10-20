@@ -1,0 +1,28 @@
+@layer ascend-elements {
+  .ab-callout {
+    padding: var(--ab-space-m);
+    border-inline-start: 4px solid var(--ab-callout-accent, var(--ab-tone-accent));
+    border-radius: var(--ab-radius);
+    background: var(--ab-tone-panel);
+    color: var(--ab-tone-ink);
+    font-size: var(--ab-step-0);
+    line-height: 1.6;
+    text-align: start; /* stays left-aligned inside a centred section */
+  }
+  .ab-callout--note { --ab-callout-accent: var(--ab-tone-muted); }
+  .ab-callout--tip { --ab-callout-accent: var(--ab-tone-link); }
+  .ab-callout--warning { --ab-callout-accent: var(--ab-accent); }
+  .ab-callout--opinion { --ab-callout-accent: var(--ab-tone-ink); }
+
+  .ab-callout__title {
+    margin: 0 0 var(--ab-space-2xs);
+    font-family: var(--ab-font-display);
+    font-size: var(--ab-step-1);
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  .ab-callout__body > * { margin-block: 0; }
+  .ab-callout__body > * + * { margin-block-start: var(--ab-space-xs); }
+  .ab-callout__body a { color: var(--ab-tone-link); text-underline-offset: 0.18em; }
+  .ab-callout__body :is(ul, ol) { padding-inline-start: var(--ab-space-m); }
+}
