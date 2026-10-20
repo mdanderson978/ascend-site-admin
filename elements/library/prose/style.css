@@ -1,0 +1,32 @@
+@layer ascend-elements {
+  .ab-prose {
+    max-inline-size: var(--ab-measure);
+    color: var(--ab-tone-ink);
+    font-size: var(--ab-step-0);
+    line-height: 1.65;
+  }
+  .ab-prose > * { margin-block: 0; }
+  .ab-prose > * + * { margin-block-start: var(--ab-space-s); }
+
+  .ab-prose :is(h2, h3) {
+    font-family: var(--ab-font-display);
+    line-height: 1.2;
+    text-wrap: balance;
+    scroll-margin-block-start: var(--ab-space-xl);
+  }
+  .ab-prose h2 { font-size: var(--ab-step-3); }
+  .ab-prose h3 { font-size: var(--ab-step-2); }
+  .ab-prose > h2:not(:first-child) { margin-block-start: var(--ab-space-l); }
+  .ab-prose > h3:not(:first-child) { margin-block-start: var(--ab-space-m); }
+  .ab-prose > :is(h2, h3) + * { margin-block-start: var(--ab-space-xs); }
+
+  .ab-prose a {
+    color: var(--ab-tone-link);
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.18em;
+  }
+  .ab-prose a:hover { text-decoration-thickness: 0.14em; }
+  .ab-prose :is(ul, ol) { padding-inline-start: var(--ab-space-m); }
+  .ab-prose li + li { margin-block-start: var(--ab-space-3xs); }
+  .ab-prose li > :is(ul, ol) { margin-block-start: var(--ab-space-3xs); }
+}

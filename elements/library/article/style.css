@@ -1,0 +1,16 @@
+@layer ascend-elements {
+  .ab-article {
+    max-inline-size: var(--ab-narrow);
+    margin-inline: auto;
+    color: var(--ab-tone-ink);
+    container-type: inline-size;
+  }
+  /* An article placed directly on the page (not inside a section) needs its own gutters. */
+  .ab-article--page {
+    padding-block: var(--ab-space-2xl);
+    padding-inline: var(--ab-gutter);
+    box-sizing: content-box;
+  }
+  .ab-article > * { margin-block: 0; }
+  .ab-article > * + * { margin-block-start: var(--ab-space-m); }
+}

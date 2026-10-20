@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+First part of V3 phase 1: the page-builder element library, exported as
+`site-admin/elements` (and `site-admin/elements/css` for Node). Nothing in the
+admin uses it yet, so existing sites are unaffected.
+
+- Layout tree with a load/save pipeline: integer schema migrations, defaults,
+  unique node ids, rich-text sanitising, and an optimiser that stores only
+  chosen values in a stable order (re-saving is a no-op).
+- One renderer for the site build and the admin preview, with the
+  cross-cutting rules built in: AVIF `<picture>` with a WebP fallback,
+  automatic `sizes`, exactly one LCP image, unique heading ids, collapsing of
+  empty blocks, and one FAQPage JSON-LD object per page.
+- Schema-bound rich text: paragraphs, bold, italic, links and lists (plus
+  H2/H3 in articles) survive; everything else is unwrapped or dropped.
+- First elements: Section, Article, Text, Heading, Image, Buttons, Callout
+  and FAQ, styled only with clamp() tokens that default to clamp-css names.
+- Tests: HTML validity of every element in build and preview mode, the
+  clamp-token CSS lint, migrations, idempotent saving and sanitising.
+  `html-validate` added as a dev dependency.
+
 ## 2.17.0 - 2026-10-15
 
 After Publish, the button only said "Publishing..." for the few seconds the

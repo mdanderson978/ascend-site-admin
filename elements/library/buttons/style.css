@@ -1,0 +1,56 @@
+@layer ascend-elements {
+  .ab-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ab-space-xs);
+  }
+  .ab-buttons--center { justify-content: center; }
+
+  .ab-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: 2.75rem; /* 44px touch target */
+    padding: var(--ab-space-2xs) var(--ab-space-m);
+    border: 2px solid transparent;
+    border-radius: var(--ab-radius);
+    font-family: inherit;
+    font-size: var(--ab-step-0);
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    text-decoration: none;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .ab-btn--primary {
+    background: var(--ab-tone-btn-bg);
+    color: var(--ab-tone-btn-ink);
+  }
+  .ab-btn--primary:hover {
+    background: color-mix(in srgb, var(--ab-tone-btn-bg) 86%, var(--ab-tone-ink));
+  }
+  .ab-btn--secondary {
+    border-color: currentColor;
+    background: transparent;
+    color: var(--ab-tone-link);
+  }
+  .ab-btn--secondary:hover {
+    background: color-mix(in srgb, var(--ab-tone-link) 10%, transparent);
+  }
+  .ab-btn--text {
+    padding-inline: 0;
+    color: var(--ab-tone-link);
+    text-decoration: underline;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.2em;
+  }
+  .ab-btn:focus-visible {
+    outline: 3px solid var(--ab-tone-link);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ab-btn { transition: none; }
+  }
+}

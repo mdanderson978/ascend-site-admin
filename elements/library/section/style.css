@@ -1,0 +1,96 @@
+@layer ascend-elements {
+  .ab-section {
+    position: relative;
+    isolation: isolate;
+    background: var(--ab-tone-bg);
+    color: var(--ab-tone-ink);
+    padding-block: var(--ab-space-2xl);
+    padding-inline: var(--ab-gutter);
+  }
+  .ab-section--pad-s { padding-block: var(--ab-space-l); }
+  .ab-section--pad-m { padding-block: var(--ab-space-xl); }
+  .ab-section--pad-l { padding-block: var(--ab-space-2xl); }
+  .ab-section--pad-xl { padding-block: var(--ab-space-3xl); }
+
+  .ab-section__inner {
+    max-inline-size: var(--ab-max);
+    margin-inline: auto;
+    container-type: inline-size;
+  }
+  .ab-section__inner--narrow { max-inline-size: var(--ab-narrow); }
+  .ab-section__inner--wide { max-inline-size: var(--ab-wide); }
+  .ab-section__inner--full { max-inline-size: none; }
+
+  /* Flow: blocks inside a section are spaced by the section, not by themselves. */
+  .ab-section__inner > * { margin-block: 0; }
+  .ab-section__inner > * + * { margin-block-start: var(--ab-space-m); }
+  .ab-section__inner > .ab-heading + * { margin-block-start: var(--ab-space-s); }
+
+  /* Tones: each sets the colour context every element inside reads from. */
+  .ab-tone-default {
+    --ab-tone-bg: var(--ab-bg);
+    --ab-tone-ink: var(--ab-ink);
+    --ab-tone-muted: var(--ab-muted);
+    --ab-tone-link: var(--ab-brand);
+    --ab-tone-accent: var(--ab-brand);
+    --ab-tone-line: var(--ab-line);
+    --ab-tone-panel: var(--ab-surface);
+    --ab-tone-btn-bg: var(--ab-brand);
+    --ab-tone-btn-ink: var(--ab-brand-ink);
+  }
+  .ab-tone-muted {
+    --ab-tone-bg: var(--ab-surface);
+    --ab-tone-ink: var(--ab-ink);
+    --ab-tone-muted: var(--ab-muted);
+    --ab-tone-link: var(--ab-brand);
+    --ab-tone-accent: var(--ab-brand);
+    --ab-tone-line: var(--ab-line);
+    --ab-tone-panel: var(--ab-bg);
+    --ab-tone-btn-bg: var(--ab-brand);
+    --ab-tone-btn-ink: var(--ab-brand-ink);
+  }
+  .ab-tone-brand {
+    --ab-tone-bg: var(--ab-brand);
+    --ab-tone-ink: var(--ab-brand-ink);
+    --ab-tone-muted: color-mix(in srgb, var(--ab-brand-ink) 82%, var(--ab-brand));
+    --ab-tone-link: var(--ab-brand-ink);
+    --ab-tone-accent: var(--ab-brand-ink);
+    --ab-tone-line: color-mix(in srgb, var(--ab-brand-ink) 28%, transparent);
+    --ab-tone-panel: color-mix(in srgb, var(--ab-brand-ink) 10%, var(--ab-brand));
+    --ab-tone-btn-bg: var(--ab-brand-ink);
+    --ab-tone-btn-ink: var(--ab-brand);
+  }
+  .ab-tone-dark,
+  .ab-tone-media {
+    --ab-tone-bg: var(--ab-ink);
+    --ab-tone-ink: var(--ab-bg);
+    --ab-tone-muted: color-mix(in srgb, var(--ab-bg) 80%, var(--ab-ink));
+    --ab-tone-link: var(--ab-bg);
+    --ab-tone-accent: var(--ab-bg);
+    --ab-tone-line: color-mix(in srgb, var(--ab-bg) 24%, transparent);
+    --ab-tone-panel: color-mix(in srgb, var(--ab-bg) 8%, var(--ab-ink));
+    --ab-tone-btn-bg: var(--ab-bg);
+    --ab-tone-btn-ink: var(--ab-ink);
+  }
+
+  /* Background photo with a darkening overlay above it, below the content. */
+  .ab-section__bg {
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+    object-position: var(--ab-focal, 50% 50%);
+  }
+  .ab-tone-media::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: color-mix(in srgb, var(--ab-ink) var(--ab-overlay, 55%), transparent);
+  }
+  .ab-section--overlay-light { --ab-overlay: 35%; }
+  .ab-section--overlay-medium { --ab-overlay: 55%; }
+  .ab-section--overlay-strong { --ab-overlay: 75%; }
+}
