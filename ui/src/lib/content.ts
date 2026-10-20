@@ -27,7 +27,7 @@ export function previewForPath(src: string): string {
 // the first segment after the collection, dropping the rest. Same bug/fix
 // as index.mjs's /api/content and /api/search (2.11.1) - this is the
 // frontend's own copy of the same mistake, found while wiring up the "View
-// live page" button for the Australian Masters Athletics site (2026-09-02).
+// live page" button for a client site (2026-09-02).
 export function splitKey(key: string): { collection: string; slug: string } {
   const i = key.indexOf('/');
   return i < 0 ? { collection: key, slug: '' } : { collection: key.slice(0, i), slug: key.slice(i + 1) };

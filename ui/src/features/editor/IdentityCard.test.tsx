@@ -9,7 +9,7 @@ afterEach(cleanup);
 
 const baseConfig: AdminConfig = {
   siteTitle: 'Test', browserTitle: 'Test', pageLabels: {}, navStructure: [], dynamicCollections: {},
-  tasks: [], shortcodes: {}, siteUrl: 'https://example.com', urlPatterns: { pages: '{slug}', services: 'pool-renovation-services/{slug}' },
+  tasks: [], shortcodes: {}, siteUrl: 'https://example.com', urlPatterns: { pages: '{slug}', services: 'our-services/{slug}' },
   renamable: [], externalLinkSurfaces: [], crossListable: {}, menuSlots: {}, githubRepo: null, deployWorkflowFile: 'publish-deploy.yml', imageSizes: {},
   startScreenIntro: '', startScreenNote: '', altPlaceholder: '',
 };
@@ -25,14 +25,14 @@ describe('IdentityCard', () => {
   });
 
   it('shows a nested-under sentence for a hub-prefixed urlPattern', () => {
-    render(<IdentityCard entry={makeEntry('services/led-pool-lights')} config={baseConfig} canRename={false} liveUrl="https://example.com/pool-renovation-services/led-pool-lights" onRenamed={vi.fn()} />);
-    expect(screen.getByText('pool-renovation-services')).toBeInTheDocument();
+    render(<IdentityCard entry={makeEntry('services/garden-lighting')} config={baseConfig} canRename={false} liveUrl="https://example.com/our-services/garden-lighting" onRenamed={vi.fn()} />);
+    expect(screen.getByText('our-services')).toBeInTheDocument();
   });
 
   it('shows the cross-list badge only when configured and the entry flag is true', () => {
     const config: AdminConfig = { ...baseConfig, crossListable: { pages: { field: 'also_in_services', targetCollection: 'services', label: 'Services hub grid' } } };
-    const flagged = makeEntry('pages/pool-tiling-melbourne', { also_in_services: true });
-    render(<IdentityCard entry={flagged} config={config} canRename={false} liveUrl="https://example.com/pool-tiling-melbourne" onRenamed={vi.fn()} />);
+    const flagged = makeEntry('pages/flagship-service', { also_in_services: true });
+    render(<IdentityCard entry={flagged} config={config} canRename={false} liveUrl="https://example.com/flagship-service" onRenamed={vi.fn()} />);
     expect(screen.getByText(/Services hub grid/)).toBeInTheDocument();
   });
 

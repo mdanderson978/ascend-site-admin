@@ -306,8 +306,8 @@ test('publish prunes only old unreferenced uploads — body and frontmatter refe
 // the directory silently disappears from the repo once it holds zero real
 // files again, which then fails a split-repo site's CI rsync step with "No
 // such file or directory" - and keeps failing on every subsequent publish
-// regardless of what content actually changed. This regressed live on the
-// Essendon church site (2026-09-06): a .gitkeep added specifically for
+// regardless of what content actually changed. This regressed live on a
+// client site (2026-09-06): a .gitkeep added specifically for
 // this reason got pruned once it crossed the 48-hour age threshold,
 // breaking every deploy for two days with the CMS still reporting
 // "Published OK" throughout (that only ever confirms the git push).
