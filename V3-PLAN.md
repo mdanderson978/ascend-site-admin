@@ -565,6 +565,11 @@ The **Add** dialog has three tabs:
     are highlighted so editing one card visibly applies to the set.
 - **Sidebar form** with Content and Style tabs for everything else.
 - **Outline panel:** page tree with drag, duplicate, hide, delete, rename label.
+- **Drag sections on the page** (Nicepage's "move blocks"): each section in the
+  preview has a grab handle; drag it up or down with a clear drop indicator
+  and the page animating into place. Every section also has **Move up / Move
+  down** buttons, so reordering works by keyboard, on touch screens and for
+  anyone who finds dragging fiddly. A mis-drop is one Ctrl+Z away.
 - **Undo and redo** (Ctrl+Z / Ctrl+Shift+Z), separate from Git history.
 - **Copy and paste** nodes between pages; **copy and paste style** between
   elements of the same type.
@@ -920,8 +925,10 @@ test page built from these elements scores 100 on PageSpeed Insights (mobile).
 - `layout` field type in the engine and UI.
 - Tiptap article editor with component blocks, `/` menu, strict schema and
   paste normalisation.
-- Outline panel, schema-generated forms with tabs, conditions, token fields,
-  visual selects, items lists and the link field.
+- Outline panel (with drag to reorder), schema-generated forms with tabs,
+  conditions, token fields, visual selects, items lists and the link field.
+- Move up / Move down on every section and item, so reordering never depends
+  on dragging.
 - Undo/redo and local draft autosave.
 - Remaining pilot-driven elements: Table of contents, Byline, Gallery,
   Before/after, Glossary, Steps, Swatches, Related links, CTA band, Service
@@ -946,6 +953,8 @@ how much legacy HTML remains.
 - Shell fetch and cache, style injection, in-browser render, idiomorph patching.
 - Hover and click selection, breadcrumb, device widths.
 - Inline text editing and floating toolbars, sibling highlighting.
+- Drag sections up and down directly on the page, with a drop indicator and
+  animated reflow.
 
 **Done when:** typing updates the preview within one frame with no flicker,
 clicking any element selects it, and preview HTML matches the built site's HTML
