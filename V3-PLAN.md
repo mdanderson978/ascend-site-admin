@@ -103,9 +103,9 @@ What it does better, and what we take:
 
 | Nicepage feature | Our version |
 |---|---|
-| Edit directly on the page: click text to type, click an image for Replace / Stock / Crop, click a button to edit label and link | Inline editing plus floating toolbars on the preview canvas (phase 4) |
-| Stock photo search (Unsplash, Pixabay) in the image picker | Stock search through an Ascend-owned Worker; picked photos are downloaded into uploads and converted to WebP (phase 5) |
-| 5 brand colours, each auto-generated into 7 shades (35 tokens), plus typography presets | Brand settings use the same model (phase 6) |
+| Edit directly on the page: click text to type, click an image for Replace / Crop, click a button to edit label and link | Inline editing plus floating toolbars on the preview canvas (phase 4) |
+| 5 brand colours, each auto-generated into 7 shades (35 tokens), plus typography presets | The developer defines the brand once; shades are generated; the editor offers only those named colours (phase 1). Never client-editable |
+| Stock photo search (Unsplash, Pixabay) in the image picker | Not taken for 3.0. Clients who want a stock photo download it and upload it as usual. Revisit only if it turns out trivial |
 | Coordinated "design sets" of sections that look right together | Presets ship as coordinated sets, not loose blocks (phase 5) |
 | Editing one repeated item updates its siblings | Inherent in schema-based items; made visible by highlighting siblings and "add another like this" |
 | Copy and paste style | Copy an element's Style-tab values (phase 6) |
@@ -130,17 +130,29 @@ id-based CSS, and JavaScript-dependent responsiveness.
    templates, never from cleaning up after free typing.
 5. **Two ways to build, one element library.** Landing pages stack sections;
    articles flow text with components dropped in. Both use the same elements.
-6. **Welcome AI help, validate everything it produces.** ChatGPT output enters
-   through the same schemas as hand-built content.
-7. **Progressive disclosure.** Content tab first, Style second, Advanced only in
-   developer mode.
-8. **Nothing breaks on upgrade.** Every stored layout carries a version and is
-   migrated on load.
-9. **Zero JavaScript by default on the live site.** Native HTML (`<details>`,
-   `<dialog>`) first; tiny opt-in scripts only where unavoidable.
-10. **Respect the split.** Clients only ever touch the content repo. No
+6. **Welcome ChatGPT by copy and paste, validate everything it produces.**
+   ChatGPT output enters through the same schemas as hand-built content. No AI
+   provider APIs in 3.0.
+7. **Fast by construction.** Every page the builder produces should score 100
+   on PageSpeed Insights without a second optimisation pass: AVIF images with
+   correct sizes, an automatic LCP image, inlined CSS, no render-blocking
+   requests, zero layout shift. See Performance by construction.
+8. **Fluid by default: `clamp()` everywhere.** All type and spacing come from
+   clamp-css tokens. No pixel sizes and no breakpoints for type or spacing.
+9. **Professional polish.** The admin should feel like premium design software,
+   not a developer tool. See Interface quality bar.
+10. **Progressive disclosure.** Content tab first, Style second, Advanced only
+    in developer mode.
+11. **Nothing breaks on upgrade.** Every stored layout carries a version and is
+    migrated on load.
+12. **Zero JavaScript by default on the live site.** Native HTML (`<details>`,
+    `<dialog>`) first; tiny opt-in scripts only where unavoidable.
+13. **Respect the split.** Clients only ever touch the content repo. No
     developer code goes into it, and no secret goes onto a client machine.
-11. **Keep 2.x compatible.** Existing fields, the flat `blocks` type, content
+14. **Fleet-wide, not per site.** Elements, presets and page templates ship
+    with the engine for every site, so sites never drift into incompatible
+    variants. Sites differ through brand tokens and their own CSS.
+15. **Keep 2.x compatible.** Existing fields, the flat `blocks` type, content
     files and launch workflow keep working.
 
 ## How it fits the split-repo system
@@ -151,10 +163,9 @@ This section is load-bearing. Every other decision has to respect it.
 
 | Location | Who can access it | Owns |
 |---|---|---|
-| **Source repo** (private) | Developer only | Site template: header, footer, nav, page shell, global CSS and token mapping, routing, site-specific components, `<BuilderLayout>` |
-| **Content repo** (private) | Client and developer | Pages, layouts and articles as data, uploads, documents, `admin.config.mjs`, brand colour values, the deploy workflow |
-| **Engine package** (this repo) | Pinned by tag | Admin engine and UI, plus the element library: schemas, render functions, element CSS, migrations, presets |
-| **Ascend Worker** (new) | Ascend's Cloudflare account | API keys for stock photos (and later AI); clients call it, never see keys |
+| **Source repo** (private) | Developer only | Site template: header, footer, nav, page shell, global CSS, clamp tokens and brand definition, fonts, routing, site-specific components, `<BuilderLayout>` |
+| **Content repo** (private) | Client and developer | Pages, layouts and articles as data, uploads, documents, `admin.config.mjs`, the deploy workflow |
+| **Engine package** (this repo) | Pinned by tag | Admin engine and UI, plus the fleet-wide element library: schemas, render functions, element CSS, migrations, presets, page templates |
 
 The client's machine has only the content repo and the engine. It never has
 the source repo. At deploy, the content repo's `publish-deploy.yml` clones the
@@ -459,9 +470,9 @@ doesn't fit the schema cannot exist.
    good copy, and serves it same-origin with a `<base href>`. The contents of
    `[data-builder-root]` are replaced with the draft render. Without a shell
    (offline, never deployed), a bare shell is used.
-2. **Styles.** All element CSS (wrapped in a cascade layer) and the site's
-   brand token values are injected after the site's CSS, so new elements and
-   unpublished brand changes preview correctly.
+2. **Styles.** All element CSS (wrapped in a cascade layer) is injected after
+   the site's CSS, so elements not yet used on the live site still preview
+   correctly. Brand and clamp tokens come from the deployed site's own CSS.
 3. **Render in the browser.** `render.ts` runs in the editor directly, with no
    server round trip per keystroke. Unpublished images come from the admin's
    upload route.
@@ -472,24 +483,42 @@ doesn't fit the schema cannot exist.
    disabled in the preview.
 6. **Device widths.** Desktop, tablet and phone toggles.
 
-### Design tokens and brand settings
+### Fluid tokens: `clamp()` everywhere
 
-- Element CSS uses only custom properties: `--ab-space-*`, `--ab-step-*`,
-  `--ab-tone-*`, `--ab-radius`, `--ab-font-*`.
-- Each site maps its clamp-css tokens to those names **in global CSS** in the
-  source repo (developer-owned).
-- **Brand settings** (opt-in per site, developer mode by default), stored in
-  `src/content/settings/theme.yaml`:
-  - **Colours:** up to 5 brand colours; each automatically generates 7 shades
-    (base, 3 lighter, 3 darker) in OKLCH, with a WCAG contrast check on
-    text/background pairs. Clients choose colours, never shades.
-  - **Typography presets:** title, subtitle and body styles.
-  - **Fonts** come from a curated list of self-hosted font files shipped with
-    the engine package (never Google's CDN), so the admin's choices always
-    exist in the build.
-  - Corner radius and spacing density (compact, comfortable, airy).
-  - The source repo's build reads `theme.yaml` into `:root`; the preview
-    injects the same values.
+The element library follows the clamp-css system exactly:
+
+- **All type and spacing are `clamp()` tokens** generated by clamp-css's
+  `clamp.mjs` (default 375px to 1440px), never hand-calculated. Each value hits
+  its minimum at the smallest viewport and its maximum at the largest, scaling
+  smoothly in between.
+- **Element CSS never contains** pixel font sizes, pixel margins, padding or
+  gaps, or media queries for type or spacing. It uses only tokens:
+  `--ab-step-*` (type), `--ab-space-*` (spacing), `--ab-tone-*`, `--ab-radius`,
+  `--ab-font-*`. A lint test enforces this on every element stylesheet.
+- **Layout switches use container queries** (`@container`), for example cards
+  going from 3 columns to 1 in a narrow column. That's structure, not sizing;
+  type and spacing still come from the same clamp tokens, so everything on a
+  page scales together.
+- The engine ships a default token set generated by `clamp.mjs`. Each site
+  maps its own generated tokens to the `--ab-*` names in global CSS in the
+  source repo.
+- The only media queries allowed in element CSS are user-preference ones
+  (`prefers-reduced-motion`, `hover`, `pointer`).
+
+### Brand (developer-defined, never client-editable)
+
+- The developer defines the brand once in the source repo: up to 5 named brand
+  colours (Primary, Accent, Dark, Light, and so on), from which 7 shades each
+  are generated in OKLCH; typography presets (title, subtitle, body); fonts
+  (self-hosted woff2, never Google's CDN); corner radius.
+- The source repo's build publishes the brand to the deployed site as
+  `/_ascend/brand.json` (same pattern as `version.json`): colour names, values,
+  roles and which pairs pass WCAG AA contrast.
+- The admin reads `brand.json` from `siteUrl`, so **the colour and tone choices
+  an editor sees are exactly the brand's named colours**, shown as real swatches
+  ("Primary", "Accent"), never a colour picker or hex input. A colour that
+  fails contrast on a given tone is not offered there. An `admin.config.mjs`
+  `brand` entry is the fallback for a site that isn't deployed yet.
 - Section **Tone** sets a colour context class; elements use contextual tokens,
   so text, links and buttons invert on dark sections automatically.
 
@@ -505,12 +534,14 @@ doesn't fit the schema cannot exist.
 
 The **Add** dialog has three tabs:
 
-- **Sections** (default in section mode): presets with real thumbnails,
-  organised as **coordinated design sets** (2 or 3 visual styles), grouped by
-  purpose: Heroes, About, Services, Features, Testimonials, Gallery, FAQ, Call
-  to action, Contact, Team, Pricing, Logos. Picking one inserts it fully formed.
+- **Sections** (default in section mode): fleet-wide presets with real
+  thumbnails, organised as **coordinated design sets** (2 or 3 visual styles),
+  grouped by purpose: Heroes, About, Services, Features, Testimonials, Gallery,
+  FAQ, Call to action, Contact, Team, Pricing, Logos. Picking one inserts it
+  fully formed, in the site's own brand.
 - **Elements:** individual elements with icons, grouped, with search.
-- **Library:** this site's saved sections.
+- **Library:** this site's saved sections (arrangements of fleet-wide elements,
+  so they migrate like any other content).
 
 ### Editing on the canvas
 
@@ -519,7 +550,7 @@ The **Add** dialog has three tabs:
   fields are plain text or schema-bound rich text; the canvas is never a free
   contenteditable region.
 - **Floating toolbars** on the selected element:
-  - Image: Replace, Stock photo, Crop and focal point, Alt text.
+  - Image: Replace, Crop and focal point, Alt text.
   - Button and link: label, link picker, style.
   - Repeat item: Add another like this, Duplicate, Move, Delete; sibling items
     are highlighted so editing one card visibly applies to the set.
@@ -532,23 +563,28 @@ The **Add** dialog has three tabs:
 
 ### Images
 
-- Upload pipeline as today (WebP via sharp), plus a **suggested focal point**
-  from sharp's `attention` strategy, which the client can adjust.
-- **Stock photo search** through the Ascend Worker (keys never reach client
-  machines). The chosen photo is downloaded into `src/assets/uploads/`,
-  converted to WebP and served from the site. Attribution is recorded in the
-  image's metadata where the provider requires it. Pixabay is the likely first
-  provider since its terms expect downloading and self-hosting; Unsplash's API
-  terms centre on hotlinking and download tracking. Confirm both providers'
-  current terms before building.
+- Upload pipeline as today (sharp in the admin), plus a **suggested focal
+  point** from sharp's `attention` strategy, which the client can adjust.
+- The client never chooses formats, sizes or loading behaviour. The build
+  handles all of it (see Performance by construction).
+- Clients who want a stock photo download it themselves and upload it like any
+  other image. Built-in stock search is not in 3.0.
 
 ### ChatGPT import
 
-This replaces the hand-maintained `CHATGPT-PAGE-HTML-PROMPT.md` workflow.
+This replaces the pilot site's hand-maintained prompt file. It is copy and
+paste only: the admin never calls an AI service, needs no API key and costs
+nothing to run. The client keeps using ChatGPT (or any chat AI) the way they
+already do.
 
-1. **Copy prompt.** A button generates a ChatGPT prompt from the live element
-   schemas (each element's `ai` description, fields and an example). It is
-   always in sync with what the site supports.
+1. **Copy prompt.** Two buttons copy a ready-made prompt to the clipboard,
+   generated from the live element schemas (each element's `ai` description,
+   fields and an example), so it is always in sync with what the site supports:
+   - **Write new content:** the element vocabulary, the rules, and a space for
+     the client's topic and notes.
+   - **Improve this page:** the same, plus the current page's content already
+     written out as component tags, so ChatGPT can revise it and the client
+     pastes the result back.
 2. **Component tags.** ChatGPT writes content using a small, fixed set of tags
    that map one-to-one to elements, which it handles more reliably than JSON:
 
@@ -564,23 +600,24 @@ This replaces the hand-maintained `CHATGPT-PAGE-HTML-PROMPT.md` workflow.
 
 3. **Paste from ChatGPT.** The admin parses the paste, validates every tag and
    attribute against the schemas, sanitises prose, and inserts real elements at
-   the cursor. Image notes become empty image slots with the note as a prompt to
-   upload or pick a stock photo.
+   the cursor (or replaces the page, for "Improve this page", after a preview
+   of the changes). Image notes become empty image slots showing the note, as a
+   reminder of which photo to upload.
 4. **Plain-English feedback.** Anything that doesn't fit (unknown tag, missing
    required field, inline style) is listed with what was skipped and why. Nothing
    reaches the build unvalidated.
-5. **Later:** an "Ask AI" panel inside the admin calling a model through the
-   Ascend Worker, using the same prompt and the same import path.
 
 The existing raw-HTML ChatGPT paste stays available in developer mode only.
 
 ### Request a new element
 
-When nothing in the library fits, **Request an element** collects a description,
-an example (screenshot or link) and the page it's for, and saves it as a brief
-for the developer (emailed or committed to a `requests/` folder in the content
-repo). This formalises "send the developer a brief". Each new element then benefits
-every site, not one page.
+When nothing in the library fits, **Request an element** opens a short form
+(what they want, an example link, which page) and then opens the client's own
+email app with a message to the site's configured `developerEmail` already
+filled in: subject, site name, page and description. The client attaches a
+screenshot if they have one and presses Send. Nothing is stored in the content
+repo and no mail server is involved. This formalises "send the developer a
+brief"; each new element then benefits every site, not one page.
 
 ### Page Check
 
@@ -598,8 +635,8 @@ one-click fixes where possible. Warnings only, except where noted.
 ### Library and templates
 
 - **Saved sections** in `src/content/_library/`, reusable on any page of the site.
-- **Page templates** for new pages (Service page, Guide, Landing page), defined
-  per site by the developer.
+- **Page templates** for new pages (Service page, Guide, Landing page), shipped
+  fleet-wide with the engine; a site's config chooses which ones it offers.
 - **Global sections** (later): inserted by reference, edited once everywhere.
 
 ### Roles
@@ -618,7 +655,7 @@ from the evidence above.
 
 | Group | Element | Notes |
 |---|---|---|
-| Layout | Section | tone, spacing, width, background image with focal point and overlay |
+| Layout | Section | tone, spacing, width, background image (a real `<img>`, not CSS) with focal point and overlay |
 | Layout | Article | prose + components flow (article mode) |
 | Layout | Columns | visual layout picker, gap, vertical align, mobile stack order |
 | Text | Heading | level vs size, optional kicker (**pilot**) |
@@ -629,7 +666,7 @@ from the evidence above.
 | Text | Buttons | items; primary, secondary, link styles |
 | Text | Icon / feature list | items; curated inline SVG icons |
 | Media | Image | focal point, ratio, caption, optional link or lightbox |
-| Media | Video | YouTube/Vimeo, local poster, click-to-load facade |
+| Media | Video | YouTube/Vimeo with local poster and click-to-load facade; self-hosted background video with a real poster image, autoplay only when reduced-motion and data-saver settings allow, and a pause button |
 | Media | Gallery | items; grid or masonry; one shared `<dialog>` lightbox (small opt-in script) (**pilot**) |
 | Media | Before / after | two images with a native range slider or side by side (**pilot**) |
 | Repeatable | Cards | items; image, title, text, link; 2 to 4 columns |
@@ -655,14 +692,18 @@ reviews, team grid, timeline, tabs. Interactive tools (calculators, filters)
 remain site-specific developer work, as the pilot site's workflow doc already states.
 
 Section presets for v1: about 30, in 2 or 3 coordinated design sets, each
-checked with Page Check and axe.
+checked with Page Check and axe. Presets are fleet-wide only: a site can't
+define its own, so every preset is tested once and stays compatible
+everywhere. A good section built for one client becomes a fleet preset.
 
 ## Output standards
 
 Enforced by tests on every element and preset:
 
-- Valid HTML (html-validate); no inline `style` except background-image focal
-  points and custom properties.
+- Valid HTML (html-validate); no inline `style` except custom properties
+  (for example a focal point's `object-position`).
+- Element CSS uses only clamp tokens for type and spacing (lint-enforced; see
+  Fluid tokens).
 - Semantic elements: `<section>` with an accessible name when it has a heading,
   `<article>`, `<figure>/<figcaption>`, `<blockquote>`, real lists, `<details>`.
 - Prefixed, flat class names (`ab-card`, `ab-card__title`); no utility soup, no
@@ -670,14 +711,105 @@ Enforced by tests on every element and preset:
 - **Container queries, not viewport media queries**, so an element lays out
   correctly whether it sits full width or in a narrow column.
 - **One CSS file per element**, so a page only ships CSS for elements it uses.
-- Images always have width, height, alt (or `alt=""` when marked decorative),
-  lazy loading except the first section, `decoding="async"`, srcset.
+- Images follow Performance by construction (AVIF, automatic `sizes`, width
+  and height, automatic LCP handling) and always have alt (or `alt=""` when
+  marked decorative).
 - No empty elements or wrappers; no `<br>` for spacing.
 - Unique ids, and every same-page anchor resolves (generated, not hand-typed).
 - axe: zero serious or critical violations in all presets.
 - JSON-LD where natural (FAQ, glossary, reviews, breadcrumbs).
 - The pilot site's existing build checks (no embedded CSS/JS, data URLs, unsafe iframes)
   move into the engine's render and save stages for every site.
+
+## Performance by construction
+
+The goal is a PageSpeed Insights score of 100 (mobile and desktop) on pages the
+builder produces, with no separate optimisation pass afterwards. Recent fleet
+work showed what moves a site from the high 80s to 100: real AVIF images with
+correct sizes, one clear high-priority hero image, inlined CSS and
+non-swapping fonts. 3.0 builds all of that into the output so it can't be
+forgotten.
+
+### Images (Astro's image pipeline, AVIF first)
+
+- Every image renders as `<picture>` with **AVIF** and **WebP** sources and a
+  fallback `<img>`, generated at build by Astro's image pipeline (`getImage()`,
+  sharp). Default AVIF quality is about 50 (proven on fleet photos); one engine
+  setting, not per image.
+- **`sizes` is computed automatically** from where the image sits: the
+  renderer knows the container width, column fraction and section width, so it
+  writes accurate `sizes` that hand-coding often gets wrong. srcset widths come
+  from a fixed ladder (for example 400 to 2000) capped at the source's width.
+- **The LCP image is handled automatically:** the first image in the first
+  section (or the hero background) is `loading="eager"` with
+  `fetchpriority="high"`; every other image is lazy with `decoding="async"`.
+  Nothing else on the page is high priority (not the logo).
+- **Hero and section backgrounds are real `<img>` elements** with
+  `object-fit` and `object-position` from the focal point, never CSS
+  `background-image`, so the browser can discover and prioritise them.
+- Width and height always set, plus `aspect-ratio` on media frames, so layout
+  shift is zero.
+- **Build time:** AVIF encoding is slow, and a cold build already takes a long
+  time on image-heavy sites. `publish-deploy.yml` caches Astro's image cache
+  (`node_modules/.astro`, keyed on the uploads folder) so only new or changed
+  images are encoded on each publish.
+
+### CSS, fonts and scripts
+
+- **CSS inlined** (`build.inlineStylesheets: 'always'`). This is affordable
+  because a page only carries CSS for the elements it uses; a size budget is set
+  in phase 1 from measured pilot pages and enforced by tests.
+- **Fonts** are self-hosted woff2, Latin subset, preloaded, with
+  `font-display: optional` so text never visibly swaps on slow devices. That's
+  set up once in the source template; `verifySite` checks it.
+- **Zero JavaScript by default.** Opt-in element scripts (gallery lightbox,
+  before/after) are tiny, deferred, and only included on pages that use that
+  element.
+- **No third-party requests by default.** Video and maps are click-to-load
+  facades with local poster images.
+- Long-lived cache headers for hashed assets in the source repo's `_headers`.
+
+### Proving it
+
+- **Deterministic budget tests** on every element and preset page: no
+  render-blocking external requests, exactly one high-priority image, every
+  image AVIF with width, height and `sizes`, JS and inlined CSS under budget,
+  no layout-shifting media.
+- **PageSpeed Insights** on the pilot site's key pages after each release,
+  target 100 on mobile. PSI is the reference rather than local Lighthouse, which
+  can report false third-party errors on this network.
+
+## Interface quality bar
+
+The admin must look and feel like professional design software. Clients should
+trust it the way they trust Figma, Webflow or Linear. Polish is a release
+requirement, not a later phase.
+
+- **A real design system for the admin itself**, extending 2.x's `tokens.css`:
+  type scale, 4/8 spacing grid, elevation, radius, one icon set with a
+  consistent stroke, a restrained colour palette with one accent.
+- **Every control has complete states:** hover, focus-visible, active,
+  disabled, loading and error. No unstyled browser defaults anywhere.
+- **Motion with purpose:** 150 to 250 ms ease-out for panels, menus and drag;
+  drop indicators and drag previews that feel physical; everything respects
+  reduced motion.
+- **Perceived speed:** skeleton loading instead of spinners, optimistic
+  updates, the preview responding within one frame of typing, the admin usable
+  within about a second of launch.
+- **Keyboard first-class:** shortcuts for common actions, a command palette
+  (Ctrl+K) to add elements, jump to pages and run actions, and a shortcut
+  cheat sheet.
+- **Plain language only in editor mode:** never "node", "props", "schema" or
+  "slug". Every message says what happened and what to do next. Destructive
+  actions offer undo in a toast instead of an "are you sure?" dialog where
+  possible.
+- **Designed empty, loading and error states,** with illustrations and helpful
+  copy.
+- **Layout:** designed for 1280 to 1920 wide screens first, fully usable on a
+  laptop, and responsive down to tablet; on a phone, quick text edits only.
+- **Design review gate:** each phase ends with a visual review of every new
+  screen at 1440 and 1280 wide, against reference screenshots, and a polish
+  list that must be cleared before the phase counts as done.
 
 ## Migration of existing sites
 
@@ -698,9 +830,10 @@ Enforced by tests on every element and preset:
     compared before and after in a real browser, then committed to main.
 - As pages are reworked, Legacy HTML blocks and their per-page assets are
   removed. Progress is visible as "N pages still have legacy content".
-- Source repos add `<BuilderLayout>`, the token mapping and the
-  `publish-deploy.yml` version step once; per-site `BlockList.astro` and block
-  zod members can then be deleted.
+- Source repos add, once: `<BuilderLayout>`, the clamp token mapping, the brand
+  definition and its `brand.json` output, the font setup, `inlineStylesheets`,
+  and in `publish-deploy.yml` the engine version step and the image cache.
+  Per-site `BlockList.astro` and block zod members can then be deleted.
 - `verifySite` gains checks: every stored layout loads and migrates, every node
   type is known, every page renders, and engine pins agree.
 
@@ -713,13 +846,19 @@ The pilot site leads: it has real, measured demand and the most to gain.
 - `site-admin/elements` export: tree types, `defineElement`, `defineRender`,
   `html` template, `cls`, transform pipeline, migrations runner, optimiser,
   sanitiser, zod generator.
+- Clamp token contract, default token set from `clamp.mjs`, and the element CSS
+  lint.
+- Brand definition, `brand.json` output and the admin's brand reader.
 - Section, Article, Prose, Heading, Image, Buttons, Callout, FAQ.
-- Astro host adapter and `<BuilderLayout>`.
-- `publish-deploy.yml` version step and `verifySite` pin check.
+- Astro host adapter and `<BuilderLayout>`, with AVIF `<picture>` output,
+  automatic `sizes` and automatic LCP handling.
+- `publish-deploy.yml` version step and image cache; `verifySite` pin and font
+  checks; performance budget tests.
 
 **Done when:** a hand-written YAML layout renders identically in a test Astro
-site and in Node, a fake old-version layout migrates on load, and a content
-repo pin change is picked up by the deploy without touching the source repo.
+site and in Node, a fake old-version layout migrates on load, a content repo
+pin change is picked up by the deploy without touching the source repo, and a
+test page built from these elements scores 100 on PageSpeed Insights (mobile).
 
 ### Phase 2: Article editor and forms
 
@@ -738,7 +877,8 @@ CTA without pasting any HTML.
 
 ### Phase 3: ChatGPT import and pilot migration
 
-- Generated prompt, component-tag parser, validation and feedback.
+- "Write new content" and "Improve this page" copy-paste prompts, component-tag
+  parser, validation and feedback.
 - Flexible-page and pasted-HTML converters, Legacy HTML element and reports.
 - Migrate the pilot site; remove per-page CSS for fully converted pages.
 
@@ -761,23 +901,25 @@ for the same layout (automated comparison).
 - Add dialog with Sections, Elements and Library tabs.
 - About 30 presets in coordinated design sets.
 - Page Check.
-- Stock photos through the Ascend Worker; sharp focal-point suggestion.
+- sharp focal-point suggestion.
 - Hint copy review: every field has a plain-English hint.
 
 **Done when:** a non-developer (the pilot client or another client) builds a five-section
 services page from presets in under 15 minutes without help, and Page Check
 reports nothing serious.
 
-### Phase 6: Library, brand and roles
+### Phase 6: Library and roles
 
-- Saved sections, page templates, developer mode, section locking.
-- Brand settings (5 colours × 7 shades, typography presets, curated fonts).
-- Copy and paste style, Latest from collection, Request an element.
+- Saved sections, fleet-wide page templates, developer mode, section locking.
+- Copy and paste style, Latest from collection, Request an element (email).
 
 ### Phase 7: Later
 
-- Global sections, "Ask AI" panel through the Worker, further elements, comments
-  on nodes for client and developer review.
+- Global sections, further elements, comments on nodes for client and
+  developer review.
+- Stock photo search, only if it proves trivial (no keys on client machines).
+
+Every phase also passes the Interface quality bar's design review gate.
 
 ## Testing strategy
 
@@ -787,6 +929,10 @@ reports nothing serious.
   (`save(load(x)) === x`), unknown types preserved untouched.
 - **Parity test:** the same layout rendered by the admin and by a real Astro
   build produces identical body HTML (ignoring `data-node`).
+- **CSS lint:** element stylesheets contain no pixel type or spacing values and
+  no width media queries.
+- **Performance tests:** the deterministic budgets in Performance by
+  construction, plus PageSpeed Insights on pilot pages after each release.
 - **Import tests:** a corpus of real ChatGPT outputs (good, partly wrong,
   hostile) with expected results.
 - **Migration tests:** the pilot site's 50 pasted-HTML pages converted, with text and image
@@ -808,6 +954,9 @@ reports nothing serious.
 | Shared markup feels less bespoke per site | Variants and tokens; truly bespoke work stays as site-specific elements |
 | Option creep makes the editor YOOtheme-complex | Each client-visible field needs a reason; the rest goes to Advanced |
 | Tiptap bundle size | Lazy load per editor; only needed extensions |
+| AVIF encoding makes publishes slow | Astro image cache persisted in the deploy workflow; only new images encode |
+| Inlined CSS grows as elements are added | Per-element CSS and an enforced size budget |
+| `brand.json` and the source CSS disagree | Both generated from the same brand definition in the source build |
 | Clients delete key structure | Section locking, undo, Git history and restore |
 
 ## Licensing
@@ -824,13 +973,26 @@ may be copied into this repository.
 - Interactive tools (calculators, filters); these stay site-specific.
 - Animations beyond one "reveal on scroll" option per section.
 - E-commerce elements.
+- AI provider integrations (API calls from the admin). ChatGPT is supported by
+  copy and paste only.
+- Built-in stock photo search.
+- Client-editable brand settings, colour pickers or font choices.
+- Site-specific presets or page templates.
+
+## Decisions made (2026-10-21)
+
+- **Brand** is developer-defined in the source repo and never client-editable;
+  editors choose only from the brand's named colours.
+- **`clamp()` everywhere** for type and spacing, from clamp-css tokens.
+- **Images** use Astro's image pipeline with AVIF first.
+- **PageSpeed 100** is a property of the output, verified by tests and PSI, not
+  a second pass.
+- **ChatGPT** is supported through copy-paste prompts and validated import; no
+  AI APIs in 3.0.
+- **Stock photos** are dropped from 3.0 unless they prove trivial.
+- **Request an element** opens a pre-filled email to `developerEmail`.
+- **Presets and page templates** are fleet-wide only.
 
 ## Open questions
 
-1. Should brand settings ever be client-editable, or always developer-only?
-2. Should "Request an element" email the brief, commit it to the content repo,
-   or both?
-3. Which AI provider and budget for the later "Ask AI" panel, and should its
-   cost be part of a care plan?
-4. Should presets be shared fleet-wide only, or can a site add developer-made
-   presets of its own?
+None outstanding. New questions go here as implementation starts.
