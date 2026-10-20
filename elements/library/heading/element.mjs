@@ -7,7 +7,7 @@ export default defineElement({
   icon: 'heading',
   allowedParents: ['section', 'article'],
   ai: 'A heading for a section or topic, with an optional short line above it (kicker). Attributes: kicker (a few words), level (h2 for main sections, h3 inside them), size (s | m | l | xl | display).',
-  defaults: { level: 'h2', size: 'l', align: 'start' },
+  defaults: { level: 'h2', size: 'l', align: 'auto' },
   placeholder: { props: { text: 'A clear, helpful heading' } },
   fields: {
     kicker: {
@@ -24,7 +24,12 @@ export default defineElement({
       label: 'Size',
       hint: 'How big the heading looks. This is separate from its level, so a heading can look large and still be correctly structured for Google and screen readers.',
     },
-    align: { type: 'align', label: 'Alignment' },
+    align: {
+      type: 'align',
+      inherit: true,
+      label: 'Alignment',
+      hint: 'Usually "Same as section". Choose Left or Centre only when this heading should differ from the rest of its section.',
+    },
     level: {
       type: 'heading-level',
       label: 'Heading level',
@@ -44,7 +49,11 @@ export default defineElement({
     const id = headingId(text);
     const href = link(props.link);
     const inner = href ? h`<a href="${href}">${text}</a>` : text;
-    const classes = cls('ab-heading', `ab-heading--${props.size}`, { 'ab-heading--center': props.align === 'center' });
+    // 'auto' adds no class: the heading follows its section's alignment.
+    const classes = cls('ab-heading', `ab-heading--${props.size}`, {
+      'ab-heading--center': props.align === 'center',
+      'ab-heading--start': props.align === 'start',
+    });
 
     if (!props.kicker) {
       return h`<${tag}${root({ class: classes, id })}>${inner}</${tag}>`;

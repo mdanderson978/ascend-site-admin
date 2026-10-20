@@ -21,6 +21,21 @@
   .ab-section__inner--wide { max-inline-size: var(--ab-wide); }
   .ab-section__inner--full { max-inline-size: none; }
 
+  /* Centred content: headings and text inherit text-align, button rows read
+     --ab-justify. Centred text gets a shorter line so it stays readable, and
+     lists are centred as a block with their items still left-aligned. */
+  .ab-section__inner--center { text-align: center; --ab-justify: center; }
+  .ab-section__inner--center > .ab-prose {
+    margin-inline: auto;
+    max-inline-size: var(--ab-measure-short);
+  }
+  .ab-section__inner--center > .ab-prose :is(ul, ol) {
+    inline-size: fit-content;
+    max-inline-size: 100%;
+    margin-inline: auto;
+    text-align: start;
+  }
+
   /* Flow: blocks inside a section are spaced by the section, not by themselves. */
   .ab-section__inner > * { margin-block: 0; }
   .ab-section__inner > * + * { margin-block-start: var(--ab-space-m); }

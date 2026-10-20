@@ -4,6 +4,8 @@
     margin-inline: auto;
     color: var(--ab-tone-ink);
     container-type: inline-size;
+    text-align: start; /* long-form reading stays left-aligned, even in a centred section */
+    --ab-justify: flex-start;
   }
   /* An article placed directly on the page (not inside a section) needs its own gutters. */
   .ab-article--page {

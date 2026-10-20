@@ -8,7 +8,7 @@ export const buttons = defineElement({
   container: true,
   allowedParents: ['section', 'article'],
   ai: 'A row of one or more buttons (calls to action). Each button has a label and a link; the first is usually style "primary".',
-  defaults: { align: 'start' },
+  defaults: { align: 'auto' },
   placeholder: {
     children: [
       { type: 'button', props: { text: 'Get in touch', style: 'primary' } },
@@ -16,12 +16,22 @@ export const buttons = defineElement({
     ],
   },
   fields: {
-    align: { type: 'align', label: 'Alignment' },
+    align: {
+      type: 'align',
+      inherit: true,
+      label: 'Alignment',
+      hint: 'Usually "Same as section". Choose Left or Centre only when these buttons should differ from the rest of their section.',
+    },
     ...general,
   },
   tabs: { Style: ['align'], Advanced: ['anchor', 'hidden', 'label'] },
   render({ props, children, h, cls, root }) {
-    return h`<div${root({ class: cls('ab-buttons', { 'ab-buttons--center': props.align === 'center' }) })}>${children}</div>`;
+    // 'auto' adds no class: the row follows its section's alignment.
+    const classes = cls('ab-buttons', {
+      'ab-buttons--center': props.align === 'center',
+      'ab-buttons--start': props.align === 'start',
+    });
+    return h`<div${root({ class: classes })}>${children}</div>`;
   },
 });
 

@@ -41,10 +41,11 @@ export const SAMPLES = [
         ),
         section(
           [
-            heading('Ready for a deck you\'ll love?', { size: 'xl', align: 'center' }),
-            buttons([button('Call 03 9000 0000', { tel: '03 9000 0000' }), button('Email us', { email: 'hello@example.com' }, { style: 'text' })], { align: 'center' }),
+            heading('Ready for a deck you\'ll love?', { size: 'xl' }),
+            prose('<p>Free, no-obligation quotes. We\'ll look at your deck and tell you honestly what it needs.</p>'),
+            buttons([button('Call 03 9000 0000', { tel: '03 9000 0000' }), button('Email us', { email: 'hello@example.com' }, { style: 'text' })]),
           ],
-          { tone: 'brand', spacing: 'm' },
+          { tone: 'brand', spacing: 'm', align: 'center' },
         ),
         section(
           [
@@ -108,6 +109,17 @@ export const SAMPLES = [
             ],
             { tone, spacing: 'm' },
           ),
+        ),
+        section(
+          [
+            heading('A centred section', { kicker: 'Align content: Centre', size: 'l' }),
+            prose('<p>Headings, text and buttons follow the section. Centred text is held to a shorter line so it stays readable.</p><ul><li>Lists are centred as a block</li><li>but their items stay left-aligned</li></ul>'),
+            buttons([button('Centred with the section', { page: 'x' })]),
+            heading('This heading overrides it: Left', { size: 'm', level: 'h3', align: 'start' }),
+            buttons([button('So does this row', { page: 'x' }, { style: 'secondary' })], { align: 'start' }),
+            { type: 'callout', props: { variant: 'tip', title: 'Callouts stay left-aligned', text: '<p>So do FAQs and articles: boxes and long-form text read better that way.</p>' } },
+          ],
+          { align: 'center' },
         ),
         section([
           heading('Heading sizes', { kicker: 'Typography', size: 'l' }),

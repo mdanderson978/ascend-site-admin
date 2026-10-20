@@ -35,7 +35,7 @@ const section = (children, props = {}) => ({ type: 'section', props, children })
 // A "maximal" example of every element: all content fields filled. A new
 // element must add an entry here, so its output is validated from day one.
 const MAXIMAL = {
-  section: () => section([{ type: 'heading', props: { text: 'Inside a section' } }], { background: 'bg', tone: 'brand', spacing: 'xl', width: 'wide', overlay: 'strong', anchor: 'intro' }),
+  section: () => section([{ type: 'heading', props: { text: 'Inside a section' } }], { background: 'bg', tone: 'brand', spacing: 'xl', width: 'wide', overlay: 'strong', align: 'center', anchor: 'intro' }),
   article: () => section([{ type: 'article', props: { anchor: 'guide' }, children: [{ type: 'prose', props: { html: '<p>Article body</p>' } }] }]),
   heading: () => section([{ type: 'heading', props: { kicker: 'Kicker', text: 'Heading text', link: { page: 'about' }, size: 'display', align: 'center', level: 'h3', anchor: 'heading-anchor' } }]),
   prose: () => section([{ type: 'prose', props: { html: '<h2>Sub</h2><p>Text with <a href="/x">a link</a>, <strong>bold</strong> and <em>italic</em>.</p><ul><li>One<ol><li>Nested</li></ol></li></ul><h3>Deeper</h3><p>More</p>' } }]),
@@ -158,6 +158,50 @@ test('heading ids are unique, explicit anchors are never taken, and sections are
   const labels = [...out.html.matchAll(/<section [^>]*aria-labelledby="([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual(labels, ['pricing-2', 'pricing', 'h-2026-rates']);
   assert.equal((out.html.match(/id="h-2026-rates"/g) || []).length, 1, 'kicker headings carry the id once');
+});
+
+test('alignment: blocks follow their section unless they override it', async () => {
+  const out = await renderLayout(
+    {
+      children: [
+        section(
+          [
+            { type: 'heading', props: { text: 'Follows' } },
+            { type: 'heading', props: { text: 'Left anyway', align: 'start' } },
+            { type: 'prose', props: { html: '<p>Short intro.</p>' } },
+            { type: 'buttons', children: [{ type: 'button', props: { text: 'Go', link: { page: 'x' } } }] },
+            { type: 'buttons', props: { align: 'start' }, children: [{ type: 'button', props: { text: 'Left', link: { page: 'x' } } }] },
+          ],
+          { align: 'center' },
+        ),
+        section([{ type: 'heading', props: { text: 'Centred alone', align: 'center' } }]),
+      ],
+    },
+    avifHost(),
+  );
+  assert.match(out.html, /class="ab-section__inner ab-section__inner--default ab-section__inner--center"/);
+  assert.match(out.html, /<h2 class="ab-heading ab-heading--l" id="follows">/, 'auto adds no class, so it inherits');
+  assert.match(out.html, /<h2 class="ab-heading ab-heading--l ab-heading--start" id="left-anyway">/);
+  assert.match(out.html, /<div class="ab-buttons"><a/);
+  assert.match(out.html, /<div class="ab-buttons ab-buttons--start">/);
+  assert.match(out.html, /<h2 class="ab-heading ab-heading--l ab-heading--center" id="centred-alone">/);
+  assert.equal((out.html.match(/ab-section__inner--center/g) || []).length, 1, 'only the centred section is centred');
+  assert.deepEqual(out.problems, []);
+
+  const css = (await import('../../elements/css.mjs')).elementCss(['section', 'buttons', 'callout', 'faq', 'article']);
+  assert.match(css, /\.ab-section__inner--center \{ text-align: center; --ab-justify: center; \}/);
+  assert.match(css, /justify-content: var\(--ab-justify, flex-start\)/);
+  for (const block of ['.ab-callout', '.ab-faq', '.ab-article']) {
+    assert.match(css, new RegExp(`\\${block} \\{[^}]*text-align: start`), `${block} stays left-aligned`);
+  }
+});
+
+test('a centred section with a lot of text gets a readability warning', async () => {
+  const long = '<p>' + 'Several sentences of text. '.repeat(10) + '</p><p>More.</p><p>More.</p><p>More.</p>';
+  const centred = await renderLayout({ children: [section([{ type: 'prose', props: { html: long } }], { align: 'center' })] }, avifHost());
+  assert.ok(centred.problems.some(p => p.field === 'align' && /hard to read/.test(p.message)));
+  const left = await renderLayout({ children: [section([{ type: 'prose', props: { html: long } }])] }, avifHost());
+  assert.deepEqual(left.problems, []);
 });
 
 test('duplicate or malformed anchors are reported but still produce valid, unique ids', async () => {

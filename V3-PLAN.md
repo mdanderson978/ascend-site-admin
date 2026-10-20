@@ -671,7 +671,7 @@ from the evidence above.
 
 | Group | Element | Notes |
 |---|---|---|
-| Layout | Section | tone, spacing, width, background image (a real `<img>`, not CSS) with focal point and overlay |
+| Layout | Section | tone, content alignment (left or centre; headings, text and buttons follow it and can override it), spacing, width, background image (a real `<img>`, not CSS) with focal point and overlay |
 | Layout | Article | prose + components flow (article mode) |
 | Layout | Columns | visual layout picker, gap, vertical align, mobile stack order |
 | Text | Heading | level vs size, optional kicker (**pilot**) |

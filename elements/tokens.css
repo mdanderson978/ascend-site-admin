@@ -37,6 +37,7 @@
     --ab-narrow: var(--max-narrow, 760px);
     --ab-gutter: var(--gutter, var(--ab-space-s));
     --ab-measure: var(--measure, 68ch);
+    --ab-measure-short: var(--measure-short, 52ch);
 
     /* Brand roles */
     --ab-ink: var(--ink, #1c1c1c);

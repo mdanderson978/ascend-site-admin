@@ -1,5 +1,8 @@
 @layer ascend-elements {
-  .ab-faq { border-block-start: 1px solid var(--ab-tone-line); }
+  .ab-faq {
+    border-block-start: 1px solid var(--ab-tone-line);
+    text-align: start; /* stays left-aligned inside a centred section */
+  }
   .ab-faq__item { border-block-end: 1px solid var(--ab-tone-line); }
 
   .ab-faq__q {

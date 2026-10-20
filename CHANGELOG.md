@@ -17,6 +17,11 @@ admin uses it yet, so existing sites are unaffected.
   H2/H3 in articles) survive; everything else is unwrapped or dropped.
 - First elements: Section, Article, Text, Heading, Image, Buttons, Callout
   and FAQ, styled only with clamp() tokens that default to clamp-css names.
+- Content alignment: a section can be left-aligned or centred. Headings,
+  text and button rows follow it ("Same as section") or override it;
+  centred text gets a shorter line, lists inside it keep left-aligned
+  items, and callouts, FAQs and articles stay left-aligned. A centred
+  section with a lot of text raises a readability warning.
 - Tests: HTML validity of every element in build and preview mode, the
   clamp-token CSS lint, migrations, idempotent saving and sanitising.
   `html-validate` added as a dev dependency.

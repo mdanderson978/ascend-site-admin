@@ -17,7 +17,7 @@ export const FIELD_TYPES = new Set([
   'link', // a link reference: { page } | { url } | { tel } | { email } | { anchor } | { document }
   'select', // one of `options`
   'token', // one of a design-token scale (see TOKEN_SCALES)
-  'align', // start | center
+  'align', // start | center; with { inherit: true } also 'auto' (follow the section)
   'heading-level', // h2 | h3 | h4 (h1 belongs to the page template)
   'boolean',
 ]);
@@ -91,7 +91,7 @@ export function allowedValues(field) {
     case 'token':
       return TOKEN_SCALES[field.scale].map(o => o.value);
     case 'align':
-      return ALIGNMENTS;
+      return field.inherit ? ['auto', ...ALIGNMENTS] : ALIGNMENTS;
     case 'heading-level':
       return HEADING_LEVELS;
     case 'boolean':

@@ -1,11 +1,15 @@
 @layer ascend-elements {
+  /* --ab-justify is set by a centred section; a modifier on the row overrides
+     it, whatever order the stylesheets load in. */
   .ab-buttons {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: var(--ab-justify, flex-start);
     gap: var(--ab-space-xs);
   }
-  .ab-buttons--center { justify-content: center; }
+  .ab-buttons--start { --ab-justify: flex-start; }
+  .ab-buttons--center { --ab-justify: center; }
 
   .ab-btn {
     display: inline-flex;

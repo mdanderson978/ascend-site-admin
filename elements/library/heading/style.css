@@ -20,6 +20,8 @@
   .ab-heading--l { font-size: var(--ab-step-3); }
   .ab-heading--xl { font-size: var(--ab-step-4); }
   .ab-heading--display { font-size: var(--ab-step-5); line-height: 1.05; }
+  /* No modifier: inherit the section's alignment. A modifier overrides it. */
+  .ab-heading--start { text-align: start; }
   .ab-heading--center { text-align: center; }
 
   .ab-heading__kicker {

@@ -7,6 +7,7 @@
     color: var(--ab-tone-ink);
     font-size: var(--ab-step-0);
     line-height: 1.6;
+    text-align: start; /* stays left-aligned inside a centred section */
   }
   .ab-callout--note { --ab-callout-accent: var(--ab-tone-muted); }
   .ab-callout--tip { --ab-callout-accent: var(--ab-tone-link); }
