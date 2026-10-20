@@ -23,10 +23,10 @@ src/content/.site-admin/menus.json
       "id": "a1b2c3d4-...",
       "name": "Main Menu",
       "items": [
-        { "id": "i1", "type": "page", "stableId": "<content stable_id>", "label": "Pool Tiling" },
+        { "id": "i1", "type": "page", "stableId": "<content stable_id>", "label": "About Us" },
         { "id": "i2", "type": "link", "url": "https://facebook.com/...", "label": "Facebook", "newTab": true },
         { "id": "i3", "type": "heading", "label": "Services", "children": [
-          { "id": "i4", "type": "page", "stableId": "<content stable_id>", "label": "Pool Resurfacing" }
+          { "id": "i4", "type": "page", "stableId": "<content stable_id>", "label": "Repairs" }
         ] }
       ]
     }
@@ -94,7 +94,7 @@ access to your templates. A typical integration:
    (`slotAssignments[slotKey]`), find that menu in `menus`.
 3. For each `page` item, resolve `stableId` to a live path via
    `getCollection()`/equivalent, matching on `stable_id` — the same shape
-   `lpr-astro/src/lib/nav.ts` already uses for slug-based nav lookups.
+   a site's `src/lib/nav.ts` already uses for slug-based nav lookups.
 4. Render `link` items' `url` verbatim, and `heading` items as a
    non-clickable label with their `children` as a dropdown.
 
@@ -104,8 +104,7 @@ Not every site needs full Menu Manager. A single flat top-level nav with
 no dropdowns, no external links, and only one menu location is simpler to
 maintain as a handful of per-page fields (`in_main_nav` / `nav_label` /
 `nav_order`, read by a small `getCollection('pages')` filter+sort at build
-time — see the `new-astro-split-cms` skill's nav.ts template, and
-`lpr-astro/src/lib/nav.ts` for a real example). Both mechanisms are
+time — see the `new-astro-split-cms` skill's nav.ts template). Both mechanisms are
 supported and independent; adopt Menu Manager only once a site actually
 needs multiple menus, non-page links, or dropdown groups. Migrating an
 existing site from the per-page-flag pattern to Menu Manager is optional,

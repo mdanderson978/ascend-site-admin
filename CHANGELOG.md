@@ -91,7 +91,7 @@ and a logged-out viewer gets an ugly broken-image icon or an opaque
 "Published successfully" (a toast that fades in a few seconds) only ever
 confirmed the git push itself succeeded - it said nothing about whether
 the downstream GitHub Actions build/deploy subsequently succeeded. That
-gap is exactly what let the Essendon Presbyterian Church incident
+gap is exactly what let a client-site incident
 (2.14.1) go unnoticed for two days: every publish kept reporting success
 while every actual deploy silently failed.
 
@@ -129,7 +129,7 @@ repo the moment it holds zero real files again, which then fails a
 split-repo site's CI rsync step ("No such file or directory") - and every
 subsequent publish keeps failing the same way regardless of what content
 actually changed, since the pipeline dies before it even reaches the real
-changes. Live on the Essendon Presbyterian Church site for two days
+changes. Live on a client site for two days
 (2026-09-06 to 2026-09-08): a `.gitkeep` added specifically for this
 reason got pruned once it crossed the 48-hour threshold, and nothing
 Bogdan (the client) published in that window ever actually went live -
@@ -150,8 +150,8 @@ menus" link and "no menus yet, create one" screen, with literally
 nowhere for anything created there to render; and a site WITH slots
 declared could still end up with extra unassigned menus, or a slot
 pointing at nothing after a delete - both silent, both invisible until
-someone actually checked the live site. Found auditing the Essendon
-church's admin.
+someone actually checked the live site. Found auditing a client
+site's admin.
 
 - The "Manage menus" sidebar link, and the whole Menus screen, no
   longer appear at all for a site with no `menuSlots` declared.
@@ -240,8 +240,8 @@ segment collapsed onto the same truncated slug, which the sidebar's
 orphan-detection then duplicated once per colliding key (generically
 mislabeled, since the truncated slug doesn't match any real `pageLabels`
 entry), and 404s when opened, reaching for a file that was never at that
-truncated path. Found on the Australian Masters Athletics site
-(2026-09-02), which uses this nested key convention throughout - every
+truncated path. Found on a client site
+(2026-09-02) that uses this nested key convention throughout - every
 site whose `admin.config.mjs` keys any static page more than one directory
 deep hit this the moment that page count grew past a handful, since the
 generic "Other" bucket duplicate count scales with however many sibling

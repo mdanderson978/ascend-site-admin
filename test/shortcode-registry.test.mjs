@@ -101,7 +101,7 @@ test('sms-button build() normalizes the number and safely encodes a pre-filled m
 test('sms-button build() supports international numbers, optional messages and safe button labels', () => {
   const { BUILTIN_SHORTCODES } = loadRegistryModule();
   const entry = BUILTIN_SHORTCODES.find((e) => e.id === 'sms-button');
-  assert.equal(entry.build(['+61 407-666-999', '', 'Text [Andrew]']).snippet, '**[Text \\[Andrew\\]](sms:+61407666999)**');
+  assert.equal(entry.build(['+61 407-666-999', '', 'Text [Sam]']).snippet, '**[Text \\[Sam\\]](sms:+61407666999)**');
   assert.equal(entry.build(['not a number', 'Hi', 'Text Message']), null);
   assert.equal(entry.build(['', '', '']), null);
 });
