@@ -197,6 +197,7 @@ import { sortChatGptHtml } from './rich-html.mjs';
 import { loadRedirects, saveRedirects, recordRedirect, resolveUrl } from './redirects.mjs';
 import { findInternalLinks, fixInternalLinks } from './linkFixer.mjs';
 import { loadMenus, saveMenus } from './menus.mjs';
+import { createVariants, pruneMedia } from './media.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -222,6 +223,20 @@ export function startAdmin(config) {
 
   const ROOT     = path.resolve(config.root);
   const CONTENT  = path.join(ROOT, 'src', 'content');
+  // V3 media (opt-in, `media: { avif: true }`): every image upload also gets
+  // an AVIF width ladder in public/media/, encoded once here so site builds
+  // never encode images. Off by default: 2.x sites use Astro's own pipeline
+  // and shouldn't gain files nothing reads.
+  const MEDIA_ENABLED = config.media?.avif === true;
+  async function encodeMedia(uploadName, source, resize) {
+    if (!MEDIA_ENABLED) return;
+    try {
+      await createVariants(ROOT, uploadName, { source, resize });
+    } catch (e) {
+      // The upload itself succeeded; `npx site-admin-media backfill` can fill this in later.
+      console.warn(`  ! Could not create AVIF copies of ${uploadName}: ${e.message}`);
+    }
+  }
   const UPLOADS  = path.join(ROOT, 'src', 'assets', 'uploads');
   const ASSETS   = path.join(ROOT, 'src', 'assets');
   const DOCS     = path.join(ROOT, 'public', 'documents');
@@ -820,10 +835,13 @@ export function startAdmin(config) {
       if (!r.ok) continue;
       const buf = Buffer.from(await r.arrayBuffer());
       const outName = `${YT_THUMB_PREFIX}${id}.webp`;
+      const resize = { width: size.w, height: Math.round(size.w * 9 / 16), fit: 'cover' };
       await sharp(buf)
-        .resize({ width: size.w, height: Math.round(size.w * 9 / 16), fit: 'cover' })
+        .rotate()
+        .resize(resize)
         .webp({ quality: 82 })
         .toFile(path.join(UPLOADS, outName));
+      await encodeMedia(outName, buf, resize);
       return '../../assets/uploads/' + outName;
     }
     return null;
@@ -883,10 +901,14 @@ export function startAdmin(config) {
         const outName  = stamp + '-' + sanitize(origName) + '.webp';
         const outPath  = path.join(UPLOADS, outName);
         try {
+          // rotate() applies the photo's EXIF orientation; without it, photos
+          // from phones and cameras that store "rotate 90" were saved sideways.
           await sharp(buffer)
+            .rotate()
             .resize(resize)
             .webp({ quality: 82 })
             .toFile(outPath);
+          await encodeMedia(outName, buffer, resize);
           resolve({
             // Relative from src/content/<collection>/<slug>.md so the source
             // repo's zod image() helper resolves it natively.
@@ -936,6 +958,7 @@ export function startAdmin(config) {
           while (fs.existsSync(path.join(imageDir, outName))) outName = `${baseName}-${suffix++}.webp`;
           const outPath = path.join(imageDir, outName);
           await sharp(buffer)
+            .rotate()
             .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
             .webp({ quality: 82 })
             .toFile(outPath);
@@ -1675,6 +1698,12 @@ export function startAdmin(config) {
           pruneOrphanUploads();
           const publishPaths = ['src/content', 'src/assets/uploads', 'public/documents'];
           if (config.richHtmlImport) publishPaths.push('public/content-assets');
+          if (MEDIA_ENABLED) {
+            // An upload and its AVIF set go together: prune the sets of
+            // uploads just removed, and publish the sets with the content.
+            await pruneMedia(ROOT);
+            if (fs.existsSync(path.join(ROOT, 'public', 'media'))) publishPaths.push('public/media');
+          }
           git(['add', ...publishPaths]);
           try { git(['diff', '--cached', '--quiet']); }
           catch (_) { git(['commit', '-m', msg]); }

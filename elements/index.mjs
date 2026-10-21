@@ -24,6 +24,7 @@ export { LayoutVersionError } from './core/pipeline.mjs';
 export { richTextToPlain, safeHref, sanitizeRichText } from './core/sanitize.mjs';
 export { sizesFor, structuredDataHtml } from './core/render.mjs';
 export { layoutSchema } from './core/zod.mjs';
+export { MEDIA_SETTINGS, avifFileName, fallbackFileName, ladderFor, mediaResolver, uploadNameFromSrc } from './media.mjs';
 export { builtinElements, defaultRegistry } from './library/index.mjs';
 
 /** Migrates, fills defaults and assigns ids (registry defaults to the fleet library). */

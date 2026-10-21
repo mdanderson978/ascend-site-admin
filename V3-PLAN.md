@@ -764,10 +764,15 @@ upload makes every publish fast regardless.
   - **AVIF at a fixed width ladder** (400, 800, 1200, 1600, 1920), capped at the
     original's width. Quality about 50 (proven on fleet photos), one engine
     setting, not per image.
-  - **One WebP fallback** at the largest width, for browsers without AVIF
-    (mainly iPhones and iPads stuck on iOS 15 or earlier, roughly 5% of visitors,
-    more for older audiences). AVIF-capable browsers never download it.
+  - **One WebP fallback** for browsers without AVIF (mainly iPhones and iPads
+    stuck on iOS 15 or earlier, roughly 5% of visitors, more for older
+    audiences). AVIF-capable browsers never download it. The fallback is the
+    existing upload itself, **copied into place at build time** (a file copy,
+    never an encode), so it is never stored twice.
   - The client sees a progress indicator; this takes a few seconds per photo.
+- **Opt-in per site** (`media: { avif: true }` in `admin.config.mjs`), turned
+  on when a site adopts the V3 elements. 2.x sites keep using Astro's own
+  image pipeline and gain no files they don't use. (Built in phase 1 part 2.)
 - **Committed to the content repo** with everything else on Publish, because
   the build machine only sees what's in the two repos. Files live in
   `public/media/` (added to the copy step in `publish-deploy.yml`) so Astro
@@ -781,18 +786,21 @@ upload makes every publish fast regardless.
   any image.
 - **The existing upload** in `src/assets/uploads/` stays as the master and
   keeps 2.x image fields working unchanged.
-- **Pruning** treats an upload, its AVIF set and its WebP fallback as one unit:
-  removed together, never leaving stray variants.
-- **Changing the ladder or quality later** is a one-off regeneration script
-  (from the masters), committed once.
-- **Repo size:** the AVIF set plus fallback is estimated at one to two times
-  the size of the existing single WebP per image (for the pilot site, roughly
-  15 to 20 MB on top of 14 MB of uploads). To be confirmed on real photos in
-  phase 1. Git LFS and external storage (R2) were rejected: LFS adds setup on
-  every client machine and in CI, and external storage would need credentials on
-  client machines.
-- **Existing sites** get a one-off script that generates sets for current
-  uploads (from their stored WebP; second-generation loss is acceptable).
+- **Pruning** treats an upload and its AVIF set as one unit: removed
+  together, never leaving stray variants.
+- **Changing the ladder or quality later:** `npx site-admin-media backfill`
+  re-encodes anything made with older settings (from the masters), committed
+  once.
+- **Repo size, measured on 20 of the pilot site's real photos:** a full AVIF
+  set adds about 54% of the upload's own size (roughly 7 MB on the pilot
+  site's 12.7 MB of uploads), and encoding took 5.4 s for the 20 photos.
+  Because the fallback is copied at build time, nothing else is added. Git
+  LFS and external storage (R2) were rejected: LFS adds setup on every client
+  machine and in CI, and external storage would need credentials on client
+  machines.
+- **Existing sites:** the same `npx site-admin-media backfill` generates sets
+  for current uploads (from their stored WebP; second-generation loss is
+  acceptable).
 
 At render time:
 
