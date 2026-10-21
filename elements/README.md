@@ -71,6 +71,24 @@ The `host` supplies everything environment-specific:
 | `renderUnknown(node)` | Optional renderer for site-specific element types |
 | `containerMax` / `wideMax` / `narrowMax` | Content widths in px (default 1200 / 1440 / 760), used to compute `sizes` |
 
+## Images: the media manifest
+
+With `media: { avif: true }` in a site's `admin.config.mjs`, every upload is
+encoded once, at upload time, into an AVIF width ladder in `public/media/`,
+recorded in `public/media/manifest.json` and committed with the content.
+Builds never encode images.
+
+```js
+import { mediaResolver } from 'site-admin/elements';
+import { readManifest, copyFallbacks } from 'site-admin/media'; // Node only
+
+const host = { resolveImage: mediaResolver(readManifest(contentRoot)) };
+copyFallbacks(contentRoot, 'dist/media'); // build step: the WebP fallbacks are the uploads, copied
+```
+
+From a content repo: `npx site-admin-media backfill` (encode existing
+uploads, or re-encode after a settings change), `prune`, `stats`.
+
 ## Adding an element
 
 An element is a folder in `library/` with `element.mjs` and `style.css`,

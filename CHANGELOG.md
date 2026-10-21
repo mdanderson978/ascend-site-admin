@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Fix: photos from phones and cameras no longer saved sideways
+
+Uploads ignored the photo's EXIF orientation, so a picture stored as
+"rotate 90 degrees" (common from phones and cameras) was saved on its side.
+Every image upload, YouTube thumbnail and page image is now rotated upright
+before resizing. Photos uploaded before this release are unchanged.
+
+### V3 phase 1, part 2: AVIF encoded once, at upload (opt-in)
+
+Sites that set `media: { avif: true }` in `admin.config.mjs` get, for every
+image upload, an AVIF width ladder (400 to 1920 px, capped at the photo's
+own width, quality 50) in `public/media/`, recorded in
+`public/media/manifest.json`. Site builds never encode images. Off by
+default: 2.x sites keep using Astro's own image pipeline.
+
+- Encoded from the original photo with the same crop as the stored WebP.
+- Publish commits `public/media/` with the content, and an upload and its
+  AVIF set are pruned together.
+- The WebP fallback is the existing upload, copied into place at build time
+  (`copyFallbacks` in `site-admin/media`), never stored twice.
+- `npx site-admin-media backfill` encodes existing uploads (and re-encodes
+  any made with older settings or since replaced); `prune` and `stats` too.
+- `site-admin/elements` exports `mediaResolver(manifest)`, the renderer's
+  image source for both the build and the admin preview.
+- sharp is always given file bytes, never paths: with a path, libvips keeps
+  the file open, which on Windows blocks pruning or replacing that upload.
+
 ## 2.18.0 - 2026-10-21
 
 ### Security: content files can no longer run code
