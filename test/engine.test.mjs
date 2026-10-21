@@ -30,7 +30,9 @@ test('every local file index.mjs imports from is listed in package.json "files"'
   assert.ok(localImports.length > 0, 'sanity check: index.mjs should import at least one local file');
   const files = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).files;
   for (const imported of localImports) {
-    assert.ok(files.includes(imported), `package.json "files" is missing "${imported}", which index.mjs imports - a consuming site's git-dependency install would 404/crash on this at runtime`);
+    // A listed folder ships everything in it ("elements" covers "elements/brand.mjs").
+    const shipped = files.includes(imported) || files.some(f => imported.startsWith(`${f}/`));
+    assert.ok(shipped, `package.json "files" is missing "${imported}", which index.mjs imports - a consuming site's git-dependency install would 404/crash on this at runtime`);
   }
 });
 
@@ -65,6 +67,40 @@ test('site verifier exercises the generic engine safely', async t => {
   assert.equal(result.ok, true);
   assert.equal(result.pages, 1);
   assert.equal(result.engineVersion, packageVersion);
+});
+
+test('site verifier renders every stored layout and checks the engine pin', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const config = {
+    root, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title', type: 'text' }] },
+  };
+  const page = layout => `---
+title: Services
+layout:
+${layout}---
+`;
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { 'site-admin': 'github:example/ascend-site-admin#v1.0.0' } }));
+  fs.writeFileSync(path.join(root, 'src/content/pages/services.md'), page(`  schema: 1
+  children:
+    - type: heading
+      props: { text: Our services }
+    - type: site_map
+      props: { pin: home }
+`));
+
+  const result = await verifySite(config, { root, port: 4412 });
+  assert.equal(result.layouts, 1);
+  const all = result.warnings.join('\n');
+  assert.ok(result.warnings.some(w => /pins site-admin 1\.0\.0 but .* is installed; run npm install/.test(w)), all);
+  assert.ok(result.warnings.some(w => /services\.md: element type not in the engine \(site_map\)/.test(w)), all);
+
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { 'site-admin': `github:example/ascend-site-admin#v${packageVersion}` } }));
+  fs.writeFileSync(path.join(root, 'src/content/pages/services.md'), page(`  schema: 999
+  children: []
+`));
+  await assert.rejects(verifySite(config, { root, port: 4413 }), /services\.md: layout can't be rendered/, 'a layout from a newer engine fails before a publish can break the build');
 });
 
 test('V2 is served by default with a stable legacy fallback and protected assets', async t => {
@@ -1067,5 +1103,51 @@ test('GET /api/deploy-status compares the live site\'s version.json with the pub
     assert.deepEqual(await status(base, second), { supported: false, live: false }, 'a site without version.json');
   } finally {
     for (const s of [noSite, withSite, site]) if (s.listening) await new Promise(resolve => s.close(resolve));
+  }
+});
+
+// V3: the editor's colour choices come from the live site's brand.json,
+// with admin.config.mjs `brand` as the stand-in before the first deploy.
+test('GET /api/brand prefers the live site\'s brand.json and reports the engine that built it', async t => {
+  const http = await import('node:http');
+  const { brandJson, defineBrand } = await import('../elements/index.mjs');
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const version = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+  const live = { ...brandJson(defineBrand({ colors: { primary: '#1f3a5f' } })), engine: '2.0.0' };
+  let serve = true;
+  const site = http.createServer((req, res) => {
+    if (serve && req.url === '/_ascend/brand.json') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(live)); }
+    else { res.writeHead(404); res.end(); }
+  });
+  await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
+  const siteUrl = `http://127.0.0.1:${site.address().port}`;
+  const configBrand = { colors: { primary: '#1e5631', light: '#fdf8f0' } };
+  const boot = (port, extra) => startAdmin({
+    root, port, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }] }, ...extra,
+  });
+  const ready = async server => { if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); }); return `http://127.0.0.1:${server.address().port}`; };
+  const brand = async base => (await fetch(`${base}/api/brand`)).json();
+
+  const none = boot(4476, {});
+  const configOnly = boot(4477, { brand: configBrand, siteUrl: 'http://127.0.0.1:9' });
+  const deployed = boot(4478, { brand: configBrand, siteUrl });
+  try {
+    assert.deepEqual(await brand(await ready(none)), { brand: null, source: null, engine: { admin: version, site: null, matches: null } });
+
+    const fallback = await brand(await ready(configOnly));
+    assert.equal(fallback.source, 'config', 'site unreachable: the configured brand stands in');
+    assert.equal(fallback.brand.roles.brand, '#1e5631');
+
+    const base = await ready(deployed);
+    const fromSite = await brand(base);
+    assert.equal(fromSite.source, 'site');
+    assert.equal(fromSite.brand.roles.brand, '#1f3a5f');
+    assert.deepEqual(fromSite.engine, { admin: version, site: '2.0.0', matches: false });
+    serve = false;
+    assert.equal((await brand(base)).source, 'site', 'kept for the session once fetched');
+  } finally {
+    for (const s of [none, configOnly, deployed, site]) if (s.listening) await new Promise(resolve => s.close(resolve));
   }
 });

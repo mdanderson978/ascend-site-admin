@@ -169,8 +169,8 @@ This section is load-bearing. Every other decision has to respect it.
 
 The client's machine has only the content repo and the engine. It never has
 the source repo. At deploy, the content repo's `publish-deploy.yml` clones the
-source repo into `.source`, copies content in, and runs `npm ci` and the build
-in `.source`.
+source repo into `_build`, copies content in, and runs `npm ci` and the build
+in `_build`.
 
 ### One effective engine version per site
 
@@ -181,16 +181,22 @@ engine is at 2.17.0.
 
 **Rule: the content repo's pin decides.** `publish-deploy.yml` gains one step
 before the build that reads the content repo's `site-admin` spec and installs
-exactly that into `.source`:
+exactly that into the source checkout (`_build` in the workflow template):
 
 ```yaml
 - name: Use the content repo's engine version
-  working-directory: .source
-  run: npm install --no-save "site-admin@$(node -p "require('../package.json').dependencies['site-admin']")"
+  working-directory: _build
+  run: |
+    if node -e "process.exit(require('./package.json').dependencies?.['site-admin'] ? 0 : 1)"; then
+      spec=$(node -p "require('../package.json').dependencies['site-admin']")
+      npm install --no-save "site-admin@$spec"
+    fi
 ```
 
 The source repo's own pin only matters for local development. `verifySite`
-warns when the two differ. If a layout's version is newer than the renderer,
+warns when the content repo's installed engine differs from its pin, and the
+build writes its engine version into `brand.json`, so the admin can tell when
+the live site was built with a different version. (Built in phase 1 part 3.) If a layout's version is newer than the renderer,
 the build fails with a message naming both versions and the fix.
 
 ### What the preview can and can't show
@@ -251,7 +257,7 @@ Gaps:
       └──────────────┬─────────────────────────────┬─────────────┘
                      │ pinned by content repo      │ same version, installed
                      ▼                             ▼ by publish-deploy.yml
-      content repo (client machine)        .source build (GitHub Actions)
+      content repo (client machine)        _build (GitHub Actions)
       - admin UI: forms from schemas       - <BuilderLayout> renders with
       - preview runs the same render()       the same render() functions
       - migrations + optimise on save      - zod schema from the same schemas

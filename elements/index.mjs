@@ -26,6 +26,8 @@ export { sizesFor, structuredDataHtml } from './core/render.mjs';
 export { layoutSchema } from './core/zod.mjs';
 export { MEDIA_SETTINGS, avifFileName, fallbackFileName, ladderFor, mediaResolver, uploadNameFromSrc } from './media.mjs';
 export { builtinElements, defaultRegistry } from './library/index.mjs';
+export { BRAND_SCHEMA, MAX_BRAND_COLORS, ROLES, SHADE_STEPS, brandCss, brandJson, contrastRatio, defineBrand, isBrandJson, shadesOf } from './brand.mjs';
+export { DEFAULT_BUDGET, checkPage } from './budget.mjs';
 
 /** Migrates, fills defaults and assigns ids (registry defaults to the fleet library). */
 export function loadLayout(layout, registry = defaultRegistry) {

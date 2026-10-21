@@ -1,0 +1,29 @@
+---
+import { getEntry } from 'astro:content';
+import BuilderHead from 'site-admin/astro/BuilderHead.astro';
+import BuilderLayout from 'site-admin/astro/BuilderLayout.astro';
+
+const page = await getEntry('pages', 'home');
+const { layout, title } = page.data;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+    <style>
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+      .site-title { max-width: var(--ab-max); margin: 0 auto; padding: var(--ab-space-l) var(--ab-gutter) 0; }
+    </style>
+    <BuilderHead layout={layout} />
+  </head>
+  <body>
+    <main>
+      <h1 class="site-title">{title}</h1>
+      <!--builder-->
+      <BuilderLayout layout={layout} />
+      <!--/builder-->
+    </main>
+  </body>
+</html>

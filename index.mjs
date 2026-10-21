@@ -175,6 +175,12 @@
  *                   workflow — see DeployStatusBanner.tsx. The repo itself
  *                   (owner/name) is never configured; it's derived from
  *                   the origin git remote at boot.
+ *   brand           optional; a defineBrand() input ({ colors, roles?,
+ *                   fonts?, radius? }, see site-admin/elements). Only a
+ *                   stand-in: the brand is defined in the source repo and
+ *                   the deployed site publishes it at
+ *                   <siteUrl>/_ascend/brand.json, which GET /api/brand
+ *                   prefers. Use this for a site that isn't deployed yet.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, history/restore, and page renaming (with 301-redirect
@@ -198,8 +204,10 @@ import { loadRedirects, saveRedirects, recordRedirect, resolveUrl } from './redi
 import { findInternalLinks, fixInternalLinks } from './linkFixer.mjs';
 import { loadMenus, saveMenus } from './menus.mjs';
 import { createVariants, pruneMedia } from './media.mjs';
+import { brandJson, defineBrand, isBrandJson } from './elements/brand.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ENGINE_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version;
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
@@ -228,6 +236,7 @@ export function startAdmin(config) {
   // never encode images. Off by default: 2.x sites use Astro's own pipeline
   // and shouldn't gain files nothing reads.
   const MEDIA_ENABLED = config.media?.avif === true;
+  let brandCache = null; // GET /api/brand: the live site's brand.json, once fetched
   async function encodeMedia(uploadName, source, resize) {
     if (!MEDIA_ENABLED) return;
     try {
@@ -1768,6 +1777,34 @@ export function startAdmin(config) {
           if (known()) { try { git(['merge-base', '--is-ancestor', commit, liveCommit]); live = true; } catch (_) {} }
         }
         jsonResp(res, 200, { supported: true, live });
+        return;
+      }
+
+      // The brand the editor's colour and tone choices come from (V3
+      // elements). The deployed site publishes it at
+      // <siteUrl>/_ascend/brand.json (site-admin/astro), with the engine
+      // version that built it, so a pin mismatch between this admin and the
+      // live build is visible. Before the first deploy, or offline,
+      // config.brand stands in. A good fetch is kept for the session.
+      if (path_ === '/api/brand' && req.method === 'GET') {
+        if (!brandCache && config.siteUrl) {
+          try {
+            const r = await fetch(new URL('/_ascend/brand.json', config.siteUrl), { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+            const data = r.ok ? await r.json() : null;
+            if (isBrandJson(data)) brandCache = { brand: data, source: 'site' };
+          } catch (_) { /* offline or not deployed yet */ }
+        }
+        let result = brandCache;
+        if (!result && config.brand) {
+          try { result = { brand: brandJson(defineBrand(config.brand)), source: 'config' }; }
+          catch (e) { jsonResp(res, 200, { brand: null, source: null, error: e.message, engine: { admin: ENGINE_VERSION, site: null } }); return; }
+        }
+        const site = result?.source === 'site' ? result.brand.engine || null : null;
+        jsonResp(res, 200, {
+          brand: result?.brand || null,
+          source: result?.source || null,
+          engine: { admin: ENGINE_VERSION, site, matches: site ? site === ENGINE_VERSION : null },
+        });
         return;
       }
 

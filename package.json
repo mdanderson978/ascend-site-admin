@@ -12,7 +12,10 @@
     "./verify": "./verify-site.mjs",
     "./elements": "./elements/index.mjs",
     "./elements/css": "./elements/css.mjs",
-    "./media": "./media.mjs"
+    "./media": "./media.mjs",
+    "./astro": "./astro/index.mjs",
+    "./astro/BuilderHead.astro": "./astro/BuilderHead.astro",
+    "./astro/BuilderLayout.astro": "./astro/BuilderLayout.astro"
   },
   "files": [
     "index.mjs",
@@ -26,6 +29,7 @@
     "media.mjs",
     "verify-site.mjs",
     "elements",
+    "astro",
     "dist/admin"
   ],
   "repository": {
@@ -42,7 +46,7 @@
     "dev:ui": "vite --config ui/vite.config.ts",
     "playground": "node playground/server.mjs",
     "typecheck": "tsc -p ui/tsconfig.json",
-    "test": "node --test test/engine.test.mjs test/shortcode-registry.test.mjs test/save-uploads-prune.test.mjs test/youtube-thumbnail.test.mjs test/rich-html.test.mjs test/safe-matter.test.mjs test/media.test.mjs test/elements/html-sanitize.test.mjs test/elements/pipeline.test.mjs test/elements/render.test.mjs test/elements/css-package.test.mjs test/elements/playground.test.mjs && npm run test:ui",
+    "test": "node --test test/engine.test.mjs test/shortcode-registry.test.mjs test/save-uploads-prune.test.mjs test/youtube-thumbnail.test.mjs test/rich-html.test.mjs test/safe-matter.test.mjs test/media.test.mjs test/elements/html-sanitize.test.mjs test/elements/pipeline.test.mjs test/elements/render.test.mjs test/elements/css-package.test.mjs test/elements/playground.test.mjs test/elements/brand.test.mjs test/elements/budget.test.mjs test/astro.test.mjs && npm run test:ui",
     "test:ui": "vitest run --config ui/vite.config.ts",
     "test:e2e": "playwright test --config playwright.config.mjs",
     "prepack": "npm run build",
@@ -63,6 +67,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^4.7.0",
+    "astro": "^7.3.8",
     "html-validate": "^10.17.0",
     "js-yaml": "^3.15.2",
     "jsdom": "^26.1.0",
