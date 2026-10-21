@@ -9,6 +9,39 @@ Uploads ignored the photo's EXIF orientation, so a picture stored as
 Every image upload, YouTube thumbnail and page image is now rotated upright
 before resizing. Photos uploaded before this release are unchanged.
 
+### V3 phase 1, part 3: Astro integration, brand and performance budget
+
+- **`site-admin/astro`**, an Astro integration for source repos, plus
+  `<BuilderHead>` and `<BuilderLayout>` components. Pages render with the
+  same functions as the admin preview, and the output is identical to
+  rendering in Node (proved by a real Astro 7 build in the tests). The
+  integration inlines all stylesheets, ships only the CSS for the elements
+  a page uses (minified), serves the WebP fallbacks in `astro dev` and
+  copies them at build time.
+- **Brand:** `defineBrand()` in `site-admin/elements` takes up to 5 named
+  colours and makes 7 OKLCH shades of each, plus the role colours the
+  elements use. Its CSS sits in a low-priority layer, so a site's own CSS
+  still wins. The build publishes `/_ascend/brand.json`: the colours, and
+  for each section background which colours pass WCAG AA contrast (body
+  text, and large text). Editors will only be offered those. Contrast
+  problems in the brand itself show as build warnings.
+- **`GET /api/brand`** in the admin reads the live site's `brand.json`,
+  with a `brand` entry in `admin.config.mjs` as the stand-in before the
+  first deploy, and reports whether the live site was built with the
+  same engine version.
+- **Performance budget:** `checkPage()` checks a finished page for
+  render-blocking stylesheets and scripts, third-party or swapping fonts,
+  more than one high-priority image, images without size or an AVIF
+  version, and inline CSS (80 KB) and JS (20 KB) over budget. The
+  integration runs it on every builder page; `strict: true` fails the build.
+- **`verifySite`** now renders every stored layout (a layout saved by a
+  newer engine fails here, not in the client's deploy), lists element types
+  the engine doesn't know, and warns when the installed engine differs from
+  the content repo's pin. Results gain `layouts` and `warnings`.
+- **Deploy workflow** (template in the split-repo setup): new steps copy
+  `public/media/` and install the content repo's engine version into the
+  source checkout. Both do nothing on sites that don't use them.
+
 ### V3 phase 1, part 2: AVIF encoded once, at upload (opt-in)
 
 Sites that set `media: { avif: true }` in `admin.config.mjs` get, for every
