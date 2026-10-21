@@ -141,7 +141,7 @@ export default function siteAdmin(options = {}) {
         const out = fileURLToPath(dir);
         const failures = [];
 
-        const copied = copyFallbacks(contentRoot, path.join(out, mediaBase.replace(/^\/+|\/+$/g, '')));
+        const copied = copyFallbacks(contentRoot, path.join(out, ...mediaBase.split('/').filter(Boolean)));
         logger.info(`engine ${ENGINE_VERSION}: copied ${copied} image fallback${copied === 1 ? '' : 's'}`);
 
         if (brand) {
