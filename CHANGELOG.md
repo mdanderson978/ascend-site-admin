@@ -2,6 +2,14 @@
 
 ## 2.19.1 - 2026-10-28
 
+### New: photo sizes in the picker
+
+Every photo in "Choose a photo", and the chosen photo under an image
+field, shows its real size and shape, e.g. "1200 × 400 px · 3:1 wide".
+Photos under the field's minimum size are marked in red with the size it
+needs, so editors can tell a sharp, well-shaped image from a poor one
+before using it. File names in the picker are slightly larger too.
+
 ### Fix: content edits no longer look like the developer's
 
 On a computer with no git identity of its own, the admin committed as
