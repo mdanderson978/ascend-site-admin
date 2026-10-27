@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.19.1 - 2026-10-28
+
+### Fix: field hints are easier to read
+
+The help text under each field and section heading was small enough that
+editors skipped it (0.8rem, about 13px). It is now 0.9rem, about 14px.
+Hints inside shortcode dialogs go from 0.68rem to 0.8rem.
+
 ## 2.19.0 - 2026-10-27
 
 ### New: `uniquePdfNames` (opt-in)
