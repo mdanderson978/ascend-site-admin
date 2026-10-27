@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 2.19.0 - 2026-10-27
+
+### New: `uniquePdfNames` (opt-in)
+
+With `uniquePdfNames: true` in `admin.config.mjs`, a PDF upload never
+overwrites an existing file in `public/documents`. A name already taken by
+a different file gets `-2`, `-3` and so on; uploading the very same file
+again reuses its name. This stops a carelessly named upload ("study-1.pdf")
+silently replacing another page's document. Off by default: other sites
+keep replacing a same-named file in place, which keeps its URL.
 
 ### Fix: photos from phones and cameras no longer saved sideways
 

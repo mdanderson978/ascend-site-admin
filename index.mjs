@@ -175,6 +175,14 @@
  *                   workflow — see DeployStatusBanner.tsx. The repo itself
  *                   (owner/name) is never configured; it's derived from
  *                   the origin git remote at boot.
+ *   uniquePdfNames  optional; true makes a PDF upload never overwrite an
+ *                   existing file in public/documents: a name already
+ *                   taken by different contents gets -2, -3, ... (the same
+ *                   file uploaded again reuses its name). Default false: an
+ *                   upload with the same name replaces the file and keeps
+ *                   its URL, which suits one-document-per-purpose sites but
+ *                   lets a carelessly named upload ("study-1.pdf") replace
+ *                   another page's document.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, history/restore, and page renaming (with 301-redirect
@@ -992,6 +1000,19 @@ export function startAdmin(config) {
       }));
   }
 
+  // uniquePdfNames: a taken name gets -2, -3, ... so an upload can never
+  // replace a different document that something else links to. The same
+  // bytes uploaded again reuse their existing file instead of a copy.
+  async function freePdfName(filename, buffer) {
+    const base = filename.slice(0, -'.pdf'.length);
+    for (let n = 1; ; n++) {
+      const name = n === 1 ? filename : `${base}-${n}.pdf`;
+      let existing;
+      try { existing = await fsp.readFile(path.join(DOCS, name)); } catch { return name; }
+      if (existing.equals(buffer)) return name;
+    }
+  }
+
   async function handlePdfUpload(req) {
     return new Promise((resolve, reject) => {
       const bb = Busboy({ headers: req.headers, limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
@@ -1000,7 +1021,8 @@ export function startAdmin(config) {
       let filename = 'document.pdf';
 
       bb.on('file', (_name, file, info) => {
-        // Stable filename on purpose: replacing a PDF keeps its public URL.
+        // Stable filename on purpose: replacing a PDF keeps its public URL
+        // (unless config.uniquePdfNames, see freePdfName).
         filename = sanitize(info.filename || 'document.pdf');
         if (!filename.endsWith('.pdf')) filename += '.pdf';
         const chunks = [];
@@ -1011,6 +1033,8 @@ export function startAdmin(config) {
       bb.on('close', async () => {
         if (tooBig)  { reject(new Error('That PDF is over 25 MB. Please compress it first.')); return; }
         if (!buffer) { reject(new Error('No file data')); return; }
+        if (config.uniquePdfNames) filename = await freePdfName(filename, buffer);
+        await fsp.mkdir(DOCS, { recursive: true });
         await fsp.writeFile(path.join(DOCS, filename), buffer);
         resolve({ path: '/documents/' + filename });
       });
