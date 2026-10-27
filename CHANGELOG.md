@@ -2,6 +2,17 @@
 
 ## 2.19.1 - 2026-10-28
 
+### Fix: content edits no longer look like the developer's
+
+On a computer with no git identity of its own, the admin committed as
+"Website Admin" with the developer's email, so GitHub showed a client's
+edits as the developer's. The fallback is now the site and the
+computer's login, e.g. "Proclaim Anglican Church (noah)"
+<site-admin@proclaim.org.au> (from `siteUrl`; `site-admin@invalid`
+without one). The old default is replaced on the next start. Anyone
+with their own git identity keeps it, and `gitIdentity` in the config
+still overrides the fallback.
+
 ### Fix: field hints are easier to read
 
 The help text under each field and section heading was small enough that

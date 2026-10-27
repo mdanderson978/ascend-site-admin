@@ -115,7 +115,8 @@
  *   altPlaceholder  optional example text for single-image description inputs.
  *   port            default port (env ADMIN_PORT always wins), default 4322.
  *   gitIdentity     { name, email } used only when the machine has no git
- *                   identity at all; defaults to Website Admin <developerEmail>.
+ *                   identity at all; defaults to '<siteTitle> (<computer login>)'
+ *                   <site-admin@<siteUrl host>> (site-admin@invalid without siteUrl).
  *   pullOnStart     optional; false disables the best-effort startup pull
  *                   for CI and read-only verification. Defaults to true.
  *   adminUi         optional; set to 'legacy' for a temporary rollback to
@@ -195,6 +196,7 @@ import http from 'http';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
@@ -801,12 +803,25 @@ export function startAdmin(config) {
   // a client's machine fails with a raw "Please tell me who you are" error.
   // Set a repo-local identity (never --global — don't touch the client's own
   // config).
+  //
+  // Whoever has their own git identity keeps it. The fallback names the site
+  // and the computer's login ("Proclaim Anglican Church (noah)") with an
+  // address that isn't the developer's: before 2.19.1 it was
+  // Website Admin <developerEmail>, which GitHub showed as the developer's
+  // own commits. That old repo-local default is replaced on the next start.
   function ensureGitIdentity() {
-    let email = '';
-    try { email = git(['config', 'user.email']).trim(); }
-    catch (_) { /* unset — git exits 1 */ }
-    if (email) return;
-    const id = { name: 'Website Admin', email: developerEmail, ...(config.gitIdentity || {}) };
+    const read = (args) => { try { return git(['config', ...args]).trim(); } catch (_) { return ''; } };
+    const legacy = read(['--local', 'user.name']) === 'Website Admin' && read(['--local', 'user.email']) === developerEmail;
+    if (legacy) {
+      try { git(['config', '--local', '--unset', 'user.name']); git(['config', '--local', '--unset', 'user.email']); }
+      catch (_) { /* non-fatal; the identity below overwrites it anyway */ }
+    }
+    if (read(['user.email'])) return;
+    let login = '';
+    try { login = os.userInfo().username; } catch (_) { /* no login name on this machine */ }
+    let host = 'invalid';
+    try { if (config.siteUrl) host = new URL(config.siteUrl).hostname.replace(/^www\./, ''); } catch (_) { /* bad siteUrl */ }
+    const id = { name: login ? `${siteTitle} (${login})` : siteTitle, email: `site-admin@${host}`, ...(config.gitIdentity || {}) };
     try {
       git(['config', 'user.name', String(id.name)]);
       git(['config', 'user.email', String(id.email)]);
