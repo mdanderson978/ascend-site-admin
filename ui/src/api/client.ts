@@ -1,4 +1,4 @@
-import type { AdminConfig, ContentData, ContentTree, EntryResponse, HistoryVersion, MenuItem, MenuPageOption, MenusResponse, RenamePreview, RenameResult, RichHtmlImportResult, SearchIndex, UploadImage } from './types';
+import type { AdminConfig, ChatGptRecovery, ContentData, ContentTree, EntryResponse, HistoryVersion, MenuItem, MenuPageOption, MenusResponse, RenamePreview, RenameResult, RichHtmlImportResult, SearchIndex, UploadImage } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -32,7 +32,10 @@ export const api = {
   rename: (key: string, newSlug: string) => request<RenameResult>(`/api/rename/${key}`, json({ newSlug })),
   uploads: () => request<{ files: UploadImage[] }>('/api/uploads'),
   pageImages: (key: string, data: ContentData) => request<{ files: UploadImage[] }>(`/api/page-images/${key}`, json({ data })),
-  importChatGptHtml: (key: string, html: string, data: ContentData) => request<RichHtmlImportResult>(`/api/import/chatgpt/${key}`, json({ html, data })),
+  importChatGptHtml: (key: string, html: string, data: ContentData, previousBody: string) => request<RichHtmlImportResult>(`/api/import/chatgpt/${key}`, json({ html, data, previousBody })),
+  chatGptRecovery: (key: string) => request<{ recovery: ChatGptRecovery | null }>(`/api/import/chatgpt-recovery/${key}`, json({})),
+  undoChatGptImport: (key: string, id: string) => request<{ body: string; recovery: ChatGptRecovery }>(`/api/import/chatgpt-undo/${key}`, json({ id })),
+  originalChatGptPaste: (key: string, id: string) => request<{ source: string }>(`/api/import/chatgpt-original/${key}`, json({ id })),
   order: (collection: string, slugs: string[]) => request<{ ok: boolean }>(`/api/order/${collection}`, json({ slugs })),
   menus: () => request<MenusResponse>('/api/menus'),
   menuPages: () => request<{ pages: MenuPageOption[] }>('/api/menu-pages'),

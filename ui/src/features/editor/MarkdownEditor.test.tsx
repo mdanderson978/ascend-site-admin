@@ -5,10 +5,21 @@ import { MarkdownEditor } from './MarkdownEditor';
 import { api } from '../../api/client';
 import type { AdminConfig } from '../../api/types';
 
-vi.mock('../../api/client', () => ({ api: { uploads: vi.fn().mockResolvedValue({ files: [] }), uploadImage: vi.fn() } }));
+vi.mock('../../api/client', () => ({ api: {
+  uploads: vi.fn().mockResolvedValue({ files: [] }),
+  uploadImage: vi.fn(),
+  chatGptRecovery: vi.fn().mockResolvedValue({ recovery: null }),
+  undoChatGptImport: vi.fn(),
+  originalChatGptPaste: vi.fn(),
+} }));
 
 afterEach(cleanup);
-beforeEach(() => { vi.mocked(api.uploadImage).mockReset(); });
+beforeEach(() => {
+  vi.mocked(api.uploadImage).mockReset();
+  vi.mocked(api.chatGptRecovery).mockResolvedValue({ recovery: null });
+  vi.mocked(api.undoChatGptImport).mockReset();
+  vi.mocked(api.originalChatGptPaste).mockReset();
+});
 
 const config: AdminConfig = {
   siteTitle: 'Test', browserTitle: 'Test', pageLabels: {}, navStructure: [], dynamicCollections: {},
@@ -49,5 +60,26 @@ describe('MarkdownEditor', () => {
 
     expect(api.uploadImage).not.toHaveBeenCalled();
     expect(screen.getByText('Describe this photo').closest('dialog')).not.toHaveAttribute('open');
+  });
+
+  it('offers persistent copy and one-click undo controls for the last ChatGPT import', async () => {
+    const recovery = { id: '1700000000000-aaaaaaaaaaaa', targetKey: 'pages/home', createdAt: 1700000000000, state: 'active' as const, canUndo: true, hasOriginalPaste: true };
+    vi.mocked(api.chatGptRecovery).mockResolvedValue({ recovery });
+    vi.mocked(api.originalChatGptPaste).mockResolvedValue({ source: '<p>Exact original</p>' });
+    vi.mocked(api.undoChatGptImport).mockResolvedValue({ body: 'Body before import', recovery: { ...recovery, state: 'undone', canUndo: false } });
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const onNotice = vi.fn();
+    render(<MarkdownEditor value="Imported body" onChange={onChange} config={{ ...config, richHtmlImport: true }} pageKey="pages/home" data={{}} onNotice={onNotice} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Copy original paste' }));
+    expect(api.originalChatGptPaste).toHaveBeenCalledWith('pages/home', recovery.id);
+    expect(onNotice).toHaveBeenCalledWith('Original ChatGPT paste copied exactly.', 'success');
+
+    await user.click(screen.getByRole('button', { name: 'Undo ChatGPT import' }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith('Body before import'));
+    expect(api.undoChatGptImport).toHaveBeenCalledWith('pages/home', recovery.id);
+    expect(screen.queryByRole('button', { name: 'Undo ChatGPT import' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy original paste' })).toBeInTheDocument();
   });
 });

@@ -131,98 +131,191 @@ test('a script using only atob() or only Blob/createObjectURL alone (not both) i
   assert.match(result.body, /id="copy"/);
 });
 
-test('an earlier imported image the new paste still links by path is kept; unused ones are removed', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+test('uploaded image names are repaired and every local file reference must exist', async t => {
+  const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-public-'));
+  t.after(() => fs.rmSync(publicDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const outputDir = path.join(publicDir, 'content-assets', 'services', 'example');
   const publicBase = '/content-assets/services/example';
-  fs.mkdirSync(path.join(root, 'images'));
-  fs.writeFileSync(path.join(root, 'images', 'image-aaaa11112222.webp'), 'linked-in-html');
-  fs.writeFileSync(path.join(root, 'images', 'image-bbbb33334444.webp'), 'linked-in-css');
-  fs.writeFileSync(path.join(root, 'images', 'image-cccc55556666.webp'), 'no-longer-used');
-  const source = `<style>.hero { background: url("${publicBase}/images/image-bbbb33334444.webp"); }</style>
-    <section class="hero"><img src="${publicBase}/images/image-aaaa11112222.webp" alt="Pool"></section>`;
+  fs.mkdirSync(path.join(outputDir, 'images'), { recursive: true });
+  fs.mkdirSync(path.join(publicDir, 'documents'), { recursive: true });
+  fs.writeFileSync(path.join(outputDir, 'images', '1700000000000-hero.webp'), 'uploaded');
+  fs.writeFileSync(path.join(publicDir, 'documents', 'guide.pdf'), 'document');
 
-  await sortChatGptHtml({ source, outputDir: root, publicBase });
-
-  const imageFiles = fs.readdirSync(path.join(root, 'images')).sort();
-  assert.deepEqual(imageFiles, ['image-aaaa11112222.webp', 'image-bbbb33334444.webp']);
-});
-
-test('local assets are collected, own-host URLs are localized, and uploaded page image names are repaired', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-assets-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
-  const publicBase = '/content-assets/services/example';
-  fs.mkdirSync(path.join(root, 'images'));
-  fs.writeFileSync(path.join(root, 'images', '1700000000000-hero.webp'), 'uploaded');
-  const source = `<img src="https://www.example.test${publicBase}/images/hero.webp" alt="Hero">
-    <img src="${publicBase}/images/not-uploaded.webp" alt="Missing">
-    <style>.guide { background: url('/documents/guide.pdf'); }</style>
-    <script>window.assetPath = "/content-assets/shared/icon.svg";</script>`;
-
-  const result = await sortChatGptHtml({ source, outputDir: root, publicBase, siteUrl: 'https://example.test' });
+  const result = await sortChatGptHtml({
+    source: `<img src="https://www.example.test${publicBase}/images/hero.webp" alt="Hero"><a href="/documents/guide.pdf">Guide</a>`,
+    outputDir,
+    publicDir,
+    publicBase,
+    siteUrl: 'https://example.test',
+  });
 
   assert.match(result.body, new RegExp(`${publicBase}/images/1700000000000-hero\\.webp`));
   assert.doesNotMatch(result.body, /https:\/\/www\.example\.test/);
-  assert.equal(result.report.localAssets, 4);
   assert.equal(result.report.repairedImages, 1);
-  assert.deepEqual(result.warnings, [`These images aren't uploaded yet: ${publicBase}/images/not-uploaded.webp`]);
-  const css = fs.readFileSync(path.join(root, result.assets.style.split('/').at(-1)), 'utf8');
-  const js = fs.readFileSync(path.join(root, result.assets.script.split('/').at(-1)), 'utf8');
-  assert.match(css, /\/documents\/guide\.pdf/);
-  assert.match(js, /\/content-assets\/shared\/icon\.svg/);
+  assert.equal(result.report.localAssets, 2);
+
+  await assert.rejects(
+    sortChatGptHtml({
+      source: '<img src="/content-assets/services/example/images/not-uploaded.webp" alt="Missing">',
+      outputDir,
+      publicDir,
+      publicBase,
+    }),
+    /files that are not available.*not-uploaded\.webp/i,
+  );
 });
 
-test('an embedded image being written by this import is not reported as missing', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-new-image-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
-  const image = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#ffffff' } }).png().toBuffer();
+test('external resources are not mistaken for missing local files', async t => {
+  const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-external-'));
+  t.after(() => fs.rmSync(publicDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const outputDir = path.join(publicDir, 'content-assets', 'pages', 'example');
   const result = await sortChatGptHtml({
-    source: `<img src="data:image/png;base64,${image.toString('base64')}" alt="New">`,
-    outputDir: root,
+    source: '<link rel="stylesheet" href="https://cdn.example.test/widget.css"><script src="https://cdn.example.test/widget.js"></script>',
+    outputDir,
+    publicDir,
     publicBase: '/content-assets/pages/example',
   });
-  assert.deepEqual(result.warnings, []);
+  assert.equal(result.report.externalResources, 2);
+  assert.equal(result.report.localAssets, 0);
 });
 
-test('combined page JavaScript is syntax checked before existing assets are changed', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-js-error-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
-  fs.writeFileSync(path.join(root, 'page-aaaaaaaaaaaa.js'), 'existing');
+test('relative page image paths are localized when possible and ambiguous relative files are rejected', async t => {
+  const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-relative-'));
+  t.after(() => fs.rmSync(publicDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const outputDir = path.join(publicDir, 'content-assets', 'pages', 'example');
+  const publicBase = '/content-assets/pages/example';
+  fs.mkdirSync(path.join(outputDir, 'images'), { recursive: true });
+  fs.writeFileSync(path.join(outputDir, 'images', 'hero.webp'), 'uploaded');
+
+  const result = await sortChatGptHtml({
+    source: '<img src="images/hero.webp" srcset="./images/hero.webp 1x, images/hero.webp 2x" alt="Hero">',
+    outputDir,
+    publicDir,
+    publicBase,
+  });
+  assert.doesNotMatch(result.body, /(?:src|srcset)="(?:\.\/)?images\//);
+  assert.match(result.body, new RegExp(`${publicBase}/images/hero\\.webp`));
+
+  await assert.rejects(
+    sortChatGptHtml({ source: '<img src="mystery.webp" alt="Mystery">', outputDir, publicDir, publicBase }),
+    /relative file URL mystery\.webp/i,
+  );
+});
+
+test('build-generated Astro asset URLs are rejected before existing assets change', async t => {
+  const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-astro-url-'));
+  t.after(() => fs.rmSync(publicDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const outputDir = path.join(publicDir, 'content-assets', 'pages', 'example');
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(path.join(outputDir, 'page-aaaaaaaaaaaa.css'), 'existing');
+
+  await assert.rejects(
+    sortChatGptHtml({
+      source: '<img src="/_astro/hero.ABC123.webp" alt="Hero">',
+      outputDir,
+      publicDir,
+      publicBase: '/content-assets/pages/example',
+    }),
+    /build-generated URL.*\/_astro\//i,
+  );
+  assert.equal(fs.readFileSync(path.join(outputDir, 'page-aaaaaaaaaaaa.css'), 'utf8'), 'existing');
+});
+
+test('invalid combined JavaScript and invalid images leave the previous import untouched', async t => {
+  const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-rollback-'));
+  t.after(() => fs.rmSync(publicDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const outputDir = path.join(publicDir, 'content-assets', 'pages', 'example');
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(path.join(outputDir, 'page-aaaaaaaaaaaa.js'), 'existing JavaScript');
+  fs.writeFileSync(path.join(outputDir, 'page-bbbbbbbbbbbb.css'), 'existing CSS');
 
   await assert.rejects(
     sortChatGptHtml({
       source: '<script>const duplicate = 1;</script><script>const duplicate = 2;</script>',
-      outputDir: root,
+      outputDir,
+      publicDir,
       publicBase: '/content-assets/pages/example',
     }),
     /syntax error.*duplicate declarations/i,
   );
-  assert.equal(fs.readFileSync(path.join(root, 'page-aaaaaaaaaaaa.js'), 'utf8'), 'existing');
-
   await assert.rejects(
     sortChatGptHtml({
       source: '<script type="module">import thing from "./thing.js";</script>',
-      outputDir: root,
+      outputDir,
+      publicDir,
       publicBase: '/content-assets/pages/example',
     }),
     /syntax error.*import statements/i,
   );
+  await assert.rejects(
+    sortChatGptHtml({
+      source: '<img src="data:image/png;base64,dGhpcyBpcyBub3QgYW4gaW1hZ2U=" alt="Broken">',
+      outputDir,
+      publicDir,
+      publicBase: '/content-assets/pages/example',
+    }),
+    /embedded image is invalid/i,
+  );
+
+  assert.equal(fs.readFileSync(path.join(outputDir, 'page-aaaaaaaaaaaa.js'), 'utf8'), 'existing JavaScript');
+  assert.equal(fs.readFileSync(path.join(outputDir, 'page-bbbbbbbbbbbb.css'), 'utf8'), 'existing CSS');
 });
 
-test('JSON-LD stays in the page body and non-JavaScript script types are not executed', async t => {
+test('referenced images from an earlier import survive while unused generated images are removed', async t => {
+  const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-retain-'));
+  t.after(() => fs.rmSync(publicDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const outputDir = path.join(publicDir, 'content-assets', 'services', 'example');
+  const publicBase = '/content-assets/services/example';
+  fs.mkdirSync(path.join(outputDir, 'images'), { recursive: true });
+  fs.writeFileSync(path.join(outputDir, 'images', 'image-aaaa11112222.webp'), 'still used');
+  fs.writeFileSync(path.join(outputDir, 'images', 'image-bbbb33334444.webp'), 'used by CSS');
+  fs.writeFileSync(path.join(outputDir, 'images', 'image-cccc55556666.webp'), 'obsolete');
+
+  await sortChatGptHtml({
+    source: `<style>.hero { background: url("${publicBase}/images/image-bbbb33334444.webp"); }</style><img src="${publicBase}/images/image-aaaa11112222.webp" alt="Pool">`,
+    outputDir,
+    publicDir,
+    publicBase,
+  });
+
+  assert.deepEqual(fs.readdirSync(path.join(outputDir, 'images')).sort(), ['image-aaaa11112222.webp', 'image-bbbb33334444.webp']);
+});
+
+test('own-host localization only changes local asset URLs and never visible text or JSON-LD', async t => {
+  const publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-own-host-'));
+  t.after(() => fs.rmSync(publicDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const outputDir = path.join(publicDir, 'content-assets', 'pages', 'example');
+  const publicBase = '/content-assets/pages/example';
+  fs.mkdirSync(path.join(outputDir, 'images'), { recursive: true });
+  fs.writeFileSync(path.join(outputDir, 'images', 'hero.webp'), 'uploaded');
+  const assetUrl = `https://www.example.com.au${publicBase}/images/hero.webp`;
+  const result = await sortChatGptHtml({
+    source: `<p>Visit https://www.example.com.au for details.</p>
+      <script type="application/ld+json">{"url":"${assetUrl}"}</script>
+      <img src="${assetUrl}" alt="Hero">`,
+    outputDir,
+    publicDir,
+    publicBase,
+    siteUrl: 'https://example.com.au',
+  });
+
+  assert.match(result.body, /Visit https:\/\/www\.example\.com\.au for details/);
+  assert.match(result.body, new RegExp(`"url":"https://www\\.example\\.com\\.au${publicBase}/images/hero\\.webp"`));
+  assert.match(result.body, new RegExp(`<img src="${publicBase}/images/hero\\.webp"`));
+});
+
+test('JSON-LD remains inert page content and non-browser script types are skipped', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-script-types-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
-  const source = `<script type="application/ld+json">{"@type":"Service","name":"Example"}</script>
-    <script type="text/template"><strong>{{ name }}</strong></script>
-    <script>document.body.dataset.ready = "yes";</script>`;
-
-  const result = await sortChatGptHtml({ source, outputDir: root, publicBase: '/content-assets/pages/example' });
-
-  assert.match(result.body, /<script type="application\/ld\+json">/);
-  assert.match(result.body, /"@type":"Service"/);
+  const result = await sortChatGptHtml({
+    source: '<script type="application/ld+json">{"@type":"Service"}</script><script type="text/template">{{ unsafe }}</script><script>document.body.dataset.ready = "yes";</script>',
+    outputDir: root,
+    publicBase: '/content-assets/pages/example',
+  });
+  assert.match(result.body, /application\/ld\+json/);
   assert.doesNotMatch(result.body, /text\/template/);
   assert.equal(result.report.skippedScripts, 1);
   const js = fs.readFileSync(path.join(root, result.assets.script.split('/').at(-1)), 'utf8');
   assert.match(js, /dataset\.ready/);
-  assert.doesNotMatch(js, /\{\{ name \}\}/);
+  assert.doesNotMatch(js, /\{\{ unsafe \}\}/);
 });

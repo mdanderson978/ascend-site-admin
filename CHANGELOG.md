@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.20.0 - 2026-11-07
+
+### New: safer ChatGPT imports with one-click recovery
+
+ChatGPT HTML imports now validate local files and JavaScript before changing
+the page, reject unstable Astro build URLs, repair common uploaded-image paths,
+and replace page assets transactionally. Windows directory swaps retry short
+file locks from previews, antivirus and Explorer; a persistent lock leaves the
+old page in place and produces a plain-English editor error.
+
+Every attempted paste is retained exactly in the repository's private Git
+metadata, never in publishable website files. After a successful import the
+editor can copy the original paste or undo the import, restoring both the
+previous body and its complete CSS, JavaScript and image directory. Published
+History restores now recover the matching page asset directory too.
+
+Same-site URL localization is limited to `/content-assets/` and `/documents/`.
+Visible website addresses and JSON-LD structured data remain unchanged.
+
 ## 2.19.2 - 2026-11-07
 
 ### Fix: importing pasted HTML no longer deletes images the page still uses
