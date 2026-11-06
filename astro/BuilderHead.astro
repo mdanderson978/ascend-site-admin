@@ -1,0 +1,10 @@
+---
+// Put inside the page's <head> (for example in the base layout's head slot),
+// with the same layout object as <BuilderLayout>. Writes the element CSS the
+// page uses, inline, and its structured data.
+import { renderPage } from './runtime.mjs';
+
+const { layout, resolveLink, renderUnknown } = Astro.props;
+const page = await renderPage(layout, { resolveLink, renderUnknown });
+---
+<Fragment set:html={page.head} />

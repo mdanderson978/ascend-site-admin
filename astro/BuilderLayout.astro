@@ -1,0 +1,12 @@
+---
+// The page body built from a stored layout. Pair with <BuilderHead> in the
+// page's <head>; both render the same layout once.
+import { renderPage } from './runtime.mjs';
+
+const { layout, resolveLink, renderUnknown } = Astro.props;
+const page = await renderPage(layout, { resolveLink, renderUnknown });
+for (const problem of page.problems) {
+  console.warn(`site-admin: ${Astro.url.pathname}: ${problem.message}`);
+}
+---
+<Fragment set:html={page.body} />
