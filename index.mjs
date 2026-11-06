@@ -216,6 +216,15 @@ import { findInternalLinks, fixInternalLinks } from './linkFixer.mjs';
 import { loadMenus, saveMenus } from './menus.mjs';
 import { createVariants, pruneMedia } from './media.mjs';
 import { brandJson, defineBrand, isBrandJson } from './elements/brand.mjs';
+import {
+  ALIGNMENTS,
+  HEADING_LEVELS,
+  TOKEN_SCALES,
+  defaultRegistry,
+  loadLayout,
+  richTextToPlain,
+  saveLayout,
+} from './elements/index.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENGINE_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version;
@@ -234,6 +243,31 @@ const DEFAULT_IMAGE_SIZES = {
   hero:    { w: 1200, h: 600, label: 'at least 1200 x 600 px', maxWidth: 1920 },
   gallery: { w: 800,  h: 400, label: 'at least 800 x 400 px',  maxWidth: 1200 },
 };
+
+// The browser only needs the declarative half of an element definition.
+// Render functions, migrations and other executable hooks stay server-side;
+// one compact catalogue drives the Phase 2 outline, palette and property
+// forms without defining every element a second time in React.
+function elementLibraryForAdmin() {
+  const elements = defaultRegistry.all().map(def => ({
+    name: def.name,
+    title: def.title,
+    group: def.group,
+    icon: def.icon,
+    container: def.container,
+    fields: def.fields,
+    tabs: def.tabs,
+    defaults: def.defaults,
+    allowedParents: def.allowedParents,
+  }));
+  const parentTypes = ['layout', ...elements.filter(element => element.container).map(element => element.name)];
+  return {
+    schema: defaultRegistry.schema,
+    elements,
+    children: Object.fromEntries(parentTypes.map(parent => [parent, defaultRegistry.childrenOf(parent)])),
+    choices: { tokens: TOKEN_SCALES, alignments: ALIGNMENTS, headingLevels: HEADING_LEVELS },
+  };
+}
 
 export function startAdmin(config) {
   for (const key of ['root', 'fields', 'siteTitle', 'developerName', 'developerEmail']) {
@@ -833,6 +867,13 @@ export function startAdmin(config) {
     if (f.type === 'date' && typeof v === 'string') {
       return parseFuzzyDate(v) ?? v; // invalid input is caught by validateData
     }
+    if (f.type === 'layout') {
+      // saveLayout also sanitises rich text, strips defaults/empty props,
+      // sorts keys and preserves unknown future/site-specific elements.
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
+      try { return saveLayout(v).layout; }
+      catch { return v; } // validateData turns version/shape failures into a friendly 400
+    }
     if (f.type === 'list' && Array.isArray(v)) {
       // Drop fully-empty rows, but do NOT trim items — leading/trailing
       // spaces can be meaningful inside delimited list formats.
@@ -868,7 +909,8 @@ export function startAdmin(config) {
     const errors = [];
     for (const f of fields) {
       const v = merged[f.name];
-      const empty = v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
+      const empty = v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)
+        || (f.type === 'layout' && v && typeof v === 'object' && Array.isArray(v.children) && v.children.length === 0);
       if (f.required && empty) {
         errors.push(`"${f.label}" cannot be empty.`);
       }
@@ -877,6 +919,14 @@ export function startAdmin(config) {
       }
       if (f.type === 'date' && !empty && (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v))) {
         errors.push(`"${f.label}" isn't a valid date. Use YYYY-MM-DD or DD/MM/YYYY, e.g. 2026-08-30 or 30/08/2026.`);
+      }
+      if (f.type === 'layout' && !empty) {
+        if (!v || typeof v !== 'object' || Array.isArray(v) || !Array.isArray(v.children)) {
+          errors.push(`"${f.label}" isn't a valid page layout.`);
+        } else {
+          try { saveLayout(v); }
+          catch (error) { errors.push(`"${f.label}" can't be opened: ${error.message}`); }
+        }
       }
       if (f.type === 'blocks' && Array.isArray(v)) {
         const byType = Object.fromEntries((f.blockTypes || []).map(bt => [bt.id, bt]));
@@ -953,6 +1003,31 @@ export function startAdmin(config) {
         return { name: `${f.name}[${index}].${sub.name}`, label: `${sectionLabel} — ${sub.label}`, hint: sub.hint || '', value };
       });
     });
+  }
+
+  function searchRowsForLayout(f, data) {
+    const root = data[f.name];
+    if (!root || typeof root !== 'object' || !Array.isArray(root.children)) return [];
+    const rows = [];
+    let position = 0;
+    const visit = nodes => {
+      for (const node of nodes || []) {
+        position += 1;
+        const def = defaultRegistry.get(node?.type);
+        const blockLabel = `Block ${position} â€” ${def?.title || node?.type || 'Unknown'}`;
+        for (const [name, value] of Object.entries(node?.props || {})) {
+          const field = def?.fields?.[name];
+          let text = '';
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') text = String(value);
+          else if (value && typeof value === 'object') text = Object.values(value).filter(item => typeof item === 'string').join(' ');
+          if (field?.type === 'richtext') text = richTextToPlain(text);
+          rows.push({ name: `${f.name}.${node.id || position}.${name}`, label: `${blockLabel} â€” ${field?.label || name}`, hint: field?.hint || '', value: text });
+        }
+        if (Array.isArray(node?.children)) visit(node.children);
+      }
+    };
+    visit(root.children);
+    return rows;
   }
 
   // ── Orphaned upload pruning ──────────────────────────────────────────────
@@ -1340,6 +1415,7 @@ export function startAdmin(config) {
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
           altPlaceholder:   config.altPlaceholder   || 'e.g. "Guests dining in the main dining room"',
           richHtmlImport:   Boolean(config.richHtmlImport),
+          elementLibrary:   elementLibraryForAdmin(),
         });
         return;
       }
@@ -1412,6 +1488,7 @@ export function startAdmin(config) {
             .filter(f => f.type !== 'heading')
             .flatMap(f => {
               if (f.type === 'blocks') return searchRowsForBlocks(f, data);
+              if (f.type === 'layout') return searchRowsForLayout(f, data);
               const v = f.type === 'markdown' ? body : data[f.name];
               let value = '';
               if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') value = String(v);
@@ -1719,8 +1796,15 @@ export function startAdmin(config) {
         if (!fieldTemplate) { jsonResp(res, 404, { error: 'Not found' }); return; }
         const fp = contentFile(collection, slug);
         if (!fs.existsSync(fp)) { jsonResp(res, 404, { error: 'Not found' }); return; }
-        const { data, content: body } = matter(fs.readFileSync(fp, 'utf-8'));
+        const { data: storedData, content: body } = matter(fs.readFileSync(fp, 'utf-8'));
         const fields   = withSections(collection + '/' + slug, fieldTemplate);
+        const data = { ...storedData };
+        // A layout is expanded for editing (migrations, defaults and stable
+        // node ids) but remains untouched on disk until the editor saves.
+        // saveLayout() above then writes the compact canonical form.
+        for (const field of fields) {
+          if (field.type === 'layout' && data[field.name] !== undefined) data[field.name] = loadLayout(data[field.name]);
+        }
         const previews = buildPreviews(data, fields, fp);
         jsonResp(res, 200, { key: collection + '/' + slug, slug, data, body, fields, previews });
         return;

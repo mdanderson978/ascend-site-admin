@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 import { verifySite } from '../verify-site.mjs';
 import { startAdmin } from '../index.mjs';
+import matter from '../safe-matter.mjs';
 
 const packageVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -1143,6 +1144,76 @@ test('blocks: validateData rejects a missing required sub-field and an unrecogni
     assert.equal(badType.status, 400);
     const badTypeBody = await badType.json();
     assert.match(badTypeBody.error, /unrecognized block type "nonexistent"/);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});
+
+// Phase 2's `layout` field is deliberately a thin config switch: the engine
+// catalogue drives the browser and the same saveLayout() pipeline used by
+// Astro canonicalises what reaches YAML. This catches the dangerous failure
+// mode where the UI appears to work but writes defaults, unsafe rich text or
+// an unstable/id-less tree that later breaks a site build.
+test('layout field: exposes the element catalogue, expands for editing and saves canonical safe YAML', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'src/content/pages/home.md'), `---
+title: Home
+layout:
+  schema: 1
+  children:
+    - type: section
+      props: { tone: default }
+      children:
+        - type: heading
+          props: { text: Welcome }
+---
+`);
+  const server = startAdmin({
+    root, port: 4463, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [
+      { name: 'title', label: 'Title', type: 'string' },
+      { name: 'layout', label: 'Page content', type: 'layout' },
+    ] },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const req = (p, options = {}) => fetch(base + p, { ...options, headers: { Origin: base, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+
+    const config = await (await req('/api/config')).json();
+    assert.equal(config.elementLibrary.schema, 1);
+    assert.ok(config.elementLibrary.children.layout.includes('section'));
+    const headingDef = config.elementLibrary.elements.find(element => element.name === 'heading');
+    assert.equal(headingDef.fields.text.label, 'Heading');
+    assert.equal(headingDef.render, undefined, 'executable render hooks never cross the API boundary');
+
+    const entry = await (await req('/api/content/pages/home')).json();
+    const section = entry.data.layout.children[0];
+    assert.match(section.id, /^[a-z][a-z0-9]{5}$/);
+    assert.equal(section.props.spacing, 'l', 'defaults are filled for the editor');
+    assert.match(section.children[0].id, /^[a-z][a-z0-9]{5}$/);
+    const searchBefore = await (await req('/api/search')).json();
+    assert.ok(searchBefore['pages/home'].some(row => row.value === 'Welcome'), 'builder text remains available to Find anything');
+
+    section.children.push({
+      type: 'prose', id: 'prose1',
+      props: { html: '<p>Hello</p><script>alert(1)</script>', hidden: false },
+    });
+    const saved = await req('/api/content/pages/home', {
+      method: 'POST',
+      body: JSON.stringify({ data: entry.data, body: entry.body }),
+    });
+    assert.equal(saved.status, 200, await saved.text());
+
+    const stored = matter(fs.readFileSync(path.join(root, 'src/content/pages/home.md'), 'utf8')).data.layout;
+    assert.equal(stored.schema, 1);
+    assert.equal(stored.children[0].props, undefined, 'unchanged defaults and false values stay out of YAML');
+    assert.equal(stored.children[0].children[0].props.size, undefined, 'child defaults stay out too');
+    assert.equal(stored.children[0].children[1].props.html, '<p>Hello</p>', 'rich text uses the shared strict sanitiser');
+    assert.equal(stored.children[0].children[1].props.hidden, undefined);
+    const searchAfter = await (await req('/api/search')).json();
+    assert.ok(searchAfter['pages/home'].some(row => row.value === 'Hello'));
   } finally {
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }

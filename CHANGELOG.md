@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased - V3 phase 2
+
+### First article-editor slice: structured page layouts
+
+- A new opt-in `layout` field type stores the versioned element tree already
+  rendered by `site-admin/elements`. Opening a page expands migrations,
+  defaults and stable node IDs for editing; saving runs the shared canonical
+  pipeline, sanitises rich text and writes compact, stable YAML.
+- The admin receives a data-only element catalogue from the engine and builds
+  its outline, add palette, tabs and property controls from that schema. It
+  supports nested containers, accessible Move up / Move down controls and
+  removal without requiring drag and drop.
+- Builder text remains available to the existing Find anything search.
+  Unknown site-specific or newer elements remain visible and removable but
+  are never silently rewritten or discarded.
+
+This is the foundation of Phase 2, not the finished article editor. The
+Tiptap writing surface, undo/redo, local autosave and the remaining
+pilot-driven elements are still to come.
+
 ## 2.20.0 - 2026-11-07
 
 ### New: safer ChatGPT imports with one-click recovery

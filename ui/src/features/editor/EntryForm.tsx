@@ -4,6 +4,7 @@ import { ImageField, ImagesField, ListField, PdfField, PdfsField } from './Media
 import { MarkdownEditor } from './MarkdownEditor';
 import { IdentityCard } from './IdentityCard';
 import { BlocksField } from './BlocksField';
+import { LayoutField } from './LayoutField';
 import { formatFriendlyDate, parseFuzzyDate } from '../../lib/content';
 
 interface EntryFormProps {
@@ -79,6 +80,7 @@ export function Field({ field, value, body, preview, config, entryKey, allData, 
   else if (type === 'pdf') control = <PdfField field={field} value={value} onChange={onChange} onNotice={onNotice} />;
   else if (type === 'pdfs') control = <PdfsField field={field} value={value} onChange={onChange} onNotice={onNotice} />;
   else if (type === 'blocks') control = <BlocksField field={field} value={value} preview={preview as BlockPreviews | undefined} config={config} entryKey={entryKey} allData={allData} errors={errors || {}} onChange={onChange} onNotice={onNotice} />;
+  else if (type === 'layout') control = <LayoutField value={value} config={config} onChange={onChange} onNotice={onNotice} />;
   else if (type === 'select' && field.allowCustom) control = <>
     <input id={id} type="text" list={`${id}-options`} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} aria-invalid={Boolean(error)} />
     <datalist id={`${id}-options`}>{(field.options || []).map(opt => <option key={opt.value} value={opt.value} />)}</datalist>

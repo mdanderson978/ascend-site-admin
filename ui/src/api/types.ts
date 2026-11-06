@@ -1,11 +1,11 @@
 export type Primitive = string | number | boolean | null;
-export type ContentValue = Primitive | ImageValue | ImageValue[] | string[] | DocumentValue | DocumentValue[] | BlockValue[];
+export type ContentValue = Primitive | ImageValue | ImageValue[] | string[] | DocumentValue | DocumentValue[] | BlockValue[] | LayoutRoot;
 export type ContentData = Record<string, ContentValue | undefined>;
 
 export interface ImageValue { src: string; alt?: string }
 export interface DocumentValue { label: string; url: string }
 
-export type FieldType = 'string' | 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'markdown' | 'image' | 'images' | 'list' | 'pdf' | 'pdfs' | 'heading' | 'select' | 'blocks';
+export type FieldType = 'string' | 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'markdown' | 'image' | 'images' | 'list' | 'pdf' | 'pdfs' | 'heading' | 'select' | 'blocks' | 'layout';
 
 export interface SelectOption { value: string; label: string }
 
@@ -26,6 +26,46 @@ export interface BlockTypeDef {
  *  ever written to a content file's YAML. Every other key is one of this
  *  block's own field values, keyed by that field's `name`. */
 export interface BlockValue { id: string; type: string; [fieldName: string]: ContentValue | string }
+
+export type LayoutProp = string | boolean | LinkValue | null | undefined;
+export interface LinkValue { page?: string; url?: string; tel?: string; email?: string; anchor?: string; document?: string }
+export interface LayoutNode { type: string; id: string; props?: Record<string, LayoutProp>; children?: LayoutNode[] }
+export interface LayoutRoot { schema: number; children: LayoutNode[] }
+
+export type ElementFieldType = 'string' | 'text' | 'richtext' | 'image' | 'link' | 'select' | 'token' | 'align' | 'heading-level' | 'boolean';
+export interface ElementFieldConfig {
+  type: ElementFieldType;
+  label: string;
+  hint?: string;
+  required?: boolean;
+  pattern?: string;
+  scale?: string;
+  inherit?: boolean;
+  headings?: boolean;
+  enable?: string;
+  options?: SelectOption[];
+}
+export interface ElementDefinition {
+  name: string;
+  title: string;
+  group: string;
+  icon?: string;
+  container: boolean;
+  fields: Record<string, ElementFieldConfig>;
+  tabs: Record<string, string[]>;
+  defaults: Record<string, LayoutProp>;
+  allowedParents: string[];
+}
+export interface ElementLibrary {
+  schema: number;
+  elements: ElementDefinition[];
+  children: Record<string, string[]>;
+  choices: {
+    tokens: Record<string, SelectOption[]>;
+    alignments: string[];
+    headingLevels: string[];
+  };
+}
 
 export interface FieldConfig {
   name: string;
@@ -107,6 +147,8 @@ export interface AdminConfig {
   startScreenNote: string;
   altPlaceholder: string;
   richHtmlImport?: boolean;
+  /** V3 page-builder catalogue. Present when the installed engine supports layout fields. */
+  elementLibrary?: ElementLibrary;
 }
 
 /** A `blocks` field's preview entry: one preview-map per block, keyed by
