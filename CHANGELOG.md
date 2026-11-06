@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.19.2 - 2026-11-07
+
+### Fix: importing pasted HTML no longer deletes images the page still uses
+
+Re-importing a page's pasted HTML deleted every image saved by earlier
+imports, then saved only the images embedded in the new paste. A paste
+that linked an existing image by its address (rather than embedding it
+again) lost that image, and the build then failed on a missing file.
+Earlier images are now removed only when the new paste's HTML, CSS and
+scripts no longer refer to them.
+
 ## 2.19.1 - 2026-10-28
 
 ### New: photo sizes in the picker

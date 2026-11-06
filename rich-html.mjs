@@ -234,10 +234,17 @@ export async function sortChatGptHtml({ source, outputDir, publicBase }) {
   for (const name of await fsp.readdir(outputDir)) {
     if (/^page-[a-f0-9]+\.(?:css|js)$/i.test(name)) await removeStaleAssetFile(path.join(outputDir, name));
   }
+  // Images from an earlier import are only stale if the new paste no longer
+  // uses them. A paste often links an existing image by its hosted path
+  // (ChatGPT was handed the current page) instead of re-embedding it as a
+  // data: URL, so deleting every image-*.webp here broke the page.
+  const stillUsed = [html, css, rawScripts].join('\n');
   const existingImageDir = path.join(outputDir, 'images');
   try {
     for (const name of await fsp.readdir(existingImageDir)) {
-      if (/^image-[a-f0-9]+\.webp$/i.test(name)) await removeStaleAssetFile(path.join(existingImageDir, name));
+      if (!/^image-[a-f0-9]+\.webp$/i.test(name)) continue;
+      if (stillUsed.includes(`${publicBase}/images/${name}`)) continue;
+      await removeStaleAssetFile(path.join(existingImageDir, name));
     }
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;

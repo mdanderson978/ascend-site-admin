@@ -130,3 +130,20 @@ test('a script using only atob() or only Blob/createObjectURL alone (not both) i
   const result = await sortChatGptHtml({ source, outputDir: root, publicBase: '/content-assets/information/example' });
   assert.match(result.body, /id="copy"/);
 });
+
+test('an earlier imported image the new paste still links by path is kept; unused ones are removed', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const publicBase = '/content-assets/services/example';
+  fs.mkdirSync(path.join(root, 'images'));
+  fs.writeFileSync(path.join(root, 'images', 'image-aaaa11112222.webp'), 'linked-in-html');
+  fs.writeFileSync(path.join(root, 'images', 'image-bbbb33334444.webp'), 'linked-in-css');
+  fs.writeFileSync(path.join(root, 'images', 'image-cccc55556666.webp'), 'no-longer-used');
+  const source = `<style>.hero { background: url("${publicBase}/images/image-bbbb33334444.webp"); }</style>
+    <section class="hero"><img src="${publicBase}/images/image-aaaa11112222.webp" alt="Pool"></section>`;
+
+  await sortChatGptHtml({ source, outputDir: root, publicBase });
+
+  const imageFiles = fs.readdirSync(path.join(root, 'images')).sort();
+  assert.deepEqual(imageFiles, ['image-aaaa11112222.webp', 'image-bbbb33334444.webp']);
+});
