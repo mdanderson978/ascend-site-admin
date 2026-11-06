@@ -150,22 +150,13 @@ export interface SearchField { name: string; label: string; hint: string; value:
 export type SearchIndex = Record<string, SearchField[]>;
 export type ContentTree = Record<string, string[]>;
 export interface UploadImage { name?: string; path: string; preview: string }
-export interface ChatGptRecovery {
-  id: string;
-  targetKey: string;
-  createdAt: number;
-  state: 'active' | 'undone' | 'superseded' | 'failed';
-  canUndo: boolean;
-  hasOriginalPaste: boolean;
-}
 export interface RichHtmlImportResult {
   body: string;
   title: string;
   description: string;
   targetSlug: string;
   assets: { style: string; script: string; images: string[] };
-  report: { images: number; styleBlocks: number; inlineStyles: number; scriptBlocks: number; skippedScripts: number; eventHandlers: number; externalResources: number; localAssets: number; repairedImages: number };
-  recovery?: ChatGptRecovery;
+  report: { images: number; styleBlocks: number; inlineStyles: number; scriptBlocks: number; eventHandlers: number; externalResources: number };
 }
 export interface HistoryVersion { sha: string; date: number; message: string }
 
