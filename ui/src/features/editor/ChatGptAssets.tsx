@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ContentData, RichHtmlImportResult, UploadImage } from '../../api/types';
+import type { ChatGptRecovery, ContentData, RichHtmlImportResult, UploadImage } from '../../api/types';
 import { api } from '../../api/client';
 import { Dialog } from '../../components/Dialog';
 
@@ -8,16 +8,21 @@ const reportLabels: Record<keyof RichHtmlImportResult['report'], string> = {
   styleBlocks: 'style blocks moved to page CSS',
   inlineStyles: 'inline styles preserved on their elements',
   scriptBlocks: 'scripts moved to page JavaScript',
+  skippedScripts: 'non-JavaScript script blocks skipped',
   eventHandlers: 'interactive actions moved to page JavaScript',
   externalResources: 'external resources moved out of page content',
+  localAssets: 'local asset paths checked',
+  repairedImages: 'image paths matched to uploaded files',
 };
 
-export function ChatGptHtmlImport({ open, pageKey, data, onClose, onApply, onNotice }: {
+export function ChatGptHtmlImport({ open, pageKey, data, previousBody, onClose, onApply, onRecovery, onNotice }: {
   open: boolean;
   pageKey: string;
   data: ContentData;
+  previousBody: string;
   onClose: () => void;
   onApply: (result: RichHtmlImportResult) => void;
+  onRecovery: (recovery: ChatGptRecovery) => void;
   onNotice: (message: string, kind?: 'success' | 'error' | 'info') => void;
 }) {
   const [source, setSource] = useState('');
@@ -42,8 +47,10 @@ export function ChatGptHtmlImport({ open, pageKey, data, onClose, onApply, onNot
   const process = async () => {
     setProcessing(true); setResult(null);
     try {
-      const imported = await api.importChatGptHtml(pageKey, source, data);
+      const imported = await api.importChatGptHtml(pageKey, source, data, previousBody);
       setResult(imported); onApply(imported);
+      imported.warnings.forEach(warning => onNotice(warning, 'info'));
+      if (imported.recovery) onRecovery(imported.recovery);
       onNotice('ChatGPT HTML sorted into page content and asset files. Review the page, then save the draft.', 'success');
     } catch (error) { onNotice((error as Error).message, 'error'); }
     finally { setProcessing(false); }
@@ -69,7 +76,7 @@ export function ChatGptHtmlImport({ open, pageKey, data, onClose, onApply, onNot
     catch (_) { onNotice('Could not copy automatically. Select the path and copy it manually.', 'error'); }
   };
   const copyAll = () => copy(
-    `Use these exact processed image URLs in the HTML you create:\n${images.map(image => `- ${image.name}: ${image.path}`).join('\n')}`,
+    `Use these exact processed image URLs in the HTML you create:\n${images.map(image => `- ${image.name}: ${image.path}`).join('\n')}\n\nDo not invent or alter local file paths. Do not use /_astro/ URLs, data: URLs for downloadable files, import statements, or links to local images or documents that are not listed above. Return one complete browser-ready HTML document.`,
     'Image paths copied for ChatGPT.',
   );
 
@@ -112,6 +119,7 @@ export function ChatGptHtmlImport({ open, pageKey, data, onClose, onApply, onNot
         <p>The cleaned content is now in the editor. Nothing is published until you review it, save the draft and click Publish.</p>
         {sorted.length ? <ul>{sorted.map(([key, count]) => <li key={key}><b>{count}</b> {reportLabels[key]}</li>)}</ul> : <p>No separate assets were needed; the pasted content was already clean.</p>}
         {(result.title || result.description) && <p className="chatgpt-import__metadata">Document-level title and description metadata were removed so the page's existing CMS fields remain authoritative.</p>}
+        {result.warnings.length > 0 && <div className="chatgpt-import__warnings"><strong>Check these before saving</strong><ul>{result.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></div>}
       </div>}
     </div>
   </Dialog>;

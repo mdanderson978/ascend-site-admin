@@ -31,6 +31,26 @@ async function validateImage(file: File, preset: ImagePreset | undefined): Promi
   }
 }
 
+// The real pixel size of a photo, shown in the picker and under the chosen
+// photo so editors can tell a sharp, well-shaped image from a small or oddly
+// shaped one before using it. Previews are the original files, so the
+// browser's natural size is the true size.
+type Size = { width: number; height: number };
+const SHAPES: Array<[number, string]> = [[16 / 9, '16:9'], [3 / 2, '3:2'], [4 / 3, '4:3'], [1, 'square'], [3 / 4, '3:4 portrait'], [2 / 3, '2:3 portrait'], [9 / 16, '9:16 portrait'], [2, '2:1 wide'], [3, '3:1 wide']];
+export function describeSize({ width, height }: Size): string {
+  const ratio = width / height;
+  const shape = SHAPES.find(([r]) => Math.abs(ratio / r - 1) < 0.03)?.[1] ?? (ratio > 1 ? 'landscape' : 'portrait');
+  return `${width} × ${height} px · ${shape}`;
+}
+export const isTooSmall = ({ width, height }: Size, preset?: ImagePreset) => Boolean((preset?.w && width < preset.w) || (preset?.h && height < preset.h));
+const naturalSize = (img: HTMLImageElement): Size | null => img.naturalWidth ? { width: img.naturalWidth, height: img.naturalHeight } : null;
+
+function ImageSize({ size, preset }: { size: Size | null; preset?: ImagePreset }) {
+  if (!size) return null;
+  const small = isTooSmall(size, preset);
+  return <span className={`image-size${small ? ' is-small' : ''}`}>{describeSize(size)}{small && ` · too small (needs ${preset?.label || `${preset?.w || 0} × ${preset?.h || 0} px`})`}</span>;
+}
+
 export function useImageUpload(imageType: string, preset: ImagePreset | undefined, onNotice: SharedProps['onNotice'], onUploaded: (file: UploadImage) => void) {
   const [progress, setProgress] = useState<number | null>(null);
   const upload = async (file?: File) => {
@@ -49,6 +69,7 @@ export function useImageUpload(imageType: string, preset: ImagePreset | undefine
 export function MediaPicker({ open, imageType, preset, onClose, onPick, onNotice }: { open: boolean; imageType: string; preset?: ImagePreset; onClose: () => void; onPick: (file: UploadImage) => void; onNotice: SharedProps['onNotice'] }) {
   const [files, setFiles] = useState<UploadImage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sizes, setSizes] = useState<Record<string, Size | null>>({});
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -58,13 +79,14 @@ export function MediaPicker({ open, imageType, preset, onClose, onPick, onNotice
   const { upload, progress } = useImageUpload(imageType, preset, onNotice, file => { onPick(file); onClose(); });
   return <Dialog open={open} title="Choose a photo" onClose={onClose} actions={<><input ref={input} hidden type="file" accept="image/*" onChange={event => upload(event.target.files?.[0])} /><button className="button button--primary" onClick={() => input.current?.click()}>{progress === null ? 'Upload new photo' : `Uploading ${progress}%`}</button><button className="button button--quiet" onClick={onClose}>Cancel</button></>}>
     <p className="dialog-copy">Reuse a recent photo, or upload a JPG, PNG or WebP image.</p>
-    <div className="media-library">{loading ? <div className="loading-line">Loading photos…</div> : files.length ? files.map(file => <button key={file.path} onClick={() => { onPick(file); onClose(); }}><img src={file.preview} alt="" /><span>{file.name}</span></button>) : <div className="empty-small">No uploaded photos yet.</div>}</div>
+    <div className="media-library">{loading ? <div className="loading-line">Loading photos…</div> : files.length ? files.map(file => <button key={file.path} onClick={() => { onPick(file); onClose(); }}><img src={file.preview} alt="" onLoad={event => { const size = naturalSize(event.currentTarget); setSizes(current => ({ ...current, [file.path]: size })); }} /><span>{file.name}</span><ImageSize size={sizes[file.path] ?? null} preset={preset} /></button>) : <div className="empty-small">No uploaded photos yet.</div>}</div>
   </Dialog>;
 }
 
 export function ImageField({ field, value, onChange, onNotice, preview, preset }: SharedProps & { preview?: string; preset?: ImagePreset }) {
   const [picker, setPicker] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [size, setSize] = useState<Size | null>(null);
   const image = imageValue(value);
   // Prefer a preview derived from the field's CURRENT value over the
   // `preview` prop, which is a snapshot computed server-side once when the
@@ -84,7 +106,7 @@ export function ImageField({ field, value, onChange, onNotice, preview, preset }
     onDragLeave={() => setDragging(false)}
     onDrop={event => { event.preventDefault(); setDragging(false); upload(event.dataTransfer.files[0]); }}
   >
-    {image.src ? <div className="image-preview"><img src={src} alt={image.alt || ''} /><div className="image-preview__actions"><button className="button button--quiet" onClick={() => setPicker(true)}>Replace photo</button><button className="icon-button danger" onClick={() => onChange(null)} aria-label={`Remove ${field.label}`}><TrashIcon /></button></div></div> : <button className="media-empty" onClick={() => setPicker(true)}><span className="media-empty__icon">＋</span><strong>{progress !== null ? `Uploading ${progress}%` : 'Add a photo'}</strong><span>Drop an image here, or click to upload or choose an existing one</span></button>}
+    {image.src ? <div className="image-preview"><img key={src} src={src} alt={image.alt || ''} onLoad={event => setSize(naturalSize(event.currentTarget))} /><div className="image-preview__actions"><ImageSize size={size} preset={preset} /><button className="button button--quiet" onClick={() => setPicker(true)}>Replace photo</button><button className="icon-button danger" onClick={() => onChange(null)} aria-label={`Remove ${field.label}`}><TrashIcon /></button></div></div> : <button className="media-empty" onClick={() => setPicker(true)}><span className="media-empty__icon">＋</span><strong>{progress !== null ? `Uploading ${progress}%` : 'Add a photo'}</strong><span>Drop an image here, or click to upload or choose an existing one</span></button>}
     {image.src && <label className="subfield"><span>Image description {field.required && <em>required</em>}</span><input value={image.alt || ''} placeholder="Describe what is visible in the photo" onChange={event => onChange({ ...image, alt: event.target.value })} /></label>}
     <MediaPicker open={picker} imageType={imageType} preset={preset} onClose={() => setPicker(false)} onPick={picked => onChange({ src: picked.path, alt: image.alt || '' })} onNotice={onNotice} />
   </div>;

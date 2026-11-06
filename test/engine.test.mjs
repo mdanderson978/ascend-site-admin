@@ -432,6 +432,94 @@ test('page image upload converts to WebP, returns its final public path and rema
   } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
 });
 
+test('ChatGPT imports preserve the exact paste and can atomically undo body and page assets', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const assetDir = path.join(root, 'public/content-assets/pages/home');
+  fs.mkdirSync(assetDir, { recursive: true });
+  fs.writeFileSync(path.join(assetDir, 'page-aaaaaaaaaaaa.css'), '.before { color: navy; }');
+  const server = startAdmin({
+    root, port: 4495, pullOnStart: false, richHtmlImport: true, siteTitle: 'Fixture Site',
+    developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }, { name: 'body', label: 'Body', type: 'markdown' }] },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const post = (url, body) => fetch(base + url, { method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const exactPaste = '<!doctype html>\n<html><head><style>.after { color: green; }</style></head><body><p>Imported exactly</p></body></html>\n';
+
+    const importedResponse = await post('/api/import/chatgpt/pages/home', { html: exactPaste, data: { title: 'Home' }, previousBody: 'Unsaved body before import\n' });
+    assert.equal(importedResponse.status, 200);
+    const imported = await importedResponse.json();
+    assert.equal(imported.recovery.canUndo, true);
+    assert.equal(imported.recovery.targetKey, 'pages/home');
+    assert.ok(!fs.existsSync(path.join(assetDir, 'page-aaaaaaaaaaaa.css')));
+    assert.ok(fs.readdirSync(assetDir).some(name => /^page-[a-f0-9]{12}\.css$/.test(name)));
+    assert.equal(fs.existsSync(path.join(root, '.ascend-import-staging')), false, 'import staging must never be created at the repository root');
+    const privateStaging = path.resolve(root, execFileSync('git', ['-C', root, 'rev-parse', '--git-path', 'ascend-site-admin/chatgpt-import-staging'], { encoding: 'utf8' }).trim());
+    assert.equal(fs.existsSync(privateStaging), true, 'import staging belongs inside private Git metadata');
+
+    const status = await (await post('/api/import/chatgpt-recovery/pages/home', {})).json();
+    assert.equal(status.recovery.id, imported.recovery.id);
+    assert.equal(status.recovery.canUndo, true);
+    const original = await (await post('/api/import/chatgpt-original/pages/home', { id: imported.recovery.id })).json();
+    assert.equal(original.source, exactPaste, 'the unprocessed paste must round-trip byte-for-byte as text');
+
+    const undoneResponse = await post('/api/import/chatgpt-undo/pages/home', { id: imported.recovery.id });
+    assert.equal(undoneResponse.status, 200);
+    const undone = await undoneResponse.json();
+    assert.equal(undone.body, 'Unsaved body before import\n');
+    assert.equal(undone.recovery.canUndo, false);
+    assert.equal(fs.readFileSync(path.join(assetDir, 'page-aaaaaaaaaaaa.css'), 'utf8'), '.before { color: navy; }');
+    assert.deepEqual(fs.readdirSync(assetDir), ['page-aaaaaaaaaaaa.css']);
+
+    const originalAfterUndo = await (await post('/api/import/chatgpt-original/pages/home', { id: imported.recovery.id })).json();
+    assert.equal(originalAfterUndo.source, exactPaste, 'undo must not discard the diagnostic source');
+
+    const failedPaste = '<img src="/documents/this-file-does-not-exist.pdf" alt="Missing">';
+    const failedResponse = await post('/api/import/chatgpt/pages/home', { html: failedPaste, data: { title: 'Home' }, previousBody: undone.body });
+    assert.equal(failedResponse.status, 400);
+    const failedStatus = await (await post('/api/import/chatgpt-recovery/pages/home', {})).json();
+    assert.equal(failedStatus.recovery.state, 'failed');
+    assert.equal(failedStatus.recovery.canUndo, false);
+    const failedOriginal = await (await post('/api/import/chatgpt-original/pages/home', { id: failedStatus.recovery.id })).json();
+    assert.equal(failedOriginal.source, failedPaste, 'failed imports are preserved for diagnosis too');
+    assert.deepEqual(fs.readdirSync(assetDir), ['page-aaaaaaaaaaaa.css'], 'a failed import does not disturb the restored assets');
+    assert.doesNotMatch(execFileSync('git', ['-C', root, 'status', '--porcelain'], { encoding: 'utf8' }), /chatgpt|original\.html/i);
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
+test('restoring page history restores the matching ChatGPT content-assets directory', async t => {
+  const root = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const assetDir = path.join(root, 'public/content-assets/pages/home');
+  fs.mkdirSync(assetDir, { recursive: true });
+  fs.writeFileSync(path.join(assetDir, 'page-111111111111.css'), '.old { color: navy; }');
+  const git = args => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+  const commit = message => git(['-c', 'user.email=t@e.com', '-c', 'user.name=T', 'commit', '-am', message]);
+  git(['add', '-A']); commit('old imported page');
+  const oldSha = git(['rev-parse', 'HEAD']).trim();
+  fs.writeFileSync(path.join(root, 'src/content/pages/home.md'), '---\ntitle: Home\ncount: 2\n---\nNew body\n');
+  fs.rmSync(path.join(assetDir, 'page-111111111111.css'));
+  fs.writeFileSync(path.join(assetDir, 'page-222222222222.css'), '.new { color: green; }');
+  git(['add', '-A']); commit('new imported page');
+
+  const server = startAdmin({
+    root, port: 4496, pullOnStart: false, richHtmlImport: true, siteTitle: 'Fixture Site',
+    developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    fields: { 'pages/home': [{ name: 'title', label: 'Title' }, { name: 'body', label: 'Body', type: 'markdown' }] },
+  });
+  try {
+    if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(base + '/api/restore/pages/home', { method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: JSON.stringify({ sha: oldSha }) });
+    assert.equal(response.status, 200);
+    assert.deepEqual(fs.readdirSync(assetDir), ['page-111111111111.css']);
+    assert.equal(fs.readFileSync(path.join(assetDir, 'page-111111111111.css'), 'utf8'), '.old { color: navy; }');
+  } finally { if (server.listening) await new Promise(resolve => server.close(resolve)); }
+});
+
 // Collections not listed in dynamicCollections must keep today's behavior
 // exactly: a fixed, developer-defined set of entries with no add/delete from
 // the admin UI at all, even against a crafted request.

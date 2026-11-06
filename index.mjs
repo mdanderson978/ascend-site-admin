@@ -115,7 +115,8 @@
  *   altPlaceholder  optional example text for single-image description inputs.
  *   port            default port (env ADMIN_PORT always wins), default 4322.
  *   gitIdentity     { name, email } used only when the machine has no git
- *                   identity at all; defaults to Website Admin <developerEmail>.
+ *                   identity at all; defaults to '<siteTitle> (<computer login>)'
+ *                   <site-admin@<siteUrl host>> (site-admin@invalid without siteUrl).
  *   pullOnStart     optional; false disables the best-effort startup pull
  *                   for CI and read-only verification. Defaults to true.
  *   adminUi         optional; set to 'legacy' for a temporary rollback to
@@ -181,6 +182,14 @@
  *                   the deployed site publishes it at
  *                   <siteUrl>/_ascend/brand.json, which GET /api/brand
  *                   prefers. Use this for a site that isn't deployed yet.
+ *   uniquePdfNames  optional; true makes a PDF upload never overwrite an
+ *                   existing file in public/documents: a name already
+ *                   taken by different contents gets -2, -3, ... (the same
+ *                   file uploaded again reuses its name). Default false: an
+ *                   upload with the same name replaces the file and keeps
+ *                   its URL, which suits one-document-per-purpose sites but
+ *                   lets a carelessly named upload ("study-1.pdf") replace
+ *                   another page's document.
  *
  * Every route, the sharp upload pipeline, the git publish flow, upload
  * pruning, search, history/restore, and page renaming (with 301-redirect
@@ -193,7 +202,9 @@ import http from 'http';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
+import { gzipSync, gunzipSync } from 'zlib';
 import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import matter from './safe-matter.mjs';
@@ -329,6 +340,197 @@ export function startAdmin(config) {
     'git', ['-C', ROOT, ...args],
     { encoding: 'utf-8', stdio: 'pipe', ...options },
   );
+
+  // Raw ChatGPT pastes and import undo snapshots are operational recovery
+  // data, not website content. Git's private metadata directory keeps them
+  // durable for this clone without ever making them publishable or showing
+  // them as untracked files in the content repo.
+  const CHATGPT_IMPORT_STORE = (() => {
+    try { return path.resolve(ROOT, git(['rev-parse', '--git-path', 'ascend-site-admin/chatgpt-imports']).trim()); }
+    catch { return path.join(ROOT, '.git', 'ascend-site-admin', 'chatgpt-imports'); }
+  })();
+  const CHATGPT_IMPORT_STAGING = path.join(path.dirname(CHATGPT_IMPORT_STORE), 'chatgpt-import-staging');
+  if (config.richHtmlImport) {
+    fs.mkdirSync(CHATGPT_IMPORT_STORE, { recursive: true });
+    fs.mkdirSync(CHATGPT_IMPORT_STAGING, { recursive: true });
+  }
+
+  function recoveryPageDir(collection, slug) {
+    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(collection) || !/^[a-z0-9][a-z0-9._-]*$/i.test(slug)) throw new Error('Invalid ChatGPT recovery location.');
+    const result = path.join(CHATGPT_IMPORT_STORE, collection, slug);
+    if (!isInside(CHATGPT_IMPORT_STORE, result)) throw new Error('Invalid ChatGPT recovery location.');
+    return result;
+  }
+
+  function recoveryRecordDir(collection, slug, id) {
+    if (!/^\d{13}-[a-f0-9]{12}$/i.test(id || '')) throw new Error('Invalid ChatGPT import id.');
+    return path.join(recoveryPageDir(collection, slug), 'records', id);
+  }
+
+  async function writeRecoveryJson(filePath, value) {
+    const temporary = `${filePath}.${crypto.randomUUID()}.tmp`;
+    await fsp.mkdir(path.dirname(filePath), { recursive: true });
+    await fsp.writeFile(temporary, JSON.stringify(value, null, 2), 'utf8');
+    await fsp.rename(temporary, filePath);
+  }
+
+  async function readRecoveryJson(filePath) {
+    try { return JSON.parse(await fsp.readFile(filePath, 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  }
+
+  async function activeRecoveryId(collection, slug) {
+    return (await readRecoveryJson(path.join(recoveryPageDir(collection, slug), 'active.json')))?.id || null;
+  }
+
+  async function listRecoveryRecords(collection, slug) {
+    const recordsDir = path.join(recoveryPageDir(collection, slug), 'records');
+    let ids = [];
+    try { ids = await fsp.readdir(recordsDir); }
+    catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+    const records = [];
+    for (const id of ids) {
+      if (!/^\d{13}-[a-f0-9]{12}$/i.test(id)) continue;
+      const metadata = await readRecoveryJson(path.join(recordsDir, id, 'metadata.json'));
+      if (metadata) records.push(metadata);
+    }
+    return records.sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async function pruneRecoveryRecords(collection, slug) {
+    const activeId = await activeRecoveryId(collection, slug);
+    const records = await listRecoveryRecords(collection, slug);
+    const keep = new Set(records.slice(0, 5).map(record => record.id));
+    if (activeId) keep.add(activeId);
+    for (const record of records) {
+      const recordDir = recoveryRecordDir(collection, slug, record.id);
+      if (!keep.has(record.id)) await fsp.rm(recordDir, { recursive: true, force: true });
+      else if (record.id !== activeId) await fsp.rm(path.join(recordDir, 'previous-assets'), { recursive: true, force: true });
+    }
+  }
+
+  async function beginChatGptRecovery({ collection, slug, source, previousBody, outputDir }) {
+    const newest = (await listRecoveryRecords(collection, slug))[0];
+    const createdAt = Math.max(Date.now(), (newest?.createdAt || 0) + 1);
+    const id = `${createdAt}-${crypto.randomBytes(6).toString('hex')}`;
+    const recordDir = recoveryRecordDir(collection, slug, id);
+    const previousAssets = path.join(recordDir, 'previous-assets');
+    const hadAssets = fs.existsSync(outputDir);
+    const metadata = { schema: 1, id, collection, slug, targetKey: `${collection}/${slug}`, createdAt, state: 'pending', hadAssets };
+    await fsp.mkdir(recordDir, { recursive: true });
+    await fsp.writeFile(path.join(recordDir, 'original.html.gz'), gzipSync(Buffer.from(source, 'utf8')));
+    await fsp.writeFile(path.join(recordDir, 'previous-body.md'), previousBody, 'utf8');
+    if (hadAssets) await fsp.cp(outputDir, previousAssets, { recursive: true });
+    await writeRecoveryJson(path.join(recordDir, 'metadata.json'), metadata);
+    return { metadata, recordDir };
+  }
+
+  async function finishChatGptRecovery(record) {
+    const { collection, slug, id } = record.metadata;
+    const oldActiveId = await activeRecoveryId(collection, slug);
+    if (oldActiveId && oldActiveId !== id) {
+      const oldDir = recoveryRecordDir(collection, slug, oldActiveId);
+      const oldMetadata = await readRecoveryJson(path.join(oldDir, 'metadata.json'));
+      if (oldMetadata) await writeRecoveryJson(path.join(oldDir, 'metadata.json'), { ...oldMetadata, state: 'superseded' });
+    }
+    record.metadata.state = 'active';
+    await writeRecoveryJson(path.join(record.recordDir, 'metadata.json'), record.metadata);
+    await writeRecoveryJson(path.join(recoveryPageDir(collection, slug), 'active.json'), { id });
+    await pruneRecoveryRecords(collection, slug);
+    return { id, targetKey: `${collection}/${slug}`, createdAt: record.metadata.createdAt, state: 'active', canUndo: true, hasOriginalPaste: true };
+  }
+
+  async function failChatGptRecovery(record, error) {
+    record.metadata.state = 'failed';
+    record.metadata.error = String(error?.message || error).slice(0, 1000);
+    await fsp.rm(path.join(record.recordDir, 'previous-assets'), { recursive: true, force: true }).catch(() => {});
+    await writeRecoveryJson(path.join(record.recordDir, 'metadata.json'), record.metadata).catch(() => {});
+    await pruneRecoveryRecords(record.metadata.collection, record.metadata.slug).catch(() => {});
+  }
+
+  async function renameDirectoryWithRetry(from, to, attempts = 6) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try { await fsp.rename(from, to); return; }
+      catch (error) {
+        if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) throw error;
+        if (attempt === attempts - 1) throw new Error('A file for this page is in use. Close any image previews and try the import again.', { cause: error });
+        await new Promise(resolve => setTimeout(resolve, Math.min(100 * (2 ** attempt), 800)));
+      }
+    }
+  }
+
+  async function replaceDirectoryFromSnapshot(targetDir, snapshotDir, hadSnapshot) {
+    const transactionDir = await fsp.mkdtemp(path.join(CHATGPT_IMPORT_STAGING, 'restore-'));
+    const nextDir = path.join(transactionDir, 'next');
+    const currentDir = path.join(transactionDir, 'current');
+    let movedCurrent = false;
+    try {
+      if (hadSnapshot) await fsp.cp(snapshotDir, nextDir, { recursive: true });
+      await fsp.mkdir(path.dirname(targetDir), { recursive: true });
+      if (fs.existsSync(targetDir)) { await renameDirectoryWithRetry(targetDir, currentDir); movedCurrent = true; }
+      try {
+        if (hadSnapshot) await renameDirectoryWithRetry(nextDir, targetDir);
+      } catch (error) {
+        if (movedCurrent) await renameDirectoryWithRetry(currentDir, targetDir);
+        throw error;
+      }
+    } finally {
+      await fsp.rm(transactionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(() => {});
+    }
+  }
+
+  async function recoverySummary(collection, slug) {
+    const records = await listRecoveryRecords(collection, slug);
+    const latest = records.find(record => record.state !== 'pending');
+    if (!latest) return null;
+    const activeId = await activeRecoveryId(collection, slug);
+    return {
+      id: latest.id,
+      targetKey: `${collection}/${slug}`,
+      createdAt: latest.createdAt,
+      state: latest.state,
+      canUndo: latest.state === 'active' && activeId === latest.id,
+      hasOriginalPaste: fs.existsSync(path.join(recoveryRecordDir(collection, slug, latest.id), 'original.html.gz')),
+    };
+  }
+
+  async function undoChatGptRecovery(collection, slug, id) {
+    if (await activeRecoveryId(collection, slug) !== id) throw new Error('That ChatGPT import has already been undone or replaced by a newer import.');
+    const recordDir = recoveryRecordDir(collection, slug, id);
+    const metadata = await readRecoveryJson(path.join(recordDir, 'metadata.json'));
+    if (!metadata || metadata.state !== 'active') throw new Error('That ChatGPT import can no longer be undone.');
+    const outputDir = path.join(CONTENT_ASSETS, collection, slug);
+    if (!isInside(CONTENT_ASSETS, outputDir)) throw new Error('Invalid asset location.');
+    await replaceDirectoryFromSnapshot(outputDir, path.join(recordDir, 'previous-assets'), metadata.hadAssets);
+    const body = await fsp.readFile(path.join(recordDir, 'previous-body.md'), 'utf8');
+    metadata.state = 'undone';
+    await writeRecoveryJson(path.join(recordDir, 'metadata.json'), metadata);
+    await fsp.rm(path.join(recoveryPageDir(collection, slug), 'active.json'), { force: true });
+    await pruneRecoveryRecords(collection, slug);
+    return { body, recovery: { ...(await recoverySummary(collection, slug)), canUndo: false } };
+  }
+
+  async function restoreContentAssetsFromGit(collection, slug, sha) {
+    if (!config.richHtmlImport) return;
+    const prefix = `public/content-assets/${collection}/${slug}`;
+    let files = [];
+    try { files = git(['ls-tree', '-r', '--name-only', sha, '--', prefix]).trim().split('\n').filter(Boolean); }
+    catch { files = []; }
+    const archiveDir = await fsp.mkdtemp(path.join(CHATGPT_IMPORT_STAGING, 'history-'));
+    const snapshotDir = path.join(archiveDir, 'snapshot');
+    try {
+      for (const file of files) {
+        const relative = file.slice(prefix.length).replace(/^\//, '');
+        const destination = path.resolve(snapshotDir, relative);
+        if (!relative || !isInside(snapshotDir, destination)) continue;
+        await fsp.mkdir(path.dirname(destination), { recursive: true });
+        await fsp.writeFile(destination, git(['show', `${sha}:${file}`], { encoding: null }));
+      }
+      await replaceDirectoryFromSnapshot(path.join(CONTENT_ASSETS, collection, slug), snapshotDir, files.length > 0);
+    } finally {
+      await fsp.rm(archiveDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
 
   // 'owner/repo', derived from the origin remote - lets the admin UI link
   // straight to this repo's GitHub Actions runs after a publish, with no
@@ -802,12 +1004,25 @@ export function startAdmin(config) {
   // a client's machine fails with a raw "Please tell me who you are" error.
   // Set a repo-local identity (never --global — don't touch the client's own
   // config).
+  //
+  // Whoever has their own git identity keeps it. The fallback names the site
+  // and the computer's login ("Proclaim Anglican Church (noah)") with an
+  // address that isn't the developer's: before 2.19.1 it was
+  // Website Admin <developerEmail>, which GitHub showed as the developer's
+  // own commits. That old repo-local default is replaced on the next start.
   function ensureGitIdentity() {
-    let email = '';
-    try { email = git(['config', 'user.email']).trim(); }
-    catch (_) { /* unset — git exits 1 */ }
-    if (email) return;
-    const id = { name: 'Website Admin', email: developerEmail, ...(config.gitIdentity || {}) };
+    const read = (args) => { try { return git(['config', ...args]).trim(); } catch (_) { return ''; } };
+    const legacy = read(['--local', 'user.name']) === 'Website Admin' && read(['--local', 'user.email']) === developerEmail;
+    if (legacy) {
+      try { git(['config', '--local', '--unset', 'user.name']); git(['config', '--local', '--unset', 'user.email']); }
+      catch (_) { /* non-fatal; the identity below overwrites it anyway */ }
+    }
+    if (read(['user.email'])) return;
+    let login = '';
+    try { login = os.userInfo().username; } catch (_) { /* no login name on this machine */ }
+    let host = 'invalid';
+    try { if (config.siteUrl) host = new URL(config.siteUrl).hostname.replace(/^www\./, ''); } catch (_) { /* bad siteUrl */ }
+    const id = { name: login ? `${siteTitle} (${login})` : siteTitle, email: `site-admin@${host}`, ...(config.gitIdentity || {}) };
     try {
       git(['config', 'user.name', String(id.name)]);
       git(['config', 'user.email', String(id.email)]);
@@ -1001,6 +1216,19 @@ export function startAdmin(config) {
       }));
   }
 
+  // uniquePdfNames: a taken name gets -2, -3, ... so an upload can never
+  // replace a different document that something else links to. The same
+  // bytes uploaded again reuse their existing file instead of a copy.
+  async function freePdfName(filename, buffer) {
+    const base = filename.slice(0, -'.pdf'.length);
+    for (let n = 1; ; n++) {
+      const name = n === 1 ? filename : `${base}-${n}.pdf`;
+      let existing;
+      try { existing = await fsp.readFile(path.join(DOCS, name)); } catch { return name; }
+      if (existing.equals(buffer)) return name;
+    }
+  }
+
   async function handlePdfUpload(req) {
     return new Promise((resolve, reject) => {
       const bb = Busboy({ headers: req.headers, limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
@@ -1009,7 +1237,8 @@ export function startAdmin(config) {
       let filename = 'document.pdf';
 
       bb.on('file', (_name, file, info) => {
-        // Stable filename on purpose: replacing a PDF keeps its public URL.
+        // Stable filename on purpose: replacing a PDF keeps its public URL
+        // (unless config.uniquePdfNames, see freePdfName).
         filename = sanitize(info.filename || 'document.pdf');
         if (!filename.endsWith('.pdf')) filename += '.pdf';
         const chunks = [];
@@ -1020,6 +1249,8 @@ export function startAdmin(config) {
       bb.on('close', async () => {
         if (tooBig)  { reject(new Error('That PDF is over 25 MB. Please compress it first.')); return; }
         if (!buffer) { reject(new Error('No file data')); return; }
+        if (config.uniquePdfNames) filename = await freePdfName(filename, buffer);
+        await fsp.mkdir(DOCS, { recursive: true });
         await fsp.writeFile(path.join(DOCS, filename), buffer);
         resolve({ path: '/documents/' + filename });
       });
@@ -1251,6 +1482,10 @@ export function startAdmin(config) {
           } catch (_) { /* asset predates repo or path changed — page still restores */ }
         }
 
+        // The imported body and its page-specific CSS, JavaScript and images
+        // are one versioned unit. Restore the complete asset directory from
+        // the same commit so an old body is never paired with newer assets.
+        await restoreContentAssetsFromGit(collection, slug, sha);
         fs.writeFileSync(path.join(ROOT, rel), oldContent, 'utf-8');
         jsonResp(res, 200, { ok: true, restoredFiles });
         return;
@@ -1641,19 +1876,79 @@ export function startAdmin(config) {
         const [, collection, requestedSlug] = chatGptImportMatch;
         const fieldTemplate = resolveFields(collection, requestedSlug === 'new' ? '_new' : requestedSlug);
         if (!fieldTemplate) { jsonResp(res, 404, { error: 'Page not found.' }); return; }
-        const { html, data } = await parseJsonBody(req);
+        const { html, data, previousBody } = await parseJsonBody(req);
         let targetSlug;
         try { targetSlug = richHtmlTargetSlug(collection, requestedSlug, data); }
         catch (e) { jsonResp(res, 400, { error: e.message }); return; }
         if (!/^[a-z0-9][a-z0-9._-]*$/i.test(targetSlug)) { jsonResp(res, 400, { error: 'Invalid page name.' }); return; }
         const outputDir = path.join(CONTENT_ASSETS, collection, targetSlug);
         if (!isInside(CONTENT_ASSETS, outputDir)) { jsonResp(res, 400, { error: 'Invalid asset location.' }); return; }
-        const result = await sortChatGptHtml({
-          source: String(html || ''),
-          outputDir,
-          publicBase: `/content-assets/${collection}/${targetSlug}`,
-        });
-        jsonResp(res, 200, { ...result, targetSlug });
+        let recoveryRecord;
+        let importApplied = false;
+        try {
+          let bodyBeforeImport = typeof previousBody === 'string' ? previousBody : '';
+          const existingContent = contentFile(collection, targetSlug);
+          if (typeof previousBody !== 'string' && fs.existsSync(existingContent)) bodyBeforeImport = matter(fs.readFileSync(existingContent, 'utf8')).content;
+          recoveryRecord = await beginChatGptRecovery({
+            collection,
+            slug: targetSlug,
+            source: String(html || ''),
+            previousBody: bodyBeforeImport,
+            outputDir,
+          });
+          const result = await sortChatGptHtml({
+            source: String(html || ''),
+            outputDir,
+            publicBase: `/content-assets/${collection}/${targetSlug}`,
+            publicDir: path.join(ROOT, 'public'),
+            siteUrl: config.siteUrl || '',
+            stagingDir: CHATGPT_IMPORT_STAGING,
+          });
+          importApplied = true;
+          const recovery = await finishChatGptRecovery(recoveryRecord);
+          jsonResp(res, 200, { ...result, targetSlug, recovery });
+        } catch (e) {
+          if (recoveryRecord && importApplied) {
+            await replaceDirectoryFromSnapshot(outputDir, path.join(recoveryRecord.recordDir, 'previous-assets'), recoveryRecord.metadata.hadAssets).catch(rollbackError => {
+              console.error(`Could not roll back failed ChatGPT import recovery setup: ${rollbackError.message}`);
+            });
+          }
+          if (recoveryRecord) await failChatGptRecovery(recoveryRecord, e);
+          jsonResp(res, 400, { error: e.message });
+        }
+        return;
+      }
+
+      const chatGptRecoveryMatch = path_.match(/^\/api\/import\/chatgpt-recovery\/([^/]+)\/(.+)$/);
+      if (chatGptRecoveryMatch && req.method === 'POST') {
+        if (!config.richHtmlImport) { jsonResp(res, 404, { error: 'Rich HTML importing is not enabled for this site.' }); return; }
+        const [, collection, slug] = chatGptRecoveryMatch;
+        if (!resolveFields(collection, slug) && !DYNAMIC[collection]) { jsonResp(res, 404, { error: 'Page not found.' }); return; }
+        try { jsonResp(res, 200, { recovery: await recoverySummary(collection, slug) }); }
+        catch (e) { jsonResp(res, 400, { error: e.message }); }
+        return;
+      }
+
+      const chatGptOriginalMatch = path_.match(/^\/api\/import\/chatgpt-original\/([^/]+)\/(.+)$/);
+      if (chatGptOriginalMatch && req.method === 'POST') {
+        if (!config.richHtmlImport) { jsonResp(res, 404, { error: 'Rich HTML importing is not enabled for this site.' }); return; }
+        const [, collection, slug] = chatGptOriginalMatch;
+        try {
+          const { id } = await parseJsonBody(req);
+          const compressed = await fsp.readFile(path.join(recoveryRecordDir(collection, slug, id), 'original.html.gz'));
+          jsonResp(res, 200, { source: gunzipSync(compressed).toString('utf8') });
+        } catch (e) { jsonResp(res, 400, { error: e.code === 'ENOENT' ? 'That original paste is no longer available.' : e.message }); }
+        return;
+      }
+
+      const chatGptUndoMatch = path_.match(/^\/api\/import\/chatgpt-undo\/([^/]+)\/(.+)$/);
+      if (chatGptUndoMatch && req.method === 'POST') {
+        if (!config.richHtmlImport) { jsonResp(res, 404, { error: 'Rich HTML importing is not enabled for this site.' }); return; }
+        const [, collection, slug] = chatGptUndoMatch;
+        try {
+          const { id } = await parseJsonBody(req);
+          jsonResp(res, 200, await undoChatGptRecovery(collection, slug, id));
+        } catch (e) { jsonResp(res, 400, { error: e.message }); }
         return;
       }
 

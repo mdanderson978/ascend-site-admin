@@ -1,6 +1,81 @@
 # Changelog
 
-## Unreleased
+## 2.20.0 - 2026-11-07
+
+### New: safer ChatGPT imports with one-click recovery
+
+ChatGPT HTML imports now validate local files and JavaScript before changing
+the page, reject unstable Astro build URLs, repair common uploaded-image paths,
+and replace page assets transactionally. Windows directory swaps retry short
+file locks from previews, antivirus and Explorer; a persistent lock leaves the
+old page in place and produces a plain-English editor error.
+
+Every attempted paste is retained exactly in the repository's private Git
+metadata, never in publishable website files. After a successful import the
+editor can copy the original paste or undo the import, restoring both the
+previous body and its complete CSS, JavaScript and image directory. Published
+History restores now recover the matching page asset directory too.
+
+Same-site URL localization is limited to `/content-assets/` and `/documents/`.
+Visible website addresses and JSON-LD structured data remain unchanged.
+
+## 2.19.2 - 2026-11-07
+
+### Fix: importing pasted HTML no longer deletes images the page still uses
+
+Re-importing a page's pasted HTML deleted every image saved by earlier
+imports, then saved only the images embedded in the new paste. A paste
+that linked an existing image by its address (rather than embedding it
+again) lost that image, and the build then failed on a missing file.
+Earlier images are now removed only when the new paste's HTML, CSS and
+scripts no longer refer to them.
+
+The importer now checks local asset paths before replacing a page. Full
+URLs on the configured site host are converted to local root-relative
+paths. A missing page image is matched to its timestamp-prefixed uploaded
+file when there is exactly one match; otherwise the editor sees a warning
+listing the images still to upload. Combined page JavaScript is syntax
+checked before files are changed, and a bad paste is rejected with a clear
+editor-facing error. Non-JavaScript script types are no longer executed;
+JSON-LD is preserved unchanged in the page body.
+
+## 2.19.1 - 2026-10-28
+
+### New: photo sizes in the picker
+
+Every photo in "Choose a photo", and the chosen photo under an image
+field, shows its real size and shape, e.g. "1200 × 400 px · 3:1 wide".
+Photos under the field's minimum size are marked in red with the size it
+needs, so editors can tell a sharp, well-shaped image from a poor one
+before using it. File names in the picker are slightly larger too.
+
+### Fix: content edits no longer look like the developer's
+
+On a computer with no git identity of its own, the admin committed as
+"Website Admin" with the developer's email, so GitHub showed a client's
+edits as the developer's. The fallback is now the site and the
+computer's login, e.g. "Proclaim Anglican Church (noah)"
+<site-admin@proclaim.org.au> (from `siteUrl`; `site-admin@invalid`
+without one). The old default is replaced on the next start. Anyone
+with their own git identity keeps it, and `gitIdentity` in the config
+still overrides the fallback.
+
+### Fix: field hints are easier to read
+
+The help text under each field and section heading was small enough that
+editors skipped it (0.8rem, about 13px). It is now 0.9rem, about 14px.
+Hints inside shortcode dialogs go from 0.68rem to 0.8rem.
+
+## 2.19.0 - 2026-10-27
+
+### New: `uniquePdfNames` (opt-in)
+
+With `uniquePdfNames: true` in `admin.config.mjs`, a PDF upload never
+overwrites an existing file in `public/documents`. A name already taken by
+a different file gets `-2`, `-3` and so on; uploading the very same file
+again reuses its name. This stops a carelessly named upload ("study-1.pdf")
+silently replacing another page's document. Off by default: other sites
+keep replacing a same-named file in place, which keeps its URL.
 
 ### Fix: photos from phones and cameras no longer saved sideways
 

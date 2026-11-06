@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ImageField, ImagesField } from './MediaFields';
+import { ImageField, ImagesField, describeSize, isTooSmall } from './MediaFields';
 import { api } from '../../api/client';
 import type { FieldConfig } from '../../api/types';
 
@@ -82,5 +82,29 @@ describe('ImagesField', () => {
       { src: '../../assets/uploads/one.webp', alt: '' },
       { src: '../../assets/uploads/two.webp', alt: '' },
     ]));
+  });
+});
+
+describe('image size label', () => {
+  it('names common shapes and falls back to landscape/portrait', () => {
+    expect(describeSize({ width: 1600, height: 900 })).toBe('1600 × 900 px · 16:9');
+    expect(describeSize({ width: 1200, height: 400 })).toBe('1200 × 400 px · 3:1 wide');
+    expect(describeSize({ width: 800, height: 800 })).toBe('800 × 800 px · square');
+    expect(describeSize({ width: 600, height: 950 })).toBe('600 × 950 px · portrait');
+  });
+
+  it('flags images under the preset minimum', () => {
+    expect(isTooSmall({ width: 1200, height: 400 }, { w: 1600, h: 900 })).toBe(true);
+    expect(isTooSmall({ width: 1600, height: 900 }, { w: 1600, h: 900 })).toBe(false);
+    expect(isTooSmall({ width: 10, height: 10 })).toBe(false);
+  });
+
+  it("shows the chosen photo's real size once it loads", () => {
+    const { container } = render(<ImageField field={field} value={{ src: '/assets/uploads/banner.webp', alt: '' }} onChange={vi.fn()} onNotice={vi.fn()} preset={{ w: 1600, h: 900, label: '1600 × 900 px' }} />);
+    const img = container.querySelector('.image-preview img') as HTMLImageElement;
+    Object.defineProperty(img, 'naturalWidth', { value: 1200 });
+    Object.defineProperty(img, 'naturalHeight', { value: 400 });
+    fireEvent.load(img);
+    expect(screen.getByText('1200 × 400 px · 3:1 wide · too small (needs 1600 × 900 px)')).toBeTruthy();
   });
 });
