@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api/client';
 import type { AdminConfig, ContentTree, EntryResponse, HistoryVersion, SearchIndex } from './api/types';
 import { ConfirmDialog } from './components/Dialog';
@@ -12,6 +12,7 @@ import { EntryForm, validateEntry } from './features/editor/EntryForm';
 import { HistoryPanel } from './features/history/HistoryPanel';
 import { MenuManager } from './features/menus/MenuManager';
 import { breadcrumb, humanize, liveUrlFor, splitKey, startNoteParts } from './lib/content';
+import { clearLocalDraft, entryFingerprint, recoverLocalDraft, saveLocalDraft } from './lib/localDraft';
 
 type ConfirmState = { kind: 'navigate'; key: string; field?: string } | { kind: 'delete' } | { kind: 'restore'; version: HistoryVersion } | null;
 
@@ -37,6 +38,7 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [publishFailure, setPublishFailure] = useState<PublishFailure | null>(null);
   const deploy = useDeployProgress();
+  const loadedBaseline = useRef('');
 
   const notify = useCallback((message: string, kind: ToastMessage['kind'] = 'info') => {
     setToasts(current => [...current, { id: Date.now() + Math.random(), message, kind }]);
@@ -63,14 +65,23 @@ export default function App() {
     setEntryLoading(true); setHistoryOpen(false); setErrors({}); setView('entry');
     try {
       const loaded = await api.entry(key);
-      setCurrentKey(key); setEntry(loaded); setDirty(false); setDraftSaved(false);
+      const baseline = entryFingerprint(loaded);
+      let recovered = recoverLocalDraft(key, baseline);
+      if (recovered && entryFingerprint(recovered) === baseline) { clearLocalDraft(key); recovered = null; }
+      const recoveredEntry = recovered ? { ...loaded, data: recovered.data, body: recovered.body } : loaded;
+      loadedBaseline.current = baseline;
+      setCurrentKey(key); setEntry(recoveredEntry); setDirty(Boolean(recovered)); setDraftSaved(false);
+      if (recovered) notify('Your unsaved changes were recovered from this computer.', 'info');
       if (field) window.setTimeout(() => document.querySelector(`[data-field="${CSS.escape(field)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
     } catch (error) { notify((error as Error).message, 'error'); }
     finally { setEntryLoading(false); }
   }, [notify]);
 
   const openEntry = (key: string, field?: string) => dirty ? setConfirm({ kind: 'navigate', key, field }) : loadEntry(key, field);
-  const mutateEntry = (next: EntryResponse) => { setEntry(next); setDirty(true); setDraftSaved(false); setErrors({}); };
+  const mutateEntry = (next: EntryResponse) => {
+    setEntry(next); setDirty(true); setDraftSaved(false); setErrors({});
+    if (currentKey) saveLocalDraft(currentKey, loadedBaseline.current, next);
+  };
 
   const save = useCallback(async () => {
     if (!entry || !currentKey || saving) return;
@@ -84,9 +95,15 @@ export default function App() {
       if (currentKey.endsWith('/new') && response.slug) {
         savedKey = `${currentKey.split('/')[0]}/${response.slug}`; setCurrentKey(savedKey);
       }
+      clearLocalDraft(currentKey);
+      loadedBaseline.current = entryFingerprint(entry);
       setDirty(false); setDraftSaved(true); setErrors({}); await refreshNavigation(); notify('Draft saved.', 'success');
       // reload: the server filled in a field itself (a YouTube thumbnail).
-      if (savedKey !== currentKey || response.reload) setEntry(await api.entry(savedKey));
+      if (savedKey !== currentKey || response.reload) {
+        const reloaded = await api.entry(savedKey);
+        loadedBaseline.current = entryFingerprint(reloaded);
+        setEntry(reloaded);
+      }
     } catch (error) { notify((error as Error).message, 'error'); }
     finally { setSaving(false); }
   }, [entry, currentKey, saving, notify, refreshNavigation]);
@@ -99,7 +116,7 @@ export default function App() {
   const removeEntry = async () => {
     if (!currentKey) return;
     try {
-      await api.remove(currentKey); setEntry(null); setCurrentKey(null); setDirty(false); setDraftSaved(true); await refreshNavigation(); notify('Entry deleted. Publish when you are ready to make it live.', 'success');
+      await api.remove(currentKey); clearLocalDraft(currentKey); setEntry(null); setCurrentKey(null); setDirty(false); setDraftSaved(true); await refreshNavigation(); notify('Entry deleted. Publish when you are ready to make it live.', 'success');
     } catch (error) { notify((error as Error).message, 'error'); }
     finally { setConfirm(null); }
   };
@@ -126,9 +143,12 @@ export default function App() {
   const onRenamed = async (newSlug: string) => {
     if (!currentKey) return;
     const nextKey = `${currentKey.split('/')[0]}/${newSlug}`;
+    clearLocalDraft(currentKey);
     setDraftSaved(true); setCurrentKey(nextKey);
     await refreshNavigation();
-    setEntry(await api.entry(nextKey));
+    const renamed = await api.entry(nextKey);
+    loadedBaseline.current = entryFingerprint(renamed);
+    setEntry(renamed);
     notify('Renamed. Publish when you are ready to make it live.', 'success');
   };
 
@@ -147,7 +167,12 @@ export default function App() {
 
   const restore = async (version: HistoryVersion) => {
     if (!currentKey) return;
-    try { await api.restore(currentKey, version.sha); setEntry(await api.entry(currentKey)); setDirty(false); setDraftSaved(true); setHistoryOpen(false); await refreshNavigation(); notify('Previous version restored as a draft. Review it, then publish.', 'success'); }
+    try {
+      await api.restore(currentKey, version.sha); clearLocalDraft(currentKey);
+      const restored = await api.entry(currentKey);
+      loadedBaseline.current = entryFingerprint(restored);
+      setEntry(restored); setDirty(false); setDraftSaved(true); setHistoryOpen(false); await refreshNavigation(); notify('Previous version restored as a draft. Review it, then publish.', 'success');
+    }
     catch (error) { notify((error as Error).message, 'error'); }
     finally { setConfirm(null); }
   };
@@ -160,7 +185,7 @@ export default function App() {
   }, [confirm]);
   const acceptConfirm = () => {
     if (!confirm) return;
-    if (confirm.kind === 'navigate') { const next = confirm; setConfirm(null); void loadEntry(next.key, next.field); }
+    if (confirm.kind === 'navigate') { const next = confirm; if (currentKey) clearLocalDraft(currentKey); setConfirm(null); void loadEntry(next.key, next.field); }
     else if (confirm.kind === 'delete') void removeEntry();
     else void restore(confirm.version);
   };

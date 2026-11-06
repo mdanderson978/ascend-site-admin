@@ -76,11 +76,18 @@ describe('LayoutField', () => {
         { type: 'article', id: 'second', props: {}, children: [] },
       ],
     };
-    render(<LayoutField value={layout} config={config} onChange={onChange} onNotice={vi.fn()} />);
+    const { rerender } = render(<LayoutField value={layout} config={config} onChange={onChange} onNotice={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: 'Move Section down' }));
     expect((onChange.mock.calls[0][0] as LayoutRoot).children.map(node => node.id)).toEqual(['second', 'first1']);
     await user.click(screen.getByRole('button', { name: 'Remove Article' }));
-    expect((onChange.mock.calls[1][0] as LayoutRoot).children.map(node => node.id)).toEqual(['first1']);
+    const removed = onChange.mock.calls[1][0] as LayoutRoot;
+    expect(removed.children.map(node => node.id)).toEqual(['first1']);
+    rerender(<LayoutField value={removed} config={config} onChange={onChange} onNotice={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Undo page change' }));
+    expect((onChange.mock.calls[2][0] as LayoutRoot).children.map(node => node.id)).toEqual(['first1', 'second']);
+    rerender(<LayoutField value={onChange.mock.calls[2][0]} config={config} onChange={onChange} onNotice={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Redo page change' }));
+    expect((onChange.mock.calls[3][0] as LayoutRoot).children.map(node => node.id)).toEqual(['first1']);
   });
 
   it('keeps an unknown element visible and removable instead of crashing', () => {

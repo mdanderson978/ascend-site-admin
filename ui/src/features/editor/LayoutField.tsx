@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AdminConfig,
   ContentValue,
@@ -12,6 +12,8 @@ import type {
 } from '../../api/types';
 import { MediaPicker } from './MediaFields';
 import { previewForPath } from '../../lib/content';
+
+const RichTextEditor = lazy(() => import('./RichTextEditor').then(module => ({ default: module.RichTextEditor })));
 
 const EMPTY_LIBRARY: ElementLibrary = {
   schema: 1,
@@ -130,8 +132,10 @@ function ElementControl({ name, field, value, config, onChange, onNotice }: {
   let control;
   if (field.type === 'boolean') {
     control = <label className="toggle"><input aria-label={field.label} type="checkbox" checked={Boolean(value)} onChange={event => onChange(event.target.checked)} /><span aria-hidden="true" /><strong>{value ? 'On' : 'Off'}</strong></label>;
-  } else if (field.type === 'text' || field.type === 'richtext') {
-    control = <textarea aria-label={field.label} rows={field.type === 'richtext' ? 10 : 4} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} />;
+  } else if (field.type === 'text') {
+    control = <textarea aria-label={field.label} rows={4} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} />;
+  } else if (field.type === 'richtext') {
+    control = <Suspense fallback={<div className="rich-text-editor is-loading">Preparing the editor…</div>}><RichTextEditor label={field.label} headings={field.headings} value={typeof value === 'string' ? value : ''} onChange={onChange} /></Suspense>;
   } else if (field.type === 'image') {
     const src = typeof value === 'string' ? value : '';
     control = <div className="layout-image-field">
@@ -176,6 +180,9 @@ export function LayoutField({ value, config, onChange, onNotice }: {
     : { schema: library.schema, children: [] };
   const [selected, setSelected] = useState<string | null>(layout.children[0]?.id || null);
   const [activeTab, setActiveTab] = useState('Content');
+  const undoStack = useRef<LayoutRoot[]>([]);
+  const redoStack = useRef<LayoutRoot[]>([]);
+  const [, refreshHistory] = useState(0);
   const selectedNode = selected ? findNode(layout.children, selected) : undefined;
   const selectedDef = selectedNode ? definitions.get(selectedNode.type) : undefined;
 
@@ -184,7 +191,27 @@ export function LayoutField({ value, config, onChange, onNotice }: {
     setActiveTab(first);
   }, [selected, selectedDef]);
 
-  const commit = (children: LayoutNode[]) => onChange({ schema: library.schema, children });
+  const commitLayout = (next: LayoutRoot, remember = true) => {
+    if (remember) {
+      undoStack.current.push(structuredClone(layout));
+      redoStack.current = [];
+    }
+    onChange(next);
+    refreshHistory(version => version + 1);
+  };
+  const commit = (children: LayoutNode[]) => commitLayout({ schema: library.schema, children });
+  const undo = () => {
+    const previous = undoStack.current.pop();
+    if (!previous) return;
+    redoStack.current.push(structuredClone(layout));
+    commitLayout(previous, false);
+  };
+  const redo = () => {
+    const next = redoStack.current.pop();
+    if (!next) return;
+    undoStack.current.push(structuredClone(layout));
+    commitLayout(next, false);
+  };
   const add = (parentId: string | null, type: string) => {
     const def = definitions.get(type);
     if (!def) return;
@@ -208,7 +235,7 @@ export function LayoutField({ value, config, onChange, onNotice }: {
 
   return <div className="layout-field">
     <aside className="layout-field__outline" aria-label="Page outline">
-      <header><div><strong>Page outline</strong><span>{layout.children.length ? 'Select a block to edit it' : 'Start with a section or article'}</span></div></header>
+      <header><div><strong>Page outline</strong><span>{layout.children.length ? 'Select a block to edit it' : 'Start with a section or article'}</span></div><div className="layout-history"><button type="button" disabled={!undoStack.current.length} onClick={undo} aria-label="Undo page change">↶</button><button type="button" disabled={!redoStack.current.length} onClick={redo} aria-label="Redo page change">↷</button></div></header>
       {layout.children.length
         ? <Outline nodes={layout.children} definitions={definitions} selected={selected} onSelect={setSelected} onMove={(id, direction) => commit(moveNode(layout.children, id, direction))} onRemove={remove} />
         : <p className="empty-small">This page has no builder content yet.</p>}

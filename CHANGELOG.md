@@ -15,10 +15,18 @@
 - Builder text remains available to the existing Find anything search.
   Unknown site-specific or newer elements remain visible and removable but
   are never silently rewritten or discarded.
+- Rich-text element fields now use a constrained Tiptap writing surface with
+  paragraphs, H2/H3, bold, italic, links and lists. Word/Google Docs paste is
+  normalized by that schema, then checked again by the engine sanitizer on
+  save. Both the writing surface and the whole page tree have undo/redo.
+- Unsaved page edits are copied to local browser storage as they happen and
+  recovered after an accidental close or crash. A draft is discarded if the
+  saved page changed in the meantime, so recovery cannot overwrite newer
+  work from another editor; Save Draft clears it.
 
 This is the foundation of Phase 2, not the finished article editor. The
-Tiptap writing surface, undo/redo, local autosave and the remaining
-pilot-driven elements are still to come.
+component-block `/` menu, remaining form polish and pilot-driven elements are
+still to come.
 
 ## 2.20.0 - 2026-11-07
 
