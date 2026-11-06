@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { AdminConfig, ContentData, ShortcodeEntry, ShortcodeField, UploadImage } from '../../api/types';
+import type { AdminConfig, ChatGptRecovery, ContentData, ShortcodeEntry, ShortcodeField, UploadImage } from '../../api/types';
+import { api } from '../../api/client';
 import { Dialog } from '../../components/Dialog';
 import { MediaPicker, useImageUpload } from './MediaFields';
 import { previewForPath } from '../../lib/content';
@@ -97,6 +98,8 @@ export function MarkdownEditor({ value, onChange, config, pageKey, data, onNotic
   const [preview, setPreview] = useState(false);
   const [dialogEntry, setDialogEntry] = useState<ShortcodeEntry | null>(null);
   const [chatGptImportOpen, setChatGptImportOpen] = useState(false);
+  const [chatGptRecovery, setChatGptRecovery] = useState<ChatGptRecovery | null>(null);
+  const [recoveringChatGpt, setRecoveringChatGpt] = useState(false);
   const [photoMode, setPhotoMode] = useState<'plain' | 'linked' | null>(null);
   const [pickedPhoto, setPickedPhoto] = useState<UploadImage | null>(null);
   const [photoAlt, setPhotoAlt] = useState(''); const [photoTitle, setPhotoTitle] = useState(''); const [photoLink, setPhotoLink] = useState('');
@@ -106,6 +109,15 @@ export function MarkdownEditor({ value, onChange, config, pageKey, data, onNotic
   // dropping never skips the required alt text, it just skips picking from
   // the toolbar first.
   const { upload: uploadDropped } = useImageUpload('gallery', config.imageSizes.gallery, onNotice, file => { setPickedPhoto(file); setPhotoMode('plain'); });
+  useEffect(() => {
+    let current = true;
+    setChatGptRecovery(null);
+    if (!config.richHtmlImport || pageKey.endsWith('/new')) return () => { current = false; };
+    api.chatGptRecovery(pageKey)
+      .then(response => { if (current) setChatGptRecovery(response.recovery); })
+      .catch(() => { /* Recovery controls are optional; importing still works if no record exists. */ });
+    return () => { current = false; };
+  }, [config.richHtmlImport, pageKey]);
   const ids = config.shortcodes?.include || DEFAULT_SHORTCODES;
   const shortcodes = [...ids.flatMap(id => BUILTINS[id] ? [BUILTINS[id]] : []), ...(config.shortcodes?.custom || [])];
   const replaceSelection = (before: string, after = '', placeholder = 'text') => {
@@ -129,6 +141,27 @@ export function MarkdownEditor({ value, onChange, config, pageKey, data, onNotic
     insertBlock(photoMode === 'linked' ? `[${image}](${photoLink.trim()})` : image);
     setPickedPhoto(null); setPhotoMode(null); setPhotoAlt(''); setPhotoTitle(''); setPhotoLink(''); onNotice('Photo added to the page.', 'success');
   };
+  const undoChatGptImport = async () => {
+    if (!chatGptRecovery?.canUndo || recoveringChatGpt) return;
+    setRecoveringChatGpt(true);
+    try {
+      const result = await api.undoChatGptImport(chatGptRecovery.targetKey, chatGptRecovery.id);
+      onChange(result.body);
+      setChatGptRecovery(result.recovery);
+      onNotice('ChatGPT import undone. Review the restored page, then save the draft.', 'success');
+    } catch (error) { onNotice((error as Error).message, 'error'); }
+    finally { setRecoveringChatGpt(false); }
+  };
+  const copyOriginalChatGptPaste = async () => {
+    if (!chatGptRecovery?.hasOriginalPaste || recoveringChatGpt) return;
+    setRecoveringChatGpt(true);
+    try {
+      const result = await api.originalChatGptPaste(chatGptRecovery.targetKey, chatGptRecovery.id);
+      await navigator.clipboard.writeText(result.source);
+      onNotice('Original ChatGPT paste copied exactly.', 'success');
+    } catch (error) { onNotice((error as Error).message, 'error'); }
+    finally { setRecoveringChatGpt(false); }
+  };
   return <div className="markdown-editor">
     <div className="markdown-toolbar" role="toolbar" aria-label="Markdown formatting">
       <button onClick={() => replaceSelection('**', '**', 'bold text')} title="Bold"><strong>B</strong></button>
@@ -139,6 +172,8 @@ export function MarkdownEditor({ value, onChange, config, pageKey, data, onNotic
       <span className="toolbar-separator" />
       {shortcodes.map(entry => <button key={entry.id} onClick={() => openShortcode(entry)} title={entry.tooltip || entry.label}><span aria-hidden="true">{entry.icon}</span> {entry.label}</button>)}
       {config.richHtmlImport && <button className="chatgpt-assets-button" onClick={() => setChatGptImportOpen(true)} title="Paste a complete ChatGPT page and sort its assets automatically">Paste ChatGPT HTML</button>}
+      {chatGptRecovery?.canUndo && <button onClick={undoChatGptImport} disabled={recoveringChatGpt} title="Restore the page content and assets from immediately before the last ChatGPT import">Undo ChatGPT import</button>}
+      {chatGptRecovery?.hasOriginalPaste && <button onClick={copyOriginalChatGptPaste} disabled={recoveringChatGpt} title="Copy the exact unprocessed text supplied to the last ChatGPT import">Copy original paste</button>}
       <button className={`preview-toggle ${preview ? 'active' : ''}`} onClick={() => setPreview(current => !current)}>{preview ? 'Edit' : 'Preview'}</button>
     </div>
     {preview ? <div className="markdown-preview"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({ src, ...props }) => <img {...props} src={previewForPath(src || '')} /> }}>{value}</ReactMarkdown></div> : <textarea
@@ -157,7 +192,7 @@ export function MarkdownEditor({ value, onChange, config, pageKey, data, onNotic
       }}
     />}
     <ShortcodeDialog entry={dialogEntry} open={Boolean(dialogEntry)} onClose={() => setDialogEntry(null)} onInsert={text => { insertBlock(text); onNotice('Advanced content added.', 'success'); }} />
-    <ChatGptHtmlImport open={chatGptImportOpen} pageKey={pageKey} data={data} onClose={() => setChatGptImportOpen(false)} onApply={result => onChange(result.body)} onNotice={onNotice} />
+    <ChatGptHtmlImport open={chatGptImportOpen} pageKey={pageKey} data={data} previousBody={value} onClose={() => setChatGptImportOpen(false)} onApply={result => onChange(result.body)} onRecovery={setChatGptRecovery} onNotice={onNotice} />
     <MediaPicker open={Boolean(photoMode) && !pickedPhoto} imageType="gallery" preset={config.imageSizes.gallery} onClose={() => setPhotoMode(null)} onPick={setPickedPhoto} onNotice={onNotice} />
     <Dialog open={Boolean(pickedPhoto)} title={photoMode === 'linked' ? 'Describe and link this photo' : 'Describe this photo'} onClose={() => { setPickedPhoto(null); setPhotoMode(null); }} actions={<><button className="button button--quiet" onClick={() => { setPickedPhoto(null); setPhotoMode(null); }}>Cancel</button><button className="button button--primary" disabled={!photoAlt.trim() || (photoMode === 'linked' && !photoLink.trim())} onClick={insertPhoto}>Add to page</button></>}>
       {pickedPhoto && <div className="photo-details"><img src={pickedPhoto.preview} alt="" /><label><span>Description <em>required</em></span><input autoFocus value={photoAlt} onChange={event => setPhotoAlt(event.target.value)} placeholder={config.altPlaceholder} /></label><label><span>Tooltip <small>optional</small></span><input value={photoTitle} onChange={event => setPhotoTitle(event.target.value)} /></label>{photoMode === 'linked' && <label><span>Link destination <em>required</em></span><input value={photoLink} onChange={event => setPhotoLink(event.target.value)} placeholder="/page or https://…" /></label>}</div>}

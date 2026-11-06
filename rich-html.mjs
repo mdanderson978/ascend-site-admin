@@ -206,23 +206,69 @@ function ownSiteHosts(siteUrl) {
 function normalizeOwnHostUrls(value, siteUrl) {
   const hosts = ownSiteHosts(siteUrl);
   if (!hosts.size) return value;
-  return value.replace(/https?:\/\/[^\s"'`<>)]+/gi, full => {
+  const normalizeSegment = segment => segment.replace(/https?:\/\/[^\s"'`<>)]+/gi, full => {
     try {
       const url = new URL(full);
       if (!hosts.has(url.host.toLowerCase())) return full;
+      if (!url.pathname.startsWith('/content-assets/') && !url.pathname.startsWith('/documents/')) return full;
       return `${url.pathname}${url.search}${url.hash}`;
     } catch {
       return full;
     }
   });
+  // Structured data is an exact external contract. Even a site-owned asset
+  // URL inside it must stay byte-for-byte as ChatGPT supplied it.
+  const structuredData = /(<script\b[^>]*\btype="application\/ld\+json"[^>]*>[\s\S]*?<\/script>)/gi;
+  return value.split(structuredData).map(part => /^<script\b/i.test(part) && /\btype="application\/ld\+json"/i.test(part) ? part : normalizeSegment(part)).join('');
+}
+
+const ASSET_FILE_EXTENSION = /\.(?:avif|css|gif|ico|jpe?g|js|json|pdf|png|svg|webp|woff2?|ttf|otf|mp4|webm|mp3|wav)$/i;
+
+function normalizeHtmlRelativeAssetUrls(html, publicBase) {
+  let repaired = 0;
+  function normalize(url) {
+    const clean = url.split(/[?#]/, 1)[0];
+    if (/^(?:\.\/)?images\//i.test(clean)) {
+      repaired += 1;
+      return `${publicBase}/${url.replace(/^\.\//, '')}`;
+    }
+    if (!/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(url) && ASSET_FILE_EXTENSION.test(clean)) {
+      throw new Error(`This paste uses the relative file URL ${url}. Upload the file first and give ChatGPT the exact path shown by Ascend Site Admin.`);
+    }
+    return url;
+  }
+
+  const normalized = html.replace(/\b(src|href|poster)="([^"]*)"/gi, (full, name, url) => `${name}="${normalize(url)}"`);
+  return {
+    html: normalized.replace(/\bsrcset="([^"]*)"/gi, (full, value) => {
+      const candidates = value.split(',').map(candidate => {
+        const parts = candidate.trim().split(/\s+/);
+        parts[0] = normalize(parts[0]);
+        return parts.join(' ');
+      });
+      return `srcset="${candidates.join(', ')}"`;
+    }),
+    repaired,
+  };
+}
+
+function cleanLocalReference(reference) {
+  return reference.replace(/[;,]+$/, '').split(/[?#]/, 1)[0];
 }
 
 function collectLocalAssetReferences(values) {
   const references = new Set();
-  const pattern = /\/(?:content-assets|documents)\/[^\s"'`<>)]+/gi;
+  // A local root-relative URL starts with one slash. The lookbehind avoids
+  // treating the second slash in https://cdn.example/file.js as local.
+  const pattern = /(?<![:/])\/(?!\/)[^\s"'`<>)]+/g;
   for (const value of values) {
-    for (const match of value.matchAll(pattern)) {
-      references.add(match[0].replace(/[;,]+$/, ''));
+    const withoutExternalUrls = value.replace(/(?:https?:)?\/\/[^\s"'`<>)]+/gi, '');
+    for (const match of withoutExternalUrls.matchAll(pattern)) {
+      const reference = match[0].replace(/[;,}\]]+$/, '');
+      const clean = cleanLocalReference(reference);
+      if (clean.startsWith('/_astro/') || clean.startsWith('/content-assets/') || clean.startsWith('/documents/') || ASSET_FILE_EXTENSION.test(clean)) {
+        references.add(reference);
+      }
     }
   }
   return [...references];
@@ -236,25 +282,18 @@ async function repairPageImageReferences(values, { outputDir, publicBase, planne
   catch (error) { if (error.code !== 'ENOENT') throw error; }
 
   const replacements = [];
-  const missing = [];
   for (const reference of references) {
-    const cleanPath = reference.split(/[?#]/, 1)[0];
+    const cleanPath = cleanLocalReference(reference);
     if (!cleanPath.startsWith(imagePrefix)) continue;
-    const name = decodeURIComponent(cleanPath.slice(imagePrefix.length));
+    let name;
+    try { name = decodeURIComponent(cleanPath.slice(imagePrefix.length)); }
+    catch { throw new Error(`This paste contains an invalid image URL: ${cleanPath}`); }
     if (!name || name.includes('/')) continue;
     if (plannedImages.has(name) || names.includes(name)) continue;
     const candidates = names.filter(candidate => new RegExp(`^\\d{13}-${escapeRegExp(name)}$`).test(candidate));
-    if (candidates.length === 1) {
-      replacements.push([cleanPath, `${imagePrefix}${candidates[0]}`]);
-    } else {
-      missing.push(cleanPath);
-    }
+    if (candidates.length === 1) replacements.push([cleanPath, `${imagePrefix}${candidates[0]}`]);
   }
-  return {
-    values: values.map(value => replaceEvery(value, replacements)),
-    repaired: replacements.length,
-    missing,
-  };
+  return { values: values.map(value => replaceEvery(value, replacements)), repaired: replacements.length };
 }
 
 function escapeRegExp(value) {
@@ -271,29 +310,119 @@ function assertValidJavaScript(js) {
   }
 }
 
-// A slow browser download/preview reading one of these files can hold a
-// Windows sharing lock on it for a moment (antivirus scanning it, Explorer
-// generating a thumbnail, OneDrive syncing it). Real locks like that clear
-// within milliseconds, so a short retry avoids failing the whole save over a
-// purely transient collision. If it's still locked after that, skip it
-// rather than crashing - it becomes an orphaned file (same tradeoff
-// pruneOrphanUploads makes elsewhere in this engine), not a broken save.
-async function removeStaleAssetFile(filePath, attempts = 3, delayMs = 150) {
-  for (let attempt = 1; attempt <= attempts; attempt++) {
+function isInside(parent, candidate) {
+  const relative = path.relative(parent, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function assertLocalAssetsExist(values, { outputDir, publicDir, publicBase, plannedPaths }) {
+  const references = collectLocalAssetReferences(values);
+  const missing = [];
+  for (const reference of references) {
+    const clean = cleanLocalReference(reference);
+    if (clean.startsWith('/_astro/')) {
+      throw new Error(`This paste contains the build-generated URL ${clean}. Ask ChatGPT to use an uploaded image or document URL instead; /_astro/ files change on every build.`);
+    }
+    if (plannedPaths.has(clean)) continue;
+
+    let decoded;
+    try { decoded = decodeURIComponent(clean); }
+    catch { throw new Error(`This paste contains an invalid local asset URL: ${clean}`); }
+
+    let filePath = null;
+    if (decoded === publicBase || decoded.startsWith(`${publicBase}/`)) {
+      filePath = path.resolve(outputDir, `.${decoded.slice(publicBase.length)}`);
+      if (!isInside(outputDir, filePath)) throw new Error(`This paste contains an unsafe local asset URL: ${clean}`);
+    } else if (publicDir) {
+      filePath = path.resolve(publicDir, `.${decoded}`);
+      if (!isInside(publicDir, filePath)) throw new Error(`This paste contains an unsafe local asset URL: ${clean}`);
+    }
+    if (!filePath) continue;
     try {
-      await fsp.rm(filePath, { force: true });
-      return;
+      if (!(await fsp.stat(filePath)).isFile()) missing.push(clean);
     } catch (error) {
-      if (attempt === attempts) {
-        console.error(`  Could not remove ${filePath} (still in use) - leaving it in place: ${error.message}`);
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      if (error.code === 'ENOENT') missing.push(clean);
+      else throw error;
+    }
+  }
+  if (missing.length) {
+    throw new Error(`This paste refers to files that are not available on the site: ${[...new Set(missing)].join(', ')}. Upload them first, copy their exact paths into ChatGPT, and paste the corrected page again.`);
+  }
+  return references.length;
+}
+
+const LOCK_ERROR_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const FILE_IN_USE_MESSAGE = 'A file for this page is in use. Close any image previews and try the import again.';
+
+async function renameDirectoryWithRetry(from, to, attempts = 6) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try { await fsp.rename(from, to); return; }
+    catch (error) {
+      if (!LOCK_ERROR_CODES.has(error.code)) throw error;
+      if (attempt === attempts - 1) throw new Error(FILE_IN_USE_MESSAGE, { cause: error });
+      await new Promise(resolve => setTimeout(resolve, Math.min(100 * (2 ** attempt), 800)));
     }
   }
 }
 
-export async function sortChatGptHtml({ source, outputDir, publicBase, siteUrl = '' }) {
+async function replaceAssetDirectory({ outputDir, stagingDir, html, css, js, convertedImages, publicBase }) {
+  const transactionParent = stagingDir || path.join(path.dirname(outputDir), '.chatgpt-import-staging');
+  await fsp.mkdir(transactionParent, { recursive: true });
+  const transactionDir = await fsp.mkdtemp(path.join(transactionParent, 'chatgpt-'));
+  const stagedDir = path.join(transactionDir, 'next');
+  const backupDir = path.join(transactionDir, 'previous');
+  let hadExisting = false;
+
+  try {
+    try {
+      await fsp.cp(outputDir, stagedDir, { recursive: true, errorOnExist: true });
+      hadExisting = true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      await fsp.mkdir(stagedDir, { recursive: true });
+    }
+
+    for (const name of await fsp.readdir(stagedDir)) {
+      if (/^page-[a-f0-9]+\.(?:css|js)$/i.test(name)) await fsp.rm(path.join(stagedDir, name));
+    }
+
+    const stillUsed = [html, css, js].join('\n');
+    const imageDir = path.join(stagedDir, 'images');
+    try {
+      for (const name of await fsp.readdir(imageDir)) {
+        if (/^image-[a-f0-9]+\.webp$/i.test(name) && !stillUsed.includes(`${publicBase}/images/${name}`)) {
+          await fsp.rm(path.join(imageDir, name));
+        }
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+
+    if (convertedImages.length) await fsp.mkdir(imageDir, { recursive: true });
+    for (const image of convertedImages) await fsp.writeFile(path.join(imageDir, image.filename), image.webP);
+
+    const styleName = css ? `page-${hash(css)}.css` : '';
+    const scriptName = js ? `page-${hash(js)}.js` : '';
+    if (css) await fsp.writeFile(path.join(stagedDir, styleName), css + '\n', 'utf8');
+    if (js) await fsp.writeFile(path.join(stagedDir, scriptName), js, 'utf8');
+
+    await fsp.mkdir(path.dirname(outputDir), { recursive: true });
+    if (hadExisting) await renameDirectoryWithRetry(outputDir, backupDir);
+    try {
+      await renameDirectoryWithRetry(stagedDir, outputDir);
+    } catch (error) {
+      if (hadExisting) await renameDirectoryWithRetry(backupDir, outputDir);
+      throw error;
+    }
+    return { styleName, scriptName };
+  } finally {
+    await fsp.rm(transactionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(error => {
+      console.warn(`Could not clean up ChatGPT import staging files: ${error.message}`);
+    });
+  }
+}
+
+export async function sortChatGptHtml({ source, outputDir, publicBase, publicDir = '', siteUrl = '', stagingDir = '' }) {
   if (typeof source !== 'string' || !source.trim()) throw new Error('Paste the HTML from ChatGPT first.');
   if (Buffer.byteLength(source) > MAX_IMPORT_BYTES) throw new Error('That ChatGPT paste is over 15 MB. Split it into smaller sections and try again.');
 
@@ -312,7 +441,10 @@ export async function sortChatGptHtml({ source, outputDir, publicBase, siteUrl =
     if (!bytes.length || bytes.length > 25 * 1024 * 1024) throw new Error('One embedded image is empty or over 25 MB.');
     const filename = `image-${hash(bytes)}.webp`;
     const publicPath = `${publicBase}/images/${filename}`;
-    convertedImages.push({ filename, bytes, publicPath });
+    let webP;
+    try { webP = await sharp(bytes).webp({ quality: 82 }).toBuffer(); }
+    catch { throw new Error('One embedded image is invalid and could not be imported. Ask ChatGPT to remove that image, or upload the original image through Page images first.'); }
+    convertedImages.push({ filename, webP, publicPath });
     replacements.push([dataUrl, publicPath]);
   }
   report.images = convertedImages.length;
@@ -322,48 +454,24 @@ export async function sortChatGptHtml({ source, outputDir, publicBase, siteUrl =
     extracted.cssParts.filter(Boolean).join('\n\n').trim(),
     [...extracted.scriptParts, ...extracted.eventScripts].filter(Boolean).join('\n\n').trim(),
   ].map(value => normalizeOwnHostUrls(replaceEvery(value, replacements), siteUrl));
+  const relativeHtml = normalizeHtmlRelativeAssetUrls(normalized[0], publicBase);
+  normalized[0] = relativeHtml.html;
   const repaired = await repairPageImageReferences(normalized, {
     outputDir,
     publicBase,
     plannedImages: new Set(convertedImages.map(image => image.filename)),
   });
   const [html, css, rawScripts] = repaired.values;
-  report.localAssets = collectLocalAssetReferences(repaired.values).length;
-  report.repairedImages = repaired.repaired;
+  report.repairedImages = repaired.repaired + relativeHtml.repaired;
   assertValidJavaScript(rawScripts);
-
-  await fsp.mkdir(outputDir, { recursive: true });
-  for (const name of await fsp.readdir(outputDir)) {
-    if (/^page-[a-f0-9]+\.(?:css|js)$/i.test(name)) await removeStaleAssetFile(path.join(outputDir, name));
-  }
-  // Images from an earlier import are only stale if the new paste no longer
-  // uses them. A paste often links an existing image by its hosted path
-  // (ChatGPT was handed the current page) instead of re-embedding it as a
-  // data: URL, so deleting every image-*.webp here broke the page.
-  const stillUsed = [html, css, rawScripts].join('\n');
-  const existingImageDir = path.join(outputDir, 'images');
-  try {
-    for (const name of await fsp.readdir(existingImageDir)) {
-      if (!/^image-[a-f0-9]+\.webp$/i.test(name)) continue;
-      if (stillUsed.includes(`${publicBase}/images/${name}`)) continue;
-      await removeStaleAssetFile(path.join(existingImageDir, name));
-    }
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
-  if (convertedImages.length) {
-    const imageDir = path.join(outputDir, 'images');
-    await fsp.mkdir(imageDir, { recursive: true });
-    for (const image of convertedImages) {
-      await sharp(image.bytes).webp({ quality: 82 }).toFile(path.join(imageDir, image.filename));
-    }
-  }
-
   const js = rawScripts ? `(async () => {\n${rawScripts}\n})();\n` : '';
   const styleName = css ? `page-${hash(css)}.css` : '';
   const scriptName = js ? `page-${hash(js)}.js` : '';
-  if (css) await fsp.writeFile(path.join(outputDir, styleName), css + '\n', 'utf8');
-  if (js) await fsp.writeFile(path.join(outputDir, scriptName), js, 'utf8');
+  const plannedPaths = new Set(convertedImages.map(image => image.publicPath));
+  if (styleName) plannedPaths.add(`${publicBase}/${styleName}`);
+  if (scriptName) plannedPaths.add(`${publicBase}/${scriptName}`);
+  report.localAssets = await assertLocalAssetsExist([html, css, rawScripts], { outputDir, publicDir, publicBase, plannedPaths });
+  await replaceAssetDirectory({ outputDir, stagingDir, html, css, js, convertedImages, publicBase });
 
   return {
     body: html.trim() + '\n',
@@ -375,8 +483,6 @@ export async function sortChatGptHtml({ source, outputDir, publicBase, siteUrl =
       images: convertedImages.map(image => image.publicPath),
     },
     report,
-    warnings: repaired.missing.length
-      ? [`These images aren't uploaded yet: ${repaired.missing.join(', ')}`]
-      : [],
+    warnings: [],
   };
 }
