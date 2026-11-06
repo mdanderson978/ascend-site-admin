@@ -130,3 +130,99 @@ test('a script using only atob() or only Blob/createObjectURL alone (not both) i
   const result = await sortChatGptHtml({ source, outputDir: root, publicBase: '/content-assets/information/example' });
   assert.match(result.body, /id="copy"/);
 });
+
+test('an earlier imported image the new paste still links by path is kept; unused ones are removed', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const publicBase = '/content-assets/services/example';
+  fs.mkdirSync(path.join(root, 'images'));
+  fs.writeFileSync(path.join(root, 'images', 'image-aaaa11112222.webp'), 'linked-in-html');
+  fs.writeFileSync(path.join(root, 'images', 'image-bbbb33334444.webp'), 'linked-in-css');
+  fs.writeFileSync(path.join(root, 'images', 'image-cccc55556666.webp'), 'no-longer-used');
+  const source = `<style>.hero { background: url("${publicBase}/images/image-bbbb33334444.webp"); }</style>
+    <section class="hero"><img src="${publicBase}/images/image-aaaa11112222.webp" alt="Pool"></section>`;
+
+  await sortChatGptHtml({ source, outputDir: root, publicBase });
+
+  const imageFiles = fs.readdirSync(path.join(root, 'images')).sort();
+  assert.deepEqual(imageFiles, ['image-aaaa11112222.webp', 'image-bbbb33334444.webp']);
+});
+
+test('local assets are collected, own-host URLs are localized, and uploaded page image names are repaired', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-assets-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const publicBase = '/content-assets/services/example';
+  fs.mkdirSync(path.join(root, 'images'));
+  fs.writeFileSync(path.join(root, 'images', '1700000000000-hero.webp'), 'uploaded');
+  const source = `<img src="https://www.example.test${publicBase}/images/hero.webp" alt="Hero">
+    <img src="${publicBase}/images/not-uploaded.webp" alt="Missing">
+    <style>.guide { background: url('/documents/guide.pdf'); }</style>
+    <script>window.assetPath = "/content-assets/shared/icon.svg";</script>`;
+
+  const result = await sortChatGptHtml({ source, outputDir: root, publicBase, siteUrl: 'https://example.test' });
+
+  assert.match(result.body, new RegExp(`${publicBase}/images/1700000000000-hero\\.webp`));
+  assert.doesNotMatch(result.body, /https:\/\/www\.example\.test/);
+  assert.equal(result.report.localAssets, 4);
+  assert.equal(result.report.repairedImages, 1);
+  assert.deepEqual(result.warnings, [`These images aren't uploaded yet: ${publicBase}/images/not-uploaded.webp`]);
+  const css = fs.readFileSync(path.join(root, result.assets.style.split('/').at(-1)), 'utf8');
+  const js = fs.readFileSync(path.join(root, result.assets.script.split('/').at(-1)), 'utf8');
+  assert.match(css, /\/documents\/guide\.pdf/);
+  assert.match(js, /\/content-assets\/shared\/icon\.svg/);
+});
+
+test('an embedded image being written by this import is not reported as missing', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-new-image-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const image = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#ffffff' } }).png().toBuffer();
+  const result = await sortChatGptHtml({
+    source: `<img src="data:image/png;base64,${image.toString('base64')}" alt="New">`,
+    outputDir: root,
+    publicBase: '/content-assets/pages/example',
+  });
+  assert.deepEqual(result.warnings, []);
+});
+
+test('combined page JavaScript is syntax checked before existing assets are changed', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-js-error-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  fs.writeFileSync(path.join(root, 'page-aaaaaaaaaaaa.js'), 'existing');
+
+  await assert.rejects(
+    sortChatGptHtml({
+      source: '<script>const duplicate = 1;</script><script>const duplicate = 2;</script>',
+      outputDir: root,
+      publicBase: '/content-assets/pages/example',
+    }),
+    /syntax error.*duplicate declarations/i,
+  );
+  assert.equal(fs.readFileSync(path.join(root, 'page-aaaaaaaaaaaa.js'), 'utf8'), 'existing');
+
+  await assert.rejects(
+    sortChatGptHtml({
+      source: '<script type="module">import thing from "./thing.js";</script>',
+      outputDir: root,
+      publicBase: '/content-assets/pages/example',
+    }),
+    /syntax error.*import statements/i,
+  );
+});
+
+test('JSON-LD stays in the page body and non-JavaScript script types are not executed', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rich-html-script-types-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }));
+  const source = `<script type="application/ld+json">{"@type":"Service","name":"Example"}</script>
+    <script type="text/template"><strong>{{ name }}</strong></script>
+    <script>document.body.dataset.ready = "yes";</script>`;
+
+  const result = await sortChatGptHtml({ source, outputDir: root, publicBase: '/content-assets/pages/example' });
+
+  assert.match(result.body, /<script type="application\/ld\+json">/);
+  assert.match(result.body, /"@type":"Service"/);
+  assert.doesNotMatch(result.body, /text\/template/);
+  assert.equal(result.report.skippedScripts, 1);
+  const js = fs.readFileSync(path.join(root, result.assets.script.split('/').at(-1)), 'utf8');
+  assert.match(js, /dataset\.ready/);
+  assert.doesNotMatch(js, /\{\{ name \}\}/);
+});

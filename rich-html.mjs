@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import fsp from 'fs/promises';
 import path from 'path';
-import { parse, serialize } from 'parse5';
+import vm from 'node:vm';
+import { parse, serialize, serializeOuter } from 'parse5';
 import sharp from 'sharp';
 
 const MAX_IMPORT_BYTES = 15 * 1024 * 1024;
@@ -59,6 +60,7 @@ function extractDocument(document, report) {
   const cssParts = [];
   const scriptParts = [];
   const eventScripts = [];
+  const structuredData = [];
   let title = '';
   let description = '';
 
@@ -98,7 +100,15 @@ function extractDocument(document, report) {
       if (tag === 'script') {
         const type = attribute(node, 'type')?.value.toLowerCase() || '';
         const src = attribute(node, 'src')?.value || '';
-        if (type !== 'application/ld+json') {
+        const isJavaScript = !type || /^(?:text|application)\/(?:java|ecma)script$/.test(type) || type === 'module';
+        if (type === 'application/ld+json') {
+          // Structured data is inert and belongs in the rendered document.
+          // Move it into the returned body even when parse5 placed it in head.
+          structuredData.push(serializeOuter(node));
+          children.splice(index, 1);
+          continue;
+        }
+        if (isJavaScript) {
           if (src) {
             scriptParts.push(`await new Promise((resolve, reject) => {\n  const script = document.createElement('script');\n  script.src = ${JSON.stringify(src)};\n  script.onload = resolve;\n  script.onerror = reject;\n  document.head.appendChild(script);\n});`);
             report.externalResources += 1;
@@ -106,6 +116,8 @@ function extractDocument(document, report) {
           const code = textContent(node).trim();
           if (code) scriptParts.push(code);
           report.scriptBlocks += 1;
+        } else {
+          report.skippedScripts += 1;
         }
         children.splice(index, 1);
         continue;
@@ -145,7 +157,7 @@ function extractDocument(document, report) {
 
   visit(document);
   const body = findElement(document, 'body');
-  return { html: serialize(body || document), title, description, cssParts, scriptParts, eventScripts };
+  return { html: [serialize(body || document), ...structuredData].filter(Boolean).join('\n'), title, description, cssParts, scriptParts, eventScripts };
 }
 
 // Throws if the paste tries to smuggle a real file in as inline data instead
@@ -180,6 +192,85 @@ function replaceEvery(value, replacements) {
   return value;
 }
 
+function ownSiteHosts(siteUrl) {
+  if (!siteUrl) return new Set();
+  try {
+    const host = new URL(siteUrl).host.toLowerCase();
+    const bare = host.replace(/^www\./, '');
+    return new Set([host, bare, `www.${bare}`]);
+  } catch {
+    return new Set();
+  }
+}
+
+function normalizeOwnHostUrls(value, siteUrl) {
+  const hosts = ownSiteHosts(siteUrl);
+  if (!hosts.size) return value;
+  return value.replace(/https?:\/\/[^\s"'`<>)]+/gi, full => {
+    try {
+      const url = new URL(full);
+      if (!hosts.has(url.host.toLowerCase())) return full;
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+      return full;
+    }
+  });
+}
+
+function collectLocalAssetReferences(values) {
+  const references = new Set();
+  const pattern = /\/(?:content-assets|documents)\/[^\s"'`<>)]+/gi;
+  for (const value of values) {
+    for (const match of value.matchAll(pattern)) {
+      references.add(match[0].replace(/[;,]+$/, ''));
+    }
+  }
+  return [...references];
+}
+
+async function repairPageImageReferences(values, { outputDir, publicBase, plannedImages }) {
+  const imagePrefix = `${publicBase}/images/`;
+  const references = collectLocalAssetReferences(values);
+  let names = [];
+  try { names = await fsp.readdir(path.join(outputDir, 'images')); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+
+  const replacements = [];
+  const missing = [];
+  for (const reference of references) {
+    const cleanPath = reference.split(/[?#]/, 1)[0];
+    if (!cleanPath.startsWith(imagePrefix)) continue;
+    const name = decodeURIComponent(cleanPath.slice(imagePrefix.length));
+    if (!name || name.includes('/')) continue;
+    if (plannedImages.has(name) || names.includes(name)) continue;
+    const candidates = names.filter(candidate => new RegExp(`^\\d{13}-${escapeRegExp(name)}$`).test(candidate));
+    if (candidates.length === 1) {
+      replacements.push([cleanPath, `${imagePrefix}${candidates[0]}`]);
+    } else {
+      missing.push(cleanPath);
+    }
+  }
+  return {
+    values: values.map(value => replaceEvery(value, replacements)),
+    repaired: replacements.length,
+    missing,
+  };
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertValidJavaScript(js) {
+  if (!js) return;
+  try {
+    new vm.Script(`(async () => {\n${js}\n})();\n`);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new Error(`The pasted page JavaScript has a syntax error and was not imported: ${error.message}. Ask ChatGPT to return one browser script without import statements or duplicate declarations.`);
+  }
+}
+
 // A slow browser download/preview reading one of these files can hold a
 // Windows sharing lock on it for a moment (antivirus scanning it, Explorer
 // generating a thumbnail, OneDrive syncing it). Real locks like that clear
@@ -202,11 +293,11 @@ async function removeStaleAssetFile(filePath, attempts = 3, delayMs = 150) {
   }
 }
 
-export async function sortChatGptHtml({ source, outputDir, publicBase }) {
+export async function sortChatGptHtml({ source, outputDir, publicBase, siteUrl = '' }) {
   if (typeof source !== 'string' || !source.trim()) throw new Error('Paste the HTML from ChatGPT first.');
   if (Buffer.byteLength(source) > MAX_IMPORT_BYTES) throw new Error('That ChatGPT paste is over 15 MB. Split it into smaller sections and try again.');
 
-  const report = { images: 0, styleBlocks: 0, inlineStyles: 0, scriptBlocks: 0, eventHandlers: 0, externalResources: 0 };
+  const report = { images: 0, styleBlocks: 0, inlineStyles: 0, scriptBlocks: 0, skippedScripts: 0, eventHandlers: 0, externalResources: 0, localAssets: 0, repairedImages: 0 };
   const extracted = extractDocument(parse(unwrapCodeFence(source)), report);
   const extractedValues = [extracted.html, ...extracted.cssParts, ...extracted.scriptParts, ...extracted.eventScripts];
   assertNoEmbeddedFileBlobs(extractedValues);
@@ -226,18 +317,36 @@ export async function sortChatGptHtml({ source, outputDir, publicBase }) {
   }
   report.images = convertedImages.length;
 
-  const html = replaceEvery(extracted.html, replacements);
-  const css = replaceEvery(extracted.cssParts.filter(Boolean).join('\n\n').trim(), replacements);
-  const rawScripts = replaceEvery([...extracted.scriptParts, ...extracted.eventScripts].filter(Boolean).join('\n\n').trim(), replacements);
+  const normalized = [
+    extracted.html,
+    extracted.cssParts.filter(Boolean).join('\n\n').trim(),
+    [...extracted.scriptParts, ...extracted.eventScripts].filter(Boolean).join('\n\n').trim(),
+  ].map(value => normalizeOwnHostUrls(replaceEvery(value, replacements), siteUrl));
+  const repaired = await repairPageImageReferences(normalized, {
+    outputDir,
+    publicBase,
+    plannedImages: new Set(convertedImages.map(image => image.filename)),
+  });
+  const [html, css, rawScripts] = repaired.values;
+  report.localAssets = collectLocalAssetReferences(repaired.values).length;
+  report.repairedImages = repaired.repaired;
+  assertValidJavaScript(rawScripts);
 
   await fsp.mkdir(outputDir, { recursive: true });
   for (const name of await fsp.readdir(outputDir)) {
     if (/^page-[a-f0-9]+\.(?:css|js)$/i.test(name)) await removeStaleAssetFile(path.join(outputDir, name));
   }
+  // Images from an earlier import are only stale if the new paste no longer
+  // uses them. A paste often links an existing image by its hosted path
+  // (ChatGPT was handed the current page) instead of re-embedding it as a
+  // data: URL, so deleting every image-*.webp here broke the page.
+  const stillUsed = [html, css, rawScripts].join('\n');
   const existingImageDir = path.join(outputDir, 'images');
   try {
     for (const name of await fsp.readdir(existingImageDir)) {
-      if (/^image-[a-f0-9]+\.webp$/i.test(name)) await removeStaleAssetFile(path.join(existingImageDir, name));
+      if (!/^image-[a-f0-9]+\.webp$/i.test(name)) continue;
+      if (stillUsed.includes(`${publicBase}/images/${name}`)) continue;
+      await removeStaleAssetFile(path.join(existingImageDir, name));
     }
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
@@ -266,5 +375,8 @@ export async function sortChatGptHtml({ source, outputDir, publicBase }) {
       images: convertedImages.map(image => image.publicPath),
     },
     report,
+    warnings: repaired.missing.length
+      ? [`These images aren't uploaded yet: ${repaired.missing.join(', ')}`]
+      : [],
   };
 }

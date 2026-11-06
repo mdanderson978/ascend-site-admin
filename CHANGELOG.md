@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.19.2 - 2026-11-07
+
+### Fix: importing pasted HTML no longer deletes images the page still uses
+
+Re-importing a page's pasted HTML deleted every image saved by earlier
+imports, then saved only the images embedded in the new paste. A paste
+that linked an existing image by its address (rather than embedding it
+again) lost that image, and the build then failed on a missing file.
+Earlier images are now removed only when the new paste's HTML, CSS and
+scripts no longer refer to them.
+
+The importer now checks local asset paths before replacing a page. Full
+URLs on the configured site host are converted to local root-relative
+paths. A missing page image is matched to its timestamp-prefixed uploaded
+file when there is exactly one match; otherwise the editor sees a warning
+listing the images still to upload. Combined page JavaScript is syntax
+checked before files are changed, and a bad paste is rejected with a clear
+editor-facing error. Non-JavaScript script types are no longer executed;
+JSON-LD is preserved unchanged in the page body.
+
 ## 2.19.1 - 2026-10-28
 
 ### New: photo sizes in the picker

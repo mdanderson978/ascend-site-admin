@@ -1678,11 +1678,18 @@ export function startAdmin(config) {
         if (!/^[a-z0-9][a-z0-9._-]*$/i.test(targetSlug)) { jsonResp(res, 400, { error: 'Invalid page name.' }); return; }
         const outputDir = path.join(CONTENT_ASSETS, collection, targetSlug);
         if (!isInside(CONTENT_ASSETS, outputDir)) { jsonResp(res, 400, { error: 'Invalid asset location.' }); return; }
-        const result = await sortChatGptHtml({
-          source: String(html || ''),
-          outputDir,
-          publicBase: `/content-assets/${collection}/${targetSlug}`,
-        });
+        let result;
+        try {
+          result = await sortChatGptHtml({
+            source: String(html || ''),
+            outputDir,
+            publicBase: `/content-assets/${collection}/${targetSlug}`,
+            siteUrl: config.siteUrl || '',
+          });
+        } catch (error) {
+          jsonResp(res, 400, { error: error.message });
+          return;
+        }
         jsonResp(res, 200, { ...result, targetSlug });
         return;
       }

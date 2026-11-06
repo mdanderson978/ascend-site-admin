@@ -156,7 +156,8 @@ export interface RichHtmlImportResult {
   description: string;
   targetSlug: string;
   assets: { style: string; script: string; images: string[] };
-  report: { images: number; styleBlocks: number; inlineStyles: number; scriptBlocks: number; eventHandlers: number; externalResources: number };
+  report: { images: number; styleBlocks: number; inlineStyles: number; scriptBlocks: number; skippedScripts: number; eventHandlers: number; externalResources: number; localAssets: number; repairedImages: number };
+  warnings: string[];
 }
 export interface HistoryVersion { sha: string; date: number; message: string }
 
