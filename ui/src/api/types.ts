@@ -32,7 +32,7 @@ export interface LinkValue { page?: string; url?: string; tel?: string; email?: 
 export interface LayoutNode { type: string; id: string; props?: Record<string, LayoutProp>; children?: LayoutNode[] }
 export interface LayoutRoot { schema: number; children: LayoutNode[] }
 
-export type ElementFieldType = 'string' | 'text' | 'richtext' | 'image' | 'link' | 'select' | 'token' | 'align' | 'heading-level' | 'boolean';
+export type ElementFieldType = 'string' | 'date' | 'text' | 'richtext' | 'image' | 'link' | 'select' | 'token' | 'align' | 'heading-level' | 'boolean';
 export interface ElementFieldConfig {
   type: ElementFieldType;
   label: string;

@@ -11,6 +11,7 @@ import { LAYOUT_SCHEMA, ROOT_TYPE } from './tree.mjs';
 
 export const FIELD_TYPES = new Set([
   'string', // single line of plain text
+  'date', // an ISO calendar date (YYYY-MM-DD)
   'text', // multi-line plain text
   'richtext', // schema-bound rich text (see sanitize.mjs); { headings: true } allows H2/H3
   'image', // an upload path; rendered through the core picture() helper

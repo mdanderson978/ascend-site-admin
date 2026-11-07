@@ -4,6 +4,7 @@
 
 import { createRegistry } from '../core/registry.mjs';
 import article from './article/element.mjs';
+import byline from './byline/element.mjs';
 import { button, buttons } from './buttons/element.mjs';
 import callout from './callout/element.mjs';
 import { faq, faqItem } from './faq/element.mjs';
@@ -11,7 +12,8 @@ import heading from './heading/element.mjs';
 import image from './image/element.mjs';
 import prose from './prose/element.mjs';
 import section from './section/element.mjs';
+import { step, steps } from './steps/element.mjs';
 
-export const builtinElements = [section, article, heading, prose, image, buttons, button, callout, faq, faqItem];
+export const builtinElements = [section, article, byline, heading, prose, image, buttons, button, callout, faq, faqItem, steps, step];
 
 export const defaultRegistry = createRegistry(builtinElements);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LayoutField } from './LayoutField';
 import type { AdminConfig, LayoutRoot } from '../../api/types';
@@ -17,7 +17,7 @@ const config: AdminConfig = {
       alignments: ['start', 'center'],
       headingLevels: ['h2', 'h3'],
     },
-    children: { layout: ['section', 'article'], section: ['heading'], article: ['heading'] },
+    children: { layout: ['section', 'article'], section: ['heading', 'prose', 'callout'], article: ['heading', 'prose', 'callout'] },
     elements: [
       {
         name: 'section', title: 'Section', group: 'Layout', container: true, allowedParents: ['layout'],
@@ -37,6 +37,14 @@ const config: AdminConfig = {
           level: { type: 'heading-level', label: 'Heading level' },
         },
         tabs: { Content: ['text'], Advanced: ['level'] },
+      },
+      {
+        name: 'prose', title: 'Text', group: 'Text', container: false, allowedParents: ['section', 'article'],
+        defaults: {}, fields: { html: { type: 'richtext', label: 'Text', headings: true } }, tabs: { Content: ['html'] },
+      },
+      {
+        name: 'callout', title: 'Callout', group: 'Text', container: false, allowedParents: ['section', 'article'],
+        defaults: { variant: 'note' }, fields: { text: { type: 'text', label: 'Message' }, reviewed: { type: 'date', label: 'Reviewed date' } }, tabs: { Content: ['text', 'reviewed'] },
       },
     ],
   },
@@ -94,5 +102,35 @@ describe('LayoutField', () => {
     render(<LayoutField value={{ schema: 1, children: [{ type: 'site_widget', id: 'custom' }] }} config={config} onChange={vi.fn()} onNotice={vi.fn()} />);
     expect(screen.getByText(/newer or site-specific element library/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove site_widget' })).toBeInTheDocument();
+  });
+
+  it('inserts a slash-menu component directly after the active prose node', async () => {
+    const onChange = vi.fn();
+    const layout: LayoutRoot = {
+      schema: 1,
+      children: [{ type: 'article', id: 'article', props: {}, children: [{ type: 'prose', id: 'prose1', props: { html: '' } }] }],
+    };
+    render(<LayoutField value={layout} config={config} onChange={onChange} onNotice={vi.fn()} />);
+    fireEvent.click(within(screen.getByLabelText('Page outline')).getByRole('button', { name: /^Text/ }));
+    const surface = await screen.findByLabelText('Text');
+    fireEvent.keyDown(surface, { key: '/' });
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    const changed = onChange.mock.calls[0][0] as LayoutRoot;
+    expect(changed.children[0].children?.map(node => node.type)).toEqual(['prose', 'callout']);
+    expect(changed.children[0].children?.[1].props).toEqual({ variant: 'note' });
+  });
+
+  it('uses the browser calendar control for registry date fields', () => {
+    const onChange = vi.fn();
+    const layout: LayoutRoot = {
+      schema: 1,
+      children: [{ type: 'article', id: 'article', props: {}, children: [{ type: 'callout', id: 'callout', props: { variant: 'note', reviewed: '2026-11-07' } }] }],
+    };
+    render(<LayoutField value={layout} config={config} onChange={onChange} onNotice={vi.fn()} />);
+    fireEvent.click(within(screen.getByLabelText('Page outline')).getByRole('button', { name: /^Callout/ }));
+    const input = screen.getByLabelText('Reviewed date');
+    expect(input).toHaveAttribute('type', 'date');
+    fireEvent.change(input, { target: { value: '2026-12-01' } });
+    expect((onChange.mock.calls[0][0] as LayoutRoot).children[0].children?.[0].props?.reviewed).toBe('2026-12-01');
   });
 });

@@ -59,4 +59,33 @@ describe('RichTextEditor', () => {
     expect(html).toContain('<p>Useful <strong>words</strong></p>');
     expect(html).not.toMatch(/class=|style=|iframe/i);
   });
+
+  it('opens the component menu with slash in a final empty paragraph and supports the keyboard', () => {
+    const onInsertBlock = vi.fn();
+    render(<RichTextEditor
+      label="Text"
+      value=""
+      slashItems={[
+        { type: 'callout', title: 'Callout', icon: '!' },
+        { type: 'faq', title: 'FAQ', icon: '?' },
+      ]}
+      onInsertBlock={onInsertBlock}
+      onChange={vi.fn()}
+    />);
+    const surface = screen.getByLabelText('Text');
+    fireEvent.keyDown(surface, { key: '/' });
+    expect(screen.getByRole('listbox', { name: 'Insert a component' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Callout/ })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(surface, { key: 'ArrowDown' });
+    expect(screen.getByRole('option', { name: /FAQ/ })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    expect(onInsertBlock).toHaveBeenCalledWith('faq');
+    expect(screen.queryByRole('listbox', { name: 'Insert a component' })).not.toBeInTheDocument();
+  });
+
+  it('does not open the component menu in the middle of existing prose', () => {
+    render(<RichTextEditor label="Text" value="<p>Existing words</p>" slashItems={[{ type: 'callout', title: 'Callout' }]} onInsertBlock={vi.fn()} onChange={vi.fn()} />);
+    fireEvent.keyDown(screen.getByLabelText('Text'), { key: '/' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
 });

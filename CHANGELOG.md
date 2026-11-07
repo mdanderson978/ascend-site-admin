@@ -23,10 +23,16 @@
   recovered after an accidental close or crash. A draft is discarded if the
   saved page changed in the meantime, so recovery cannot overwrite newer
   work from another editor; Save Draft clears it.
+- Typing `/` at the end of an article text block opens a keyboard-accessible
+  component menu and inserts the selected block immediately after the text.
+  Mid-paragraph slashes remain ordinary text.
+- New Byline and Steps components are defined in the shared element registry,
+  so their forms, nesting rules, ChatGPT guidance, validation, preview and
+  published HTML stay in sync. Byline includes an optional portrait, role and
+  reviewed date; Steps provides an accessible ordered process.
 
 This is the foundation of Phase 2, not the finished article editor. The
-component-block `/` menu, remaining form polish and pilot-driven elements are
-still to come.
+remaining form polish and pilot-driven elements are still to come.
 
 ## 2.20.0 - 2026-11-07
 

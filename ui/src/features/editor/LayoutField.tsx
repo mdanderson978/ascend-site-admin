@@ -12,6 +12,7 @@ import type {
 } from '../../api/types';
 import { MediaPicker } from './MediaFields';
 import { previewForPath } from '../../lib/content';
+import type { SlashItem } from './RichTextEditor';
 
 const RichTextEditor = lazy(() => import('./RichTextEditor').then(module => ({ default: module.RichTextEditor })));
 
@@ -60,6 +61,32 @@ function moveNode(nodes: LayoutNode[], id: string, direction: -1 | 1): LayoutNod
     return next;
   }
   return nodes.map(node => node.children?.length ? { ...node, children: moveNode(node.children, id, direction) } : node);
+}
+
+function parentOf(nodes: LayoutNode[], id: string, parentType = 'layout', parentId: string | null = null): { type: string; id: string | null } | undefined {
+  for (const node of nodes) {
+    if (node.id === id) return { type: parentType, id: parentId };
+    const nested = parentOf(node.children || [], id, node.type, node.id);
+    if (nested) return nested;
+  }
+}
+
+function insertAfterNode(nodes: LayoutNode[], id: string, inserted: LayoutNode): { nodes: LayoutNode[]; found: boolean } {
+  const index = nodes.findIndex(node => node.id === id);
+  if (index >= 0) {
+    const next = [...nodes];
+    next.splice(index + 1, 0, inserted);
+    return { nodes: next, found: true };
+  }
+  let found = false;
+  const next = nodes.map(node => {
+    if (found || !node.children?.length) return node;
+    const result = insertAfterNode(node.children, id, inserted);
+    if (!result.found) return node;
+    found = true;
+    return { ...node, children: result.nodes };
+  });
+  return { nodes: next, found };
 }
 
 function nodeSummary(node: LayoutNode, def?: ElementDefinition): string {
@@ -120,11 +147,13 @@ function LinkControl({ value, onChange }: { value: LayoutProp; onChange: (value:
   </div>;
 }
 
-function ElementControl({ name, field, value, config, onChange, onNotice }: {
+function ElementControl({ name, field, value, config, slashItems, onInsertBlock, onChange, onNotice }: {
   name: string;
   field: ElementFieldConfig;
   value: LayoutProp;
   config: AdminConfig;
+  slashItems?: SlashItem[];
+  onInsertBlock?: (type: string) => void;
   onChange: (value: LayoutProp) => void;
   onNotice: (message: string, kind?: 'success' | 'error' | 'info') => void;
 }) {
@@ -134,8 +163,10 @@ function ElementControl({ name, field, value, config, onChange, onNotice }: {
     control = <label className="toggle"><input aria-label={field.label} type="checkbox" checked={Boolean(value)} onChange={event => onChange(event.target.checked)} /><span aria-hidden="true" /><strong>{value ? 'On' : 'Off'}</strong></label>;
   } else if (field.type === 'text') {
     control = <textarea aria-label={field.label} rows={4} value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} />;
+  } else if (field.type === 'date') {
+    control = <input aria-label={field.label} type="date" value={typeof value === 'string' ? value : ''} onChange={event => onChange(event.target.value)} />;
   } else if (field.type === 'richtext') {
-    control = <Suspense fallback={<div className="rich-text-editor is-loading">Preparing the editor…</div>}><RichTextEditor label={field.label} headings={field.headings} value={typeof value === 'string' ? value : ''} onChange={onChange} /></Suspense>;
+    control = <Suspense fallback={<div className="rich-text-editor is-loading">Preparing the editor…</div>}><RichTextEditor label={field.label} headings={field.headings} value={typeof value === 'string' ? value : ''} slashItems={slashItems} onInsertBlock={onInsertBlock} onChange={onChange} /></Suspense>;
   } else if (field.type === 'image') {
     const src = typeof value === 'string' ? value : '';
     control = <div className="layout-image-field">
@@ -228,6 +259,24 @@ export function LayoutField({ value, config, onChange, onNotice }: {
     commit(removeNode(layout.children, id));
     if (selected === id) setSelected(null);
   };
+  const selectedParent = selectedNode ? parentOf(layout.children, selectedNode.id) : undefined;
+  const slashItems: SlashItem[] = selectedDef?.name === 'prose' && selectedParent
+    ? (library.children[selectedParent.type] || [])
+      .filter(type => type !== 'prose' && type !== 'heading')
+      .map(type => definitions.get(type))
+      .filter(Boolean)
+      .map(def => ({ type: def!.name, title: def!.title, icon: def!.icon }))
+    : [];
+  const insertSibling = (type: string) => {
+    if (!selectedNode) return;
+    const def = definitions.get(type);
+    if (!def || !selectedParent || !def.allowedParents.includes(selectedParent.type)) return;
+    const node: LayoutNode = { type, id: newId(), props: { ...def.defaults }, ...(def.container ? { children: [] } : {}) };
+    const result = insertAfterNode(layout.children, selectedNode.id, node);
+    if (!result.found) return;
+    commit(result.nodes);
+    setSelected(node.id);
+  };
   const parentType = selectedDef?.container ? selectedDef.name : 'layout';
   const parentId = selectedDef?.container ? selectedNode?.id || null : null;
   const allowed = (library.children[parentType] || []).map(type => definitions.get(type)).filter(Boolean) as ElementDefinition[];
@@ -250,7 +299,7 @@ export function LayoutField({ value, config, onChange, onNotice }: {
           {visibleFields.map(name => {
             const field = selectedDef.fields[name];
             if (!field || (field.enable && !selectedNode.props?.[field.enable])) return null;
-            return <ElementControl key={name} name={name} field={field} value={selectedNode.props?.[name]} config={config} onChange={next => updateProp(name, next)} onNotice={onNotice} />;
+            return <ElementControl key={name} name={name} field={field} value={selectedNode.props?.[name]} config={config} slashItems={slashItems} onInsertBlock={insertSibling} onChange={next => updateProp(name, next)} onNotice={onNotice} />;
           })}
         </div>
       </> : selectedNode ? <p className="field-hint field-hint--error">This block comes from a newer or site-specific element library. It has been kept unchanged.</p> : <div className="layout-field__welcome"><h3>Build this page</h3><p>Add a section for a designed page, or an article for a long guide.</p></div>}

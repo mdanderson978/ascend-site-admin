@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -21,14 +21,38 @@ function ToolbarButton({ active = false, disabled = false, label, onClick, child
   >{children}</button>;
 }
 
-export function RichTextEditor({ value, headings, label, onChange }: {
+export interface SlashItem { type: string; title: string; icon?: string }
+
+export function RichTextEditor({ value, headings, label, onChange, slashItems = [], onInsertBlock }: {
   value: string;
   headings?: boolean;
   label: string;
   onChange: (html: string) => void;
+  slashItems?: SlashItem[];
+  onInsertBlock?: (type: string) => void;
 }) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const insertRef = useRef(onInsertBlock);
+  insertRef.current = onInsertBlock;
+  const itemsRef = useRef(slashItems);
+  itemsRef.current = slashItems;
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const slashOpenRef = useRef(false);
+  const slashIndexRef = useRef(0);
+  const setMenu = (open: boolean, index = 0) => {
+    slashOpenRef.current = open;
+    slashIndexRef.current = index;
+    setSlashOpen(open);
+    setSlashIndex(index);
+  };
+  const chooseSlashItem = (index: number) => {
+    const item = itemsRef.current[index];
+    if (!item) return;
+    setMenu(false);
+    insertRef.current?.(item.type);
+  };
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -52,6 +76,34 @@ export function RichTextEditor({ value, headings, label, onChange }: {
     shouldRerenderOnTransaction: true,
     editorProps: {
       attributes: { class: 'rich-text-editor__surface', 'aria-label': label },
+      handleKeyDown: (view, event) => {
+        if (slashOpenRef.current) {
+          const count = itemsRef.current.length;
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            setMenu(true, (slashIndexRef.current + step + count) % count);
+            return true;
+          }
+          if (event.key === 'Enter') { event.preventDefault(); chooseSlashItem(slashIndexRef.current); return true; }
+          if (event.key === 'Escape') { event.preventDefault(); setMenu(false); return true; }
+          setMenu(false);
+        }
+        if (event.key !== '/' || !itemsRef.current.length || !insertRef.current) return false;
+        const { $from, empty } = view.state.selection;
+        // Components are siblings in the layout tree, not hidden inside rich
+        // text. Open the menu only from a new empty paragraph at the end, so
+        // the component's position is unambiguous and no prose is split/lost.
+        const finalEmptyParagraph = empty
+          && $from.parent.type.name === 'paragraph'
+          && $from.parent.textContent === ''
+          && $from.parentOffset === 0
+          && $from.pos === view.state.doc.content.size - 1;
+        if (!finalEmptyParagraph) return false;
+        event.preventDefault();
+        setMenu(true, 0);
+        return true;
+      },
     },
     onUpdate: ({ editor: current }) => onChangeRef.current(current.isEmpty ? '' : current.getHTML()),
   }, [Boolean(headings)]);
@@ -89,6 +141,18 @@ export function RichTextEditor({ value, headings, label, onChange }: {
       <ToolbarButton label="Redo" disabled={!editor.can().chain().focus().redo().run()} onClick={() => editor.chain().focus().redo().run()}>↷</ToolbarButton>
     </div>
     <EditorContent editor={editor} />
+    {slashOpen && <div className="rich-text-editor__slash" role="listbox" aria-label="Insert a component">
+      <p><strong>Add a component</strong><span>after this text</span></p>
+      {slashItems.map((item, index) => <button
+        type="button"
+        role="option"
+        aria-selected={index === slashIndex}
+        className={index === slashIndex ? 'is-selected' : ''}
+        key={item.type}
+        onMouseEnter={() => setMenu(true, index)}
+        onMouseDown={event => { event.preventDefault(); chooseSlashItem(index); }}
+      ><span aria-hidden="true">{item.icon || '□'}</span>{item.title}</button>)}
+    </div>}
     <p className="rich-text-editor__paste-hint">Paste normally — fonts, colours and unsafe markup are removed automatically.</p>
   </div>;
 }

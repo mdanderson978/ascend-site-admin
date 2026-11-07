@@ -428,6 +428,12 @@ input:focus, textarea:focus, select:focus { border-color: var(--focus) !importan
 .rich-text-editor__surface ul, .rich-text-editor__surface ol { margin: .5rem 0 .8rem; padding-left: 1.4rem; }
 .rich-text-editor__surface a { color: var(--brand-700); text-decoration: underline; }
 .rich-text-editor__surface p.is-editor-empty:first-child::before { height: 0; float: left; color: var(--ink-faint); content: attr(data-placeholder); pointer-events: none; }
+.rich-text-editor__slash { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem; margin: 0 .65rem .65rem; padding: .55rem; border: 1px solid var(--line-strong); border-radius: 7px; background: white; box-shadow: var(--shadow-md); }
+.rich-text-editor__slash p { grid-column: 1 / -1; display: flex; justify-content: space-between; margin: 0 0 .15rem; color: var(--ink-soft); font-size: .65rem; }
+.rich-text-editor__slash p strong { color: var(--ink); font-size: .72rem; }
+.rich-text-editor__slash button { display: flex; align-items: center; gap: .4rem; padding: .45rem .5rem; border: 1px solid transparent; border-radius: 6px; color: var(--ink); font-size: .7rem; font-weight: 650; text-align: left; background: var(--surface-soft); }
+.rich-text-editor__slash button.is-selected, .rich-text-editor__slash button:hover { border-color: var(--brand-600); color: var(--brand-700); background: #eef4f1; }
+.rich-text-editor__slash button span { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 4px; background: white; }
 .rich-text-editor__paste-hint { margin: 0; padding: .45rem .65rem; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: .65rem; background: #fbfcfb; }
 
 @media (max-width: 1050px) {

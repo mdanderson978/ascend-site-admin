@@ -37,6 +37,7 @@ const section = (children, props = {}) => ({ type: 'section', props, children })
 const MAXIMAL = {
   section: () => section([{ type: 'heading', props: { text: 'Inside a section' } }], { background: 'bg', tone: 'brand', spacing: 'xl', width: 'wide', overlay: 'strong', align: 'center', anchor: 'intro' }),
   article: () => section([{ type: 'article', props: { anchor: 'guide' }, children: [{ type: 'prose', props: { html: '<p>Article body</p>' } }] }]),
+  byline: () => section([{ type: 'article', children: [{ type: 'byline', props: { name: 'Dr Sam Lee', role: 'Clinical reviewer', photo: 'portrait', reviewed: '2026-11-07' } }] }]),
   heading: () => section([{ type: 'heading', props: { kicker: 'Kicker', text: 'Heading text', link: { page: 'about' }, size: 'display', align: 'center', level: 'h3', anchor: 'heading-anchor' } }]),
   prose: () => section([{ type: 'prose', props: { html: '<h2>Sub</h2><p>Text with <a href="/x">a link</a>, <strong>bold</strong> and <em>italic</em>.</p><ul><li>One<ol><li>Nested</li></ol></li></ul><h3>Deeper</h3><p>More</p>' } }]),
   image: () => section([{ type: 'image', props: { image: 'photo', alt: 'A photo of something', caption: 'Caption', link: { url: 'https://example.com' }, ratio: 'portrait' } }]),
@@ -45,6 +46,8 @@ const MAXIMAL = {
   callout: () => section([{ type: 'callout', props: { variant: 'warning', title: 'Careful', text: '<p>Watch out</p><ul><li>For this</li></ul>' } }]),
   faq: () => section([{ type: 'faq', children: [{ type: 'faq_item', props: { question: 'First?', answer: '<p>Yes.</p>' } }] }]),
   faq_item: () => section([{ type: 'faq', children: [{ type: 'faq_item', props: { question: 'Open?', answer: '<p>It is <a href="#x">open</a>.</p>', open: true, anchor: 'open-q' } }] }]),
+  steps: () => section([{ type: 'article', children: [{ type: 'steps', children: [{ type: 'step', props: { title: 'Prepare the surface', text: '<p>Clean it thoroughly and let it dry.</p>' } }] }] }]),
+  step: () => section([{ type: 'article', children: [{ type: 'steps', children: [{ type: 'step', props: { title: 'Apply the finish', text: '<p>Work in thin coats with the grain.</p>' } }] }] }]),
 };
 
 test('every built-in element has a maximal fixture', () => {
@@ -72,6 +75,16 @@ test('empty elements render nothing in build mode and placeholders in preview, a
   assert.equal((preview.html.match(/data-node="[^"]*-ph\d+"/g) || []).length, 0, 'sample children are not selectable nodes');
   assert.ok(!preview.problems.some(p => /-ph\d+$/.test(p.id)), 'sample children never raise problems');
   await assertValidHtml(preview.html, 'placeholders');
+});
+
+test('bylines render a machine-readable, human-friendly review date and reject impossible dates', async () => {
+  const valid = await renderLayout({ children: [section([{ type: 'article', children: [{ type: 'byline', props: { name: 'Sam Lee', reviewed: '2026-11-07' } }] }])] }, avifHost());
+  assert.match(valid.html, /<time datetime="2026-11-07">7 November 2026<\/time>/);
+  assert.deepEqual(valid.problems, []);
+
+  const invalid = await renderLayout({ children: [section([{ type: 'article', children: [{ type: 'byline', props: { name: 'Sam Lee', reviewed: '2026-02-30' } }] }])] }, avifHost());
+  assert.doesNotMatch(invalid.html, /<time/);
+  assert.ok(invalid.problems.some(item => item.field === 'reviewed' && /not a real calendar date/.test(item.message)));
 });
 
 test('exactly one LCP image: the first image in the first visible section', async () => {

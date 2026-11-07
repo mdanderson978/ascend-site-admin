@@ -72,9 +72,23 @@ test('default registry nesting matches the plan', () => {
   assert.deepEqual(defaultRegistry.childrenOf('layout').sort(), ['article', 'section']);
   assert.deepEqual(defaultRegistry.childrenOf('buttons'), ['button']);
   assert.deepEqual(defaultRegistry.childrenOf('faq'), ['faq_item']);
-  for (const type of ['heading', 'prose', 'image', 'buttons', 'callout', 'faq', 'article']) {
+  assert.deepEqual(defaultRegistry.childrenOf('steps'), ['step']);
+  for (const type of ['heading', 'prose', 'image', 'buttons', 'callout', 'faq', 'steps', 'article']) {
     assert.ok(defaultRegistry.childrenOf('section').includes(type), `${type} can go in a section`);
   }
+  for (const type of ['byline', 'steps', 'step']) {
+    assert.equal(defaultRegistry.childrenOf('layout').includes(type), false, `${type} cannot be misplaced at the page root`);
+  }
+  assert.ok(defaultRegistry.childrenOf('article').includes('byline'));
+});
+
+test('date fields are trimmed and malformed dates are reported', () => {
+  const valid = saveLayout({ children: [{ type: 'article', id: 'a', children: [{ type: 'byline', id: 'b', props: { name: 'Sam', reviewed: ' 2026-11-07 ' } }] }] });
+  assert.equal(valid.layout.children[0].children[0].props.reviewed, '2026-11-07');
+  assert.deepEqual(valid.problems, []);
+
+  const invalid = saveLayout({ children: [{ type: 'article', id: 'a', children: [{ type: 'byline', id: 'b', props: { name: 'Sam', reviewed: '07/11/2026' } }] }] });
+  assert.ok(invalid.problems.some(item => item.id === 'b' && item.field === 'reviewed' && /expected format/.test(item.message)));
 });
 
 test('load fills defaults, assigns unique ids and never mutates its input', () => {
