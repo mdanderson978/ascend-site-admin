@@ -1,0 +1,62 @@
+@layer ascend-elements {
+  .ab-gallery-shell { container-type: inline-size; }
+  .ab-gallery {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--ab-space-s);
+    text-align: start;
+  }
+  .ab-gallery__item { margin: 0; min-inline-size: 0; break-inside: avoid; }
+  .ab-gallery__open { display: block; border-radius: var(--ab-radius); }
+  .ab-gallery__open:focus-visible { outline: 3px solid var(--ab-tone-link); outline-offset: 3px; }
+  .ab-gallery__image {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    border-radius: var(--ab-radius);
+    object-fit: cover;
+    aspect-ratio: 4 / 3;
+  }
+  .ab-gallery__caption {
+    margin-block-start: var(--ab-space-2xs);
+    color: var(--ab-tone-muted);
+    font-size: var(--ab-step--1);
+    line-height: 1.45;
+  }
+  @container (min-width: 48rem) {
+    .ab-gallery--grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ab-gallery--masonry { display: block; columns: 3; column-gap: var(--ab-space-s); }
+    .ab-gallery--masonry .ab-gallery__item + .ab-gallery__item { margin-block-start: var(--ab-space-s); }
+    .ab-gallery--masonry .ab-gallery__image { aspect-ratio: auto; }
+  }
+
+  .ab-gallery-dialog {
+    inline-size: min(92vi, var(--ab-wide));
+    max-inline-size: none;
+    max-block-size: 92vb;
+    padding: var(--ab-space-s);
+    border: 0;
+    border-radius: var(--ab-radius);
+    background: var(--ab-bg);
+    color: var(--ab-ink);
+  }
+  .ab-gallery-dialog::backdrop { background: color-mix(in srgb, var(--ab-ink) 82%, transparent); }
+  .ab-gallery-dialog__close {
+    display: grid;
+    place-items: center;
+    margin-inline-start: auto;
+    margin-block-end: var(--ab-space-xs);
+    inline-size: 2.75rem;
+    block-size: 2.75rem;
+    border: 1px solid var(--ab-line);
+    border-radius: 50%;
+    background: var(--ab-bg);
+    color: var(--ab-ink);
+    font: inherit;
+    cursor: pointer;
+  }
+  .ab-gallery-dialog__close:focus-visible { outline: 3px solid var(--ab-brand); outline-offset: 2px; }
+  .ab-gallery-dialog figure { margin: 0; }
+  .ab-gallery-dialog img { display: block; max-inline-size: 100%; max-block-size: 72vb; margin-inline: auto; }
+  .ab-gallery-dialog figcaption { margin-block-start: var(--ab-space-xs); text-align: center; }
+}

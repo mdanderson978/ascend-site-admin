@@ -41,7 +41,7 @@ export const button = defineElement({
   group: 'Text',
   icon: 'button',
   css: 'buttons',
-  allowedParents: ['buttons'],
+  allowedParents: ['buttons', 'cta'],
   ai: 'One button inside a Buttons block. Attributes: text (2 to 4 words saying what happens, e.g. "Book a quote"), style (primary | secondary | text).',
   defaults: { style: 'primary' },
   fields: {

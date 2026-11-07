@@ -58,7 +58,7 @@ test('the admin never runs JavaScript front matter from a content file, and keep
   console.warn = msg => warnings.push(String(msg));
   t.after(() => { console.warn = warn; });
   const server = startAdmin({
-    root, port: 4491, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    root, port: 4591, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
     fields: { 'pages/home': [{ name: 'title', label: 'Title' }], 'pages/broken': [{ name: 'title', label: 'Title' }] },
     dynamicCollections: { sermons: { label: 'Sermon', titleField: 'title', sortFields: ['date'], sortDirection: 'desc', fields: [{ name: 'title', label: 'Title' }] } },
   });

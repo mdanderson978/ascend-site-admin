@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HtmlValidate } from 'html-validate';
+import { JSDOM } from 'jsdom';
 import { builtinElements, h, createRegistry, defineElement, renderLayout, sizesFor, structuredDataHtml } from '../../elements/index.mjs';
 
 const avifHost = (extra = {}) => ({
@@ -37,14 +38,20 @@ const section = (children, props = {}) => ({ type: 'section', props, children })
 const MAXIMAL = {
   section: () => section([{ type: 'heading', props: { text: 'Inside a section' } }], { background: 'bg', tone: 'brand', spacing: 'xl', width: 'wide', overlay: 'strong', align: 'center', anchor: 'intro' }),
   article: () => section([{ type: 'article', props: { anchor: 'guide' }, children: [{ type: 'prose', props: { html: '<p>Article body</p>' } }] }]),
+  byline: () => section([{ type: 'article', children: [{ type: 'byline', props: { name: 'Dr Sam Lee', role: 'Clinical reviewer', photo: 'portrait', reviewed: '2026-11-07' } }] }]),
   heading: () => section([{ type: 'heading', props: { kicker: 'Kicker', text: 'Heading text', link: { page: 'about' }, size: 'display', align: 'center', level: 'h3', anchor: 'heading-anchor' } }]),
   prose: () => section([{ type: 'prose', props: { html: '<h2>Sub</h2><p>Text with <a href="/x">a link</a>, <strong>bold</strong> and <em>italic</em>.</p><ul><li>One<ol><li>Nested</li></ol></li></ul><h3>Deeper</h3><p>More</p>' } }]),
   image: () => section([{ type: 'image', props: { image: 'photo', alt: 'A photo of something', caption: 'Caption', link: { url: 'https://example.com' }, ratio: 'portrait' } }]),
+  gallery: () => section([{ type: 'gallery', props: { layout: 'masonry', lightbox: true }, children: [{ type: 'gallery_photo', props: { image: 'photo', alt: 'Restored timber deck', caption: 'Finished in three days' } }] }]),
+  gallery_photo: () => section([{ type: 'gallery', children: [{ type: 'gallery_photo', props: { image: 'detail', alt: 'Close-up of timber grain', caption: 'The finished grain' } }] }]),
   buttons: () => section([{ type: 'buttons', props: { align: 'center' }, children: [{ type: 'button', props: { text: 'Call us', link: { tel: '03 9000 0000' } } }] }]),
   button: () => section([{ type: 'buttons', children: [{ type: 'button', props: { text: 'Download', link: { document: 'price list.pdf' }, style: 'secondary', newTab: true } }, { type: 'button', props: { text: 'Email', link: { email: 'hello@example.com' }, style: 'text' } }] }]),
   callout: () => section([{ type: 'callout', props: { variant: 'warning', title: 'Careful', text: '<p>Watch out</p><ul><li>For this</li></ul>' } }]),
   faq: () => section([{ type: 'faq', children: [{ type: 'faq_item', props: { question: 'First?', answer: '<p>Yes.</p>' } }] }]),
   faq_item: () => section([{ type: 'faq', children: [{ type: 'faq_item', props: { question: 'Open?', answer: '<p>It is <a href="#x">open</a>.</p>', open: true, anchor: 'open-q' } }] }]),
+  steps: () => section([{ type: 'article', children: [{ type: 'steps', children: [{ type: 'step', props: { title: 'Prepare the surface', text: '<p>Clean it thoroughly and let it dry.</p>' } }] }] }]),
+  step: () => section([{ type: 'article', children: [{ type: 'steps', children: [{ type: 'step', props: { title: 'Apply the finish', text: '<p>Work in thin coats with the grain.</p>' } }] }] }]),
+  cta: () => ({ type: 'cta', props: { heading: 'Ready to begin?', text: '<p>Ask for a clear, fixed quote.</p>', phone: '03 9000 0000', variant: 'final' }, children: [{ type: 'button', props: { text: 'Get a quote', link: { page: 'contact' }, style: 'secondary' } }] }),
 };
 
 test('every built-in element has a maximal fixture', () => {
@@ -72,6 +79,74 @@ test('empty elements render nothing in build mode and placeholders in preview, a
   assert.equal((preview.html.match(/data-node="[^"]*-ph\d+"/g) || []).length, 0, 'sample children are not selectable nodes');
   assert.ok(!preview.problems.some(p => /-ph\d+$/.test(p.id)), 'sample children never raise problems');
   await assertValidHtml(preview.html, 'placeholders');
+});
+
+test('bylines render a machine-readable, human-friendly review date and reject impossible dates', async () => {
+  const valid = await renderLayout({ children: [section([{ type: 'article', children: [{ type: 'byline', props: { name: 'Sam Lee', reviewed: '2026-11-07' } }] }])] }, avifHost());
+  assert.match(valid.html, /<time datetime="2026-11-07">7 November 2026<\/time>/);
+  assert.deepEqual(valid.problems, []);
+
+  const invalid = await renderLayout({ children: [section([{ type: 'article', children: [{ type: 'byline', props: { name: 'Sam Lee', reviewed: '2026-02-30' } }] }])] }, avifHost());
+  assert.doesNotMatch(invalid.html, /<time/);
+  assert.ok(invalid.problems.some(item => item.field === 'reviewed' && /not a real calendar date/.test(item.message)));
+});
+
+test('gallery lightboxes are progressive links and request one shared script', async () => {
+  const layout = { children: [section([{ type: 'gallery', children: [
+    { type: 'gallery_photo', props: { image: 'one', alt: 'First photo', caption: 'First caption' } },
+    { type: 'gallery_photo', props: { image: 'two', alt: 'Second photo' } },
+  ] }])] };
+  const out = await renderLayout(layout, avifHost());
+  assert.equal((out.html.match(/data-ab-gallery-open/g) || []).length, 2);
+  assert.match(out.html, /href="\/media\/one\.webp"/);
+  assert.deepEqual(out.scripts, ['gallery']);
+
+  const staticGallery = await renderLayout({ children: [section([{ type: 'gallery', props: { lightbox: false }, children: [{ type: 'gallery_photo', props: { image: 'one', alt: 'First photo' } }] }])] }, avifHost());
+  assert.doesNotMatch(staticGallery.html, /data-ab-gallery-open/);
+  assert.deepEqual(staticGallery.scripts, []);
+});
+
+test('the gallery script opens one native dialog and copies text safely', async t => {
+  const dom = new JSDOM('<!doctype html><body><figure><a href="/full.webp" data-ab-gallery-open><img src="/small.webp" alt="Deck & garden"></a><figcaption class="ab-gallery__caption">After &amp; ready</figcaption></figure></body>', { url: 'https://example.test/' });
+  const previousDocument = globalThis.document;
+  globalThis.document = dom.window.document;
+  t.after(() => {
+    globalThis.document = previousDocument;
+    dom.window.close();
+  });
+  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
+  await import(`../../elements/library/gallery/script.js?test=${Date.now()}`);
+
+  const link = dom.window.document.querySelector('[data-ab-gallery-open]');
+  link.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  const dialog = dom.window.document.querySelector('[data-ab-gallery-dialog]');
+  assert.ok(dialog.open);
+  assert.equal(dialog.querySelector('img').src, 'https://example.test/full.webp');
+  assert.equal(dialog.querySelector('img').alt, 'Deck & garden');
+  assert.equal(dialog.querySelector('figcaption').textContent, 'After & ready');
+  assert.equal(dom.window.document.querySelectorAll('[data-ab-gallery-dialog]').length, 1);
+
+  link.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.equal(dom.window.document.querySelectorAll('[data-ab-gallery-dialog]').length, 1);
+  dialog.querySelector('button').click();
+  assert.equal(dialog.open, false);
+});
+
+test('a CTA phone number is a non-breaking tap-to-call link', async () => {
+  const out = await renderLayout({ children: [{ type: 'cta', props: { heading: 'Talk to us', phone: '03 9000 0000' } }] }, avifHost());
+  assert.match(out.html, /aria-labelledby="talk-to-us"/);
+  assert.match(out.html, /href="tel:0390000000">03 9000 0000<\/a>/);
+  assert.deepEqual(out.problems, []);
+});
+
+test('an incomplete CTA stays valid and reports what the editor must fix', async () => {
+  const out = await renderLayout({ children: [{ type: 'cta', props: { text: '<p>Supporting text</p>', phone: 'call us' } }] }, avifHost());
+  assert.match(out.html, /^<div class="ab-cta ab-cta--mid ab-cta--page">/);
+  assert.doesNotMatch(out.html, /href="tel:/);
+  assert.ok(out.problems.some(item => item.field === 'heading'));
+  assert.ok(out.problems.some(item => item.field === 'phone'));
+  await assertValidHtml(out.html, 'incomplete CTA');
 });
 
 test('exactly one LCP image: the first image in the first visible section', async () => {

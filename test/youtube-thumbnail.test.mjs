@@ -72,7 +72,7 @@ const read = (root, slug = 'one') => matter(fs.readFileSync(path.join(root, `src
 
 test('saving a YouTube link fills the empty thumbnail with the 1280px image', async t => {
   const root = fixture({ title: 'One' });
-  const server = boot(root, 4461);
+  const server = boot(root, 4561);
   t.after(async () => { await shutdown(server); fs.rmSync(root, { recursive: true, force: true }); });
   const base = await ready(server);
   const r = await save(base, 'sermons/one', { title: 'One', video: `https://www.youtube.com/watch?v=${ID_HD}` });
@@ -85,7 +85,7 @@ test('saving a YouTube link fills the empty thumbnail with the 1280px image', as
 
 test('a video with only the 4:3 thumbnail is cropped to 16:9 (no black bars)', async t => {
   const root = fixture({ title: 'One' });
-  const server = boot(root, 4462);
+  const server = boot(root, 4562);
   t.after(async () => { await shutdown(server); fs.rmSync(root, { recursive: true, force: true }); });
   const base = await ready(server);
   await save(base, 'sermons/one', { title: 'One', video: ID_SD });
@@ -95,7 +95,7 @@ test('a video with only the 4:3 thumbnail is cropped to 16:9 (no black bars)', a
 
 test('creating a new entry with a link fills the thumbnail too', async t => {
   const root = fixture();
-  const server = boot(root, 4463);
+  const server = boot(root, 4563);
   t.after(async () => { await shutdown(server); fs.rmSync(root, { recursive: true, force: true }); });
   const base = await ready(server);
   const r = await save(base, 'sermons/new', { title: 'Brand New', video: `https://youtu.be/${ID_NEW}` });
@@ -105,7 +105,7 @@ test('creating a new entry with a link fills the thumbnail too', async t => {
 
 test("an editor's own thumbnail is never replaced, even when the link changes", async t => {
   const root = fixture({ title: 'One', video: ID_HD, thumbnail: { src: '../../assets/uploads/123-custom.webp', alt: 'Custom' } });
-  const server = boot(root, 4464);
+  const server = boot(root, 4564);
   t.after(async () => { await shutdown(server); fs.rmSync(root, { recursive: true, force: true }); });
   const base = await ready(server);
   const r = await save(base, 'sermons/one', { title: 'One', video: ID_NEW });
@@ -115,7 +115,7 @@ test("an editor's own thumbnail is never replaced, even when the link changes", 
 
 test('an engine-made thumbnail follows the link when it changes', async t => {
   const root = fixture({ title: 'One', video: ID_HD, thumbnail: { src: `../../assets/uploads/youtube-${ID_HD}.webp`, alt: '' } });
-  const server = boot(root, 4465);
+  const server = boot(root, 4565);
   t.after(async () => { await shutdown(server); fs.rmSync(root, { recursive: true, force: true }); });
   const base = await ready(server);
   await save(base, 'sermons/one', { title: 'One', video: ID_NEW });
@@ -124,7 +124,7 @@ test('an engine-made thumbnail follows the link when it changes', async t => {
 
 test('a failed download never blocks the save; the thumbnail stays empty for a retry', async t => {
   const root = fixture({ title: 'One' });
-  const server = boot(root, 4466);
+  const server = boot(root, 4566);
   t.after(async () => { ytOffline = false; await shutdown(server); fs.rmSync(root, { recursive: true, force: true }); });
   const base = await ready(server);
   ytOffline = true;
@@ -138,7 +138,7 @@ test('thumbnailField must name an image field (fails at boot)', () => {
   const root = fixture();
   try {
     assert.throws(
-      () => boot(root, 4467, [{ name: 'title', label: 'Title', type: 'string' }, { name: 'video', label: 'Video', type: 'string', thumbnailField: 'nope' }]),
+      () => boot(root, 4567, [{ name: 'title', label: 'Title', type: 'string' }, { name: 'video', label: 'Video', type: 'string', thumbnailField: 'nope' }]),
       /thumbnailField "nope"/,
     );
   } finally { fs.rmSync(root, { recursive: true, force: true }); }

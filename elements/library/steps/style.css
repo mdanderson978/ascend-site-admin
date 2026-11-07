@@ -1,0 +1,38 @@
+@layer ascend-elements {
+  .ab-steps {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: ab-step;
+    color: var(--ab-tone-ink);
+    text-align: start;
+  }
+  .ab-steps__item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--ab-space-s);
+    counter-increment: ab-step;
+  }
+  .ab-steps__item + .ab-steps__item { margin-block-start: var(--ab-space-m); }
+  .ab-steps__item::before {
+    content: counter(ab-step);
+    display: grid;
+    place-items: center;
+    inline-size: var(--ab-space-l);
+    block-size: var(--ab-space-l);
+    border-radius: 50%;
+    background: var(--ab-tone-link);
+    color: var(--ab-tone-bg);
+    font-weight: 700;
+  }
+  .ab-steps__title {
+    display: block;
+    font-size: var(--ab-step-1);
+    line-height: 1.35;
+  }
+  .ab-steps__text { margin-block-start: var(--ab-space-xs); }
+  .ab-steps__text > * { margin-block: 0; }
+  .ab-steps__text > * + * { margin-block-start: var(--ab-space-xs); }
+  .ab-steps__text a { color: var(--ab-tone-link); text-underline-offset: 0.18em; }
+  .ab-steps__text :is(ul, ol) { padding-inline-start: var(--ab-space-m); }
+}

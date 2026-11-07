@@ -11,6 +11,7 @@ import { LAYOUT_SCHEMA, ROOT_TYPE } from './tree.mjs';
 
 export const FIELD_TYPES = new Set([
   'string', // single line of plain text
+  'date', // an ISO calendar date (YYYY-MM-DD)
   'text', // multi-line plain text
   'richtext', // schema-bound rich text (see sanitize.mjs); { headings: true } allows H2/H3
   'image', // an upload path; rendered through the core picture() helper
@@ -111,6 +112,11 @@ export function defineElement(def) {
     if (typeof def[key] !== 'string' || !def[key]) fail(name, `needs a "${key}" string`);
   }
   if (typeof def.render !== 'function') fail(name, 'needs a render() function');
+  if (def.script && (typeof def.script !== 'string' || !/^[a-z][a-z0-9_]*$/.test(def.script))) {
+    fail(name, `has invalid script name ${JSON.stringify(def.script)}`);
+  }
+  if (def.scripts && typeof def.scripts !== 'function') fail(name, '"scripts" must be a function');
+  if (def.scripts && !def.script) fail(name, 'uses conditional "scripts" without declaring its script asset');
   if (!def.internal && (typeof def.ai !== 'string' || !def.ai.trim())) {
     fail(name, 'needs an "ai" description (used to generate the ChatGPT prompt)');
   }
@@ -175,6 +181,7 @@ export function defineElement(def) {
   return Object.freeze({
     icon: '',
     css: name,
+    script: null,
     container: false,
     ...def,
     fields,

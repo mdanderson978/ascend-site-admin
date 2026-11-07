@@ -9,6 +9,7 @@ const button = (text, link, props = {}) => ({ type: 'button', props: { text, lin
 const buttons = (items, props = {}) => ({ type: 'buttons', props, children: items });
 const section = (children, props = {}) => ({ type: 'section', props, children });
 const faq = (items, props = {}) => ({ type: 'faq', props, children: items.map(([question, answer]) => ({ type: 'faq_item', props: { question, answer } })) });
+const gallery = (items, props = {}) => ({ type: 'gallery', props, children: items.map(([image, alt, caption]) => ({ type: 'gallery_photo', props: { image, alt, ...(caption ? { caption } : {}) } })) });
 
 export const SAMPLES = [
   {
@@ -31,6 +32,14 @@ export const SAMPLES = [
           heading('Restoration, oiling and repairs', { kicker: 'What we do', size: 'xl' }),
           prose('<p>Most decks don\'t need replacing. Sanding back, repairing the boards that matter and oiling properly brings back the colour and protects the timber for years.</p>'),
           { type: 'image', props: { image: img('feature'), alt: 'A restored deck beside a family home', ratio: 'landscape', caption: 'A full restoration, finished in three days.' } },
+        ]),
+        section([
+          heading('Recent restorations', { size: 'l' }),
+          gallery([
+            [img('feature'), 'Restored timber deck beside a family home', 'Spotted gum after sanding and oiling'],
+            [img('detail'), 'Close-up of freshly oiled timber boards'],
+            [img('wide'), 'Wide deck prepared for outdoor entertaining', 'A complete three-day restoration'],
+          ]),
         ]),
         section(
           [
@@ -58,6 +67,7 @@ export const SAMPLES = [
           ],
           { width: 'narrow' },
         ),
+        { type: 'cta', props: { heading: 'Get your fixed quote', text: '<p>Book a free inspection and receive a clear price with no surprises.</p>', phone: '03 9000 0000', variant: 'final' }, children: [button('Book a free quote', { page: 'contact' })] },
       ],
     },
   },
@@ -74,10 +84,16 @@ export const SAMPLES = [
             {
               type: 'article',
               children: [
+                { type: 'byline', props: { name: 'Mia Chen', role: 'Deck restoration specialist', photo: img('portrait'), reviewed: '2026-11-07' } },
                 prose('<p>A timber deck is one of the hardest-working parts of a home. Sun, rain and foot traffic all take their toll, but a little regular care keeps it looking good for decades.</p><h2>Why decks turn grey</h2><p>Sunlight breaks down the lignin that holds timber fibres together. The surface turns silver-grey and starts to feel rough. It\'s mostly cosmetic at first, but it lets water in.</p><h3>Is grey timber damaged?</h3><p>Not necessarily. Grey timber can usually be sanded back to fresh wood.</p>'),
                 { type: 'image', props: { image: img('detail'), alt: 'Close-up of oiled deck boards', ratio: 'wide', caption: 'Freshly oiled boards: the grain stands out again.' } },
                 { type: 'callout', props: { variant: 'opinion', title: 'Our view', text: '<p>Oil before winter, not after. Timber that goes into the wet months unprotected greys twice as fast.</p>' } },
                 prose('<h2>How often to oil</h2><p>Every 12 to 18 months for most decks. Read our <a href="/services/oiling/">deck oiling service</a> page for what\'s involved.</p><ol><li>Sweep and wash the deck.</li><li>Let it dry for two days.</li><li>Apply oil with the grain, in thin coats.</li></ol>'),
+                { type: 'steps', children: [
+                  { type: 'step', props: { title: 'Clean the boards', text: '<p>Sweep away grit, then wash with a timber-safe cleaner.</p>' } },
+                  { type: 'step', props: { title: 'Let the timber dry', text: '<p>Wait for two dry days before applying any finish.</p>' } },
+                  { type: 'step', props: { title: 'Apply thin coats', text: '<p>Follow the grain and wipe away any excess oil.</p>' } },
+                ] },
                 { type: 'callout', props: { variant: 'warning', title: 'Before you start', text: '<p>Never pressure-wash softwood decks at full pressure: it tears the grain.</p>' } },
                 faq([
                   ['Can I oil a deck myself?', '<p>Yes, if the timber is in good shape. Badly weathered decks need sanding first.</p>'],

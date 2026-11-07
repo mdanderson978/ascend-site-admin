@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased - V3 phase 2
+
+### First article-editor slice: structured page layouts
+
+- A new opt-in `layout` field type stores the versioned element tree already
+  rendered by `site-admin/elements`. Opening a page expands migrations,
+  defaults and stable node IDs for editing; saving runs the shared canonical
+  pipeline, sanitises rich text and writes compact, stable YAML.
+- The admin receives a data-only element catalogue from the engine and builds
+  its outline, add palette, tabs and property controls from that schema. It
+  supports nested containers, accessible Move up / Move down controls and
+  removal without requiring drag and drop.
+- Builder text remains available to the existing Find anything search.
+  Unknown site-specific or newer elements remain visible and removable but
+  are never silently rewritten or discarded.
+- Rich-text element fields now use a constrained Tiptap writing surface with
+  paragraphs, H2/H3, bold, italic, links and lists. Word/Google Docs paste is
+  normalized by that schema, then checked again by the engine sanitizer on
+  save. Both the writing surface and the whole page tree have undo/redo.
+- Unsaved page edits are copied to local browser storage as they happen and
+  recovered after an accidental close or crash. A draft is discarded if the
+  saved page changed in the meantime, so recovery cannot overwrite newer
+  work from another editor; Save Draft clears it.
+- Typing `/` at the end of an article text block opens a keyboard-accessible
+  component menu and inserts the selected block immediately after the text.
+  Mid-paragraph slashes remain ordinary text.
+- New Byline and Steps components are defined in the shared element registry,
+  so their forms, nesting rules, ChatGPT guidance, validation, preview and
+  published HTML stay in sync. Byline includes an optional portrait, role and
+  reviewed date; Steps provides an accessible ordered process.
+- Gallery adds grid and masonry presentations with required descriptions and
+  optional captions. Its lightbox is a progressive image link enhanced by one
+  small, deduplicated native-dialog script only on pages that use it.
+- Call-to-action bands provide mid-page and final variants, short rich text,
+  tap-to-call phone numbers and reusable button children. Top-level bands are
+  labelled sections; nested bands avoid duplicate page landmarks.
+- The Astro adapter now includes declared element scripts on demand, alongside
+  its existing per-page CSS collection. Pages without interactive elements
+  receive no element JavaScript.
+
+This is the foundation of Phase 2, not the finished article editor. The
+remaining form polish and pilot-driven elements are still to come.
+
 ## 2.20.0 - 2026-11-07
 
 ### New: safer ChatGPT imports with one-click recovery

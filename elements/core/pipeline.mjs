@@ -72,8 +72,8 @@ function isEmpty(value) {
 function cleanValue(value, field) {
   if (!field) return value;
   if (field.type === 'richtext') return sanitizeRichText(value, { headings: !!field.headings });
-  if ((field.type === 'string' || field.type === 'text') && typeof value === 'string') {
-    return field.type === 'string' ? value.trim() : value.replace(/\s+$/, '');
+  if ((field.type === 'string' || field.type === 'date' || field.type === 'text') && typeof value === 'string') {
+    return field.type === 'text' ? value.replace(/\s+$/, '') : value.trim();
   }
   if (field.type === 'link' && isPlainObject(value)) {
     const link = {};

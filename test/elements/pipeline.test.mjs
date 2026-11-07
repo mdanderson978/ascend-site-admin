@@ -38,6 +38,8 @@ test('defineElement rejects broken definitions at boot, with the element named',
   assert.throws(() => defineElement(minimal({ name: 'Bad Name' })), /invalid element name/);
   assert.throws(() => defineElement(minimal({ render: undefined })), /"thing" needs a render/);
   assert.throws(() => defineElement(minimal({ ai: '' })), /"thing" needs an "ai" description/);
+  assert.throws(() => defineElement(minimal({ script: '../bad' })), /invalid script name/);
+  assert.throws(() => defineElement(minimal({ scripts: () => ['thing'] })), /without declaring its script asset/);
   assert.throws(() => defineElement(minimal({ fields: { a: { type: 'colour', label: 'A' } } })), /unknown type "colour"/);
   assert.throws(() => defineElement(minimal({ fields: { a: { type: 'select', label: 'A' } } })), /needs options/);
   assert.throws(() => defineElement(minimal({ fields: { a: { type: 'token', scale: 'nope', label: 'A' } } })), /unknown scale/);
@@ -69,12 +71,29 @@ test('createRegistry checks parents, containers and duplicates', () => {
 });
 
 test('default registry nesting matches the plan', () => {
-  assert.deepEqual(defaultRegistry.childrenOf('layout').sort(), ['article', 'section']);
+  assert.deepEqual(defaultRegistry.childrenOf('layout').sort(), ['article', 'cta', 'section']);
   assert.deepEqual(defaultRegistry.childrenOf('buttons'), ['button']);
   assert.deepEqual(defaultRegistry.childrenOf('faq'), ['faq_item']);
-  for (const type of ['heading', 'prose', 'image', 'buttons', 'callout', 'faq', 'article']) {
+  assert.deepEqual(defaultRegistry.childrenOf('steps'), ['step']);
+  assert.deepEqual(defaultRegistry.childrenOf('gallery'), ['gallery_photo']);
+  assert.deepEqual(defaultRegistry.childrenOf('cta'), ['button']);
+  for (const type of ['heading', 'prose', 'image', 'gallery', 'buttons', 'callout', 'faq', 'steps', 'article', 'cta']) {
     assert.ok(defaultRegistry.childrenOf('section').includes(type), `${type} can go in a section`);
   }
+  for (const type of ['byline', 'gallery', 'gallery_photo', 'steps', 'step']) {
+    assert.equal(defaultRegistry.childrenOf('layout').includes(type), false, `${type} cannot be misplaced at the page root`);
+  }
+  assert.ok(defaultRegistry.childrenOf('article').includes('byline'));
+  assert.ok(defaultRegistry.childrenOf('layout').includes('cta'));
+});
+
+test('date fields are trimmed and malformed dates are reported', () => {
+  const valid = saveLayout({ children: [{ type: 'article', id: 'a', children: [{ type: 'byline', id: 'b', props: { name: 'Sam', reviewed: ' 2026-11-07 ' } }] }] });
+  assert.equal(valid.layout.children[0].children[0].props.reviewed, '2026-11-07');
+  assert.deepEqual(valid.problems, []);
+
+  const invalid = saveLayout({ children: [{ type: 'article', id: 'a', children: [{ type: 'byline', id: 'b', props: { name: 'Sam', reviewed: '07/11/2026' } }] }] });
+  assert.ok(invalid.problems.some(item => item.id === 'b' && item.field === 'reviewed' && /expected format/.test(item.message)));
 });
 
 test('load fills defaults, assigns unique ids and never mutates its input', () => {

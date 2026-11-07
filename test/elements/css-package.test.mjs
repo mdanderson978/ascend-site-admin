@@ -9,6 +9,7 @@ import { TOKENS_CSS_PATH, elementCss, elementCssPath } from '../../elements/css.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const libraryDir = path.join(root, 'elements', 'library');
 const cssFiles = fs.readdirSync(libraryDir).filter(d => fs.existsSync(path.join(libraryDir, d, 'style.css')));
+const scriptFiles = fs.readdirSync(libraryDir).filter(d => fs.existsSync(path.join(libraryDir, d, 'script.js')));
 
 const stripComments = css => css.replace(/\/\*[\s\S]*?\*\//g, '');
 
@@ -87,6 +88,12 @@ test('every element has a stylesheet, and every stylesheet belongs to an element
   assert.ok(combined.startsWith(fs.readFileSync(TOKENS_CSS_PATH, 'utf8')), 'tokens come first');
   assert.equal((combined.match(/\.ab-faq \{/g) || []).length, 1, 'each stylesheet once');
   assert.throws(() => elementCssPath('../secrets'), /Invalid element css name/);
+});
+
+test('every opt-in element script exists and no script is orphaned', () => {
+  const scriptNames = new Set(builtinElements.map(def => def.script).filter(Boolean));
+  assert.deepEqual([...scriptNames].sort(), [...scriptFiles].sort());
+  for (const name of scriptNames) assert.match(fs.readFileSync(path.join(libraryDir, name, 'script.js'), 'utf8'), /\S/);
 });
 
 test('the element library is browser-safe: no Node built-ins outside css.mjs', () => {

@@ -165,6 +165,7 @@ registered in `library/index.mjs`.
 3. **Use the api, not hand-written markup, for the cross-cutting rules:**
    `root()` for the root tag's attributes (anchor id and preview hooks),
    `picture(field, { alt })` for every image (AVIF, `sizes`, LCP priority),
+   `imageInfo(field)` when an image also needs its resolved full-size URL,
    `richText()` for rich text, `headingId()` for headings, `link()` for links,
    `collect()` for structured data, `problem()` to report an issue.
 4. **Style with tokens only.** Wrap the file in `@layer ascend-elements`.
@@ -174,6 +175,11 @@ registered in `library/index.mjs`.
 5. **Add a `MAXIMAL` fixture** in `test/elements/render.test.mjs`. The test
    suite fails until you do, then validates the element's HTML in build and
    preview mode.
+
+An interactive element may name a small `script.js` with `script: 'name'`,
+or return script names from `scripts(props)`. The renderer deduplicates scripts
+and the Astro adapter includes them as non-blocking modules only on pages that
+use the feature. Keep the underlying HTML useful without JavaScript.
 
 ## Changing an element later
 

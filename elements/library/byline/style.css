@@ -1,0 +1,26 @@
+@layer ascend-elements {
+  .ab-byline {
+    display: flex;
+    align-items: center;
+    gap: var(--ab-space-s);
+    color: var(--ab-tone-ink);
+    text-align: start;
+  }
+  .ab-byline__photo {
+    inline-size: var(--ab-space-2xl);
+    block-size: var(--ab-space-2xl);
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .ab-byline__details { margin: 0; }
+  .ab-byline__name,
+  .ab-byline__role,
+  .ab-byline__reviewed { display: block; }
+  .ab-byline__name { font-size: var(--ab-step-0); }
+  .ab-byline__role,
+  .ab-byline__reviewed {
+    margin-block-start: var(--ab-space-2xs);
+    color: var(--ab-tone-muted);
+    font-size: var(--ab-step--1);
+  }
+}

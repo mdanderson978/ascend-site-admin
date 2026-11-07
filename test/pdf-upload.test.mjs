@@ -41,7 +41,7 @@ const doc = (root, p) => fs.readFileSync(path.join(root, 'public', p), 'utf8');
 
 test('uniquePdfNames: a taken name gets -2, -3; the same file reuses its name', async t => {
   const root = fixture();
-  const server = boot(root, 4471, { uniquePdfNames: true });
+  const server = boot(root, 4571, { uniquePdfNames: true });
   t.after(async () => { await shutdown(server); fs.rmSync(root, { recursive: true, force: true }); });
   const base = await ready(server);
   assert.equal(await upload(base, 'Study 1.pdf', 'james'), '/documents/study-1.pdf');
@@ -55,7 +55,7 @@ test('uniquePdfNames: a taken name gets -2, -3; the same file reuses its name', 
 
 test('default: an upload with the same name replaces the file and keeps its URL', async t => {
   const root = fixture();
-  const server = boot(root, 4472);
+  const server = boot(root, 4572);
   t.after(async () => { await shutdown(server); fs.rmSync(root, { recursive: true, force: true }); });
   const base = await ready(server);
   assert.equal(await upload(base, 'policy.pdf', 'old'), '/documents/policy.pdf');
