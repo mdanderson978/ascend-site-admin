@@ -10,7 +10,7 @@
 // It:
 //   - inlines every stylesheet (build.inlineStylesheets: 'always')
 //   - applies the brand's CSS variables to every page (low priority: site CSS wins)
-//   - gives <BuilderHead>/<BuilderLayout> the media manifest and element CSS
+//   - gives <BuilderHead>/<BuilderLayout> the media manifest and opt-in element CSS/scripts
 //     through a virtual module, so pages render with the same functions as the
 //     admin preview and never touch the file system at render time
 //   - serves the WebP fallbacks in dev and copies them into the build (a copy,
@@ -54,6 +54,15 @@ function elementStyles() {
     if (fs.existsSync(file)) css[name] = minify(fs.readFileSync(file, 'utf8'));
   }
   return css;
+}
+
+function elementScripts() {
+  const scripts = {};
+  for (const name of fs.readdirSync(LIBRARY)) {
+    const file = path.join(LIBRARY, name, 'script.js');
+    if (fs.existsSync(file)) scripts[name] = fs.readFileSync(file, 'utf8').trim();
+  }
+  return scripts;
 }
 
 function htmlFiles(dir) {
@@ -100,6 +109,7 @@ export default function siteAdmin(options = {}) {
         widths: options.widths || {},
         manifest: readManifest(contentRoot),
         css: elementStyles(),
+        scripts: elementScripts(),
       };
       return `export default ${JSON.stringify(config)};`;
     },

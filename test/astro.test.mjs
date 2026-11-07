@@ -50,6 +50,15 @@ layout:
         - type: image
           id: imag001
           props: { image: ../../assets/uploads/deck.webp, alt: An oiled deck }
+        - type: gallery
+          id: gallery1
+          children:
+            - type: gallery_photo
+              id: galphoto1
+              props: { image: ../../assets/uploads/deck.webp, alt: Detail of an oiled deck }
+            - type: gallery_photo
+              id: galphoto2
+              props: { image: ../../assets/uploads/hero.webp, alt: A restored deck in its garden }
         - type: faq
           id: faqs001
           children:
@@ -106,10 +115,13 @@ test('a stored layout builds in Astro exactly as it renders in Node', { timeout:
   // Head: only the element CSS this page uses, the brand variables, and FAQ structured data.
   assert.match(html, /<style data-ascend-builder>/);
   assert.match(html, /\.ab-faq/);
+  assert.match(html, /\.ab-gallery/);
   assert.doesNotMatch(html, /\.ab-callout\b/, 'callout CSS is not shipped on a page without a callout');
   assert.match(html, /@layer ascend-brand/);
   assert.match(html, /--ab-color-primary-500:/);
   assert.match(html, /"@type":"FAQPage"/);
+  assert.equal((html.match(/data-ascend-element/g) || []).length, 1, 'one gallery script is included even with several photos');
+  assert.match(html, /data-ab-gallery-dialog/);
   assert.doesNotMatch(html, /<link[^>]+rel="stylesheet"/, 'every stylesheet is inlined');
 
   // Images: AVIF from the content repo's public/media, fallbacks copied (not encoded) by the build.

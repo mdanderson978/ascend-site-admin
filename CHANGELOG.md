@@ -30,6 +30,15 @@
   so their forms, nesting rules, ChatGPT guidance, validation, preview and
   published HTML stay in sync. Byline includes an optional portrait, role and
   reviewed date; Steps provides an accessible ordered process.
+- Gallery adds grid and masonry presentations with required descriptions and
+  optional captions. Its lightbox is a progressive image link enhanced by one
+  small, deduplicated native-dialog script only on pages that use it.
+- Call-to-action bands provide mid-page and final variants, short rich text,
+  tap-to-call phone numbers and reusable button children. Top-level bands are
+  labelled sections; nested bands avoid duplicate page landmarks.
+- The Astro adapter now includes declared element scripts on demand, alongside
+  its existing per-page CSS collection. Pages without interactive elements
+  receive no element JavaScript.
 
 This is the foundation of Phase 2, not the finished article editor. The
 remaining form polish and pilot-driven elements are still to come.

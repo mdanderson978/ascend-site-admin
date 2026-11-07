@@ -1184,9 +1184,14 @@ layout:
     const config = await (await req('/api/config')).json();
     assert.equal(config.elementLibrary.schema, 1);
     assert.ok(config.elementLibrary.children.layout.includes('section'));
+    assert.ok(config.elementLibrary.children.layout.includes('cta'));
+    assert.deepEqual(config.elementLibrary.children.gallery, ['gallery_photo']);
     const headingDef = config.elementLibrary.elements.find(element => element.name === 'heading');
     assert.equal(headingDef.fields.text.label, 'Heading');
     assert.equal(headingDef.render, undefined, 'executable render hooks never cross the API boundary');
+    const galleryDef = config.elementLibrary.elements.find(element => element.name === 'gallery');
+    assert.equal(galleryDef.fields.lightbox.type, 'boolean');
+    assert.equal(galleryDef.scripts, undefined, 'executable asset hooks never cross the API boundary');
 
     const entry = await (await req('/api/content/pages/home')).json();
     const section = entry.data.layout.children[0];

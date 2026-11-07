@@ -9,6 +9,7 @@ const button = (text, link, props = {}) => ({ type: 'button', props: { text, lin
 const buttons = (items, props = {}) => ({ type: 'buttons', props, children: items });
 const section = (children, props = {}) => ({ type: 'section', props, children });
 const faq = (items, props = {}) => ({ type: 'faq', props, children: items.map(([question, answer]) => ({ type: 'faq_item', props: { question, answer } })) });
+const gallery = (items, props = {}) => ({ type: 'gallery', props, children: items.map(([image, alt, caption]) => ({ type: 'gallery_photo', props: { image, alt, ...(caption ? { caption } : {}) } })) });
 
 export const SAMPLES = [
   {
@@ -31,6 +32,14 @@ export const SAMPLES = [
           heading('Restoration, oiling and repairs', { kicker: 'What we do', size: 'xl' }),
           prose('<p>Most decks don\'t need replacing. Sanding back, repairing the boards that matter and oiling properly brings back the colour and protects the timber for years.</p>'),
           { type: 'image', props: { image: img('feature'), alt: 'A restored deck beside a family home', ratio: 'landscape', caption: 'A full restoration, finished in three days.' } },
+        ]),
+        section([
+          heading('Recent restorations', { size: 'l' }),
+          gallery([
+            [img('feature'), 'Restored timber deck beside a family home', 'Spotted gum after sanding and oiling'],
+            [img('detail'), 'Close-up of freshly oiled timber boards'],
+            [img('wide'), 'Wide deck prepared for outdoor entertaining', 'A complete three-day restoration'],
+          ]),
         ]),
         section(
           [
@@ -58,6 +67,7 @@ export const SAMPLES = [
           ],
           { width: 'narrow' },
         ),
+        { type: 'cta', props: { heading: 'Get your fixed quote', text: '<p>Book a free inspection and receive a clear price with no surprises.</p>', phone: '03 9000 0000', variant: 'final' }, children: [button('Book a free quote', { page: 'contact' })] },
       ],
     },
   },

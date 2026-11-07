@@ -944,8 +944,8 @@ test page built from these elements scores 100 on PageSpeed Insights (mobile).
 - Move up / Move down on every section and item, so reordering never depends
   on dragging.
 - Undo/redo and local draft autosave.
-- Remaining pilot-driven elements: Table of contents, Gallery,
-  Before/after, Glossary, Swatches, Related links, CTA band, Service
+- Remaining pilot-driven elements: Table of contents,
+  Before/after, Glossary, Swatches, Related links, Service
   area list, Packages.
 
 **Done when:** the pilot client can write a new guide with FAQ, callouts, a gallery and a

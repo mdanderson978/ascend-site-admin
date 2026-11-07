@@ -178,6 +178,13 @@ async function renderNode(node, ctx, env) {
   const report = entry => {
     if (!node.placeholder) state.problems.push(entry);
   };
+  const imageInfo = async field => {
+    const src = props[field];
+    if (!isFilled(src)) return null;
+    const key = `${node.id}\0${field}\0${src}`;
+    if (!state.images.has(key)) state.images.set(key, Promise.resolve(host.resolveImage?.(src)));
+    return (await state.images.get(key)) || null;
+  };
 
   let children = raw('');
   let firstHeadingId = null;
@@ -266,7 +273,7 @@ async function renderNode(node, ctx, env) {
     async picture(field, options = {}) {
       const src = props[field];
       if (!isFilled(src)) return null;
-      const info = await host.resolveImage?.(src);
+      const info = await imageInfo(field);
       if (!info) {
         report({ id: node.id, type: node.type, field, message: `The image "${src}" couldn't be found.` });
         return null;
@@ -295,6 +302,8 @@ async function renderNode(node, ctx, env) {
       const srcset = info.avif.map(s => `${s.url} ${s.width}w`).join(', ');
       return h`<picture><source type="image/avif" srcset="${srcset}" sizes="${sizes}"><img${imgAttrs}${raw(altFix)}></picture>`;
     },
+    /** Resolved metadata for an image field, cached with picture(). */
+    imageInfo,
     /** Adds structured-data entries (e.g. FAQ questions) for the page. */
     collect(kind, entry) {
       (state.collected[kind] ||= []).push(entry);
@@ -310,6 +319,11 @@ async function renderNode(node, ctx, env) {
   }
   if (!(out instanceof SafeHtml)) {
     throw new Error(`site-admin elements: "${def.name}" render() must return h\`...\` (SafeHtml), not a plain string`);
+  }
+  const scripts = def.scripts ? def.scripts(props) : def.script ? [def.script] : [];
+  for (const script of scripts || []) {
+    if (script !== def.script) throw new Error(`site-admin elements: "${def.name}" requested undeclared script ${JSON.stringify(script)}`);
+    state.scripts.add(script);
   }
   return out;
 }
@@ -342,6 +356,7 @@ export function structuredDataHtml(data) {
  * Renders a layout. Returns:
  *   html            the page body markup
  *   css             element stylesheet names used (see css.mjs)
+ *   scripts         opt-in element script names used on this page
  *   headings        [{ level, text, id }] from article prose, for a table of contents
  *   structuredData  JSON-LD objects (write once per page with structuredDataHtml)
  *   problems        [{ id, type, field?, message }] found while rendering
@@ -354,6 +369,8 @@ export async function renderLayout(input, host, registry) {
     ids: new Set(),
     anchors: new Map(),
     css: new Set(),
+    scripts: new Set(),
+    images: new Map(),
     headings: [],
     headingFrames: [],
     collected: {},
@@ -367,6 +384,7 @@ export async function renderLayout(input, host, registry) {
   return {
     html: html.value,
     css: [...state.css],
+    scripts: [...state.scripts],
     headings: state.headings,
     structuredData: buildStructuredData(state),
     problems: state.problems,

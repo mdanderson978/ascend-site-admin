@@ -1,0 +1,39 @@
+@layer ascend-elements {
+  .ab-cta {
+    padding: var(--ab-space-l);
+    border-radius: var(--ab-radius);
+    background: var(--ab-tone-panel);
+    color: var(--ab-tone-ink);
+    text-align: center;
+    --ab-justify: center;
+  }
+  .ab-cta--final {
+    background: var(--ab-brand);
+    color: var(--ab-brand-ink);
+    --ab-tone-ink: var(--ab-brand-ink);
+    --ab-tone-muted: color-mix(in srgb, var(--ab-brand-ink) 82%, var(--ab-brand));
+    --ab-tone-link: var(--ab-brand-ink);
+    --ab-tone-btn-bg: var(--ab-brand-ink);
+    --ab-tone-btn-ink: var(--ab-brand);
+  }
+  .ab-cta--page {
+    padding-block: var(--ab-space-xl);
+    padding-inline: var(--ab-gutter);
+    border-radius: 0;
+  }
+  .ab-cta__inner { max-inline-size: var(--ab-narrow); margin-inline: auto; }
+  .ab-cta__heading {
+    margin: 0;
+    color: inherit;
+    font-family: var(--ab-font-display);
+    font-size: var(--ab-step-3);
+    line-height: 1.1;
+  }
+  .ab-cta__text { max-inline-size: var(--ab-measure-short); margin-block-start: var(--ab-space-s); margin-inline: auto; }
+  .ab-cta__text > * { margin-block: 0; }
+  .ab-cta__text > * + * { margin-block-start: var(--ab-space-xs); }
+  .ab-cta__text a,
+  .ab-cta__phone { color: var(--ab-tone-link); text-underline-offset: 0.18em; }
+  .ab-cta__phone { display: inline-block; margin-block-start: var(--ab-space-s); font-size: var(--ab-step-1); font-weight: 700; }
+  .ab-cta__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--ab-space-xs); margin-block-start: var(--ab-space-m); }
+}
