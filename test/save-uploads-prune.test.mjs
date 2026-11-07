@@ -72,7 +72,7 @@ test('save preserves frontmatter keys that are not in FIELDS', async t => {
     path.join(root, 'src/content/pages/home.md'),
     '---\ntitle: Home\nlang: zh\nlang_alt_slug: /home-en\n---\nWelcome\n',
   );
-  const server = boot(root, 4414);
+  const server = boot(root, 4514);
   try {
     const base = await ready(server);
     const res = await fetch(base + '/api/content/pages/home', {
@@ -95,7 +95,7 @@ test('save preserves frontmatter keys that are not in FIELDS', async t => {
 test('save drops cleared fields but keeps explicit false', async t => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const server = boot(root, 4415);
+  const server = boot(root, 4515);
   try {
     const base = await ready(server);
     const res = await fetch(base + '/api/content/pages/home', {
@@ -117,7 +117,7 @@ test('save drops cleared fields but keeps explicit false', async t => {
 test('save coerces number fields, currency formatting included', async t => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const server = boot(root, 4416);
+  const server = boot(root, 4516);
   try {
     const base = await ready(server);
     const res = await fetch(base + '/api/content/pages/home', {
@@ -137,7 +137,7 @@ test('save coerces number fields, currency formatting included', async t => {
 test('save refuses to clear a required field and leaves the file unchanged', async t => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const server = boot(root, 4417);
+  const server = boot(root, 4517);
   try {
     const base = await ready(server);
     const before = fs.readFileSync(path.join(root, 'src/content/pages/home.md'), 'utf-8');
@@ -157,7 +157,7 @@ test('save refuses to clear a required field and leaves the file unchanged', asy
 test('markdown body round-trips through consecutive saves', async t => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const server = boot(root, 4418);
+  const server = boot(root, 4518);
   try {
     const base = await ready(server);
     const body = 'Intro paragraph.\n\n![A pool](../../assets/uploads/pool.webp "Tooltip")\n\n<span class="sig">A G</span>\n';
@@ -183,7 +183,7 @@ test('markdown body round-trips through consecutive saves', async t => {
 test('image upload converts to webp and returns the md-relative path', async t => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const server = boot(root, 4419);
+  const server = boot(root, 4519);
   try {
     const base = await ready(server);
     const png = await sharp({ create: { width: 1400, height: 900, channels: 3, background: { r: 20, g: 90, b: 180 } } })
@@ -208,7 +208,7 @@ test('image upload converts to webp and returns the md-relative path', async t =
 test('custom image preset crops and caps uploads to the configured dimensions', async t => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const server = boot(root, 4428, {
+  const server = boot(root, 4528, {
     imageSizes: {
       hubCard: {
         w: 1200,
@@ -250,7 +250,7 @@ test('uploads listing is newest-first, images only, picker-shaped', async t => {
   fs.writeFileSync(up('notes.txt'), 'not an image');
   const old = new Date(Date.now() - 60 * 60 * 1000);
   fs.utimesSync(up('older.webp'), old, old);
-  const server = boot(root, 4420);
+  const server = boot(root, 4520);
   try {
     const base = await ready(server);
     const { files } = await (await fetch(base + '/api/uploads', { headers: { Origin: base } })).json();
@@ -283,7 +283,7 @@ test('publish prunes only old unreferenced uploads — body and frontmatter refe
     path.join(root, 'src/content/pages/home.md'),
     '---\ntitle: Home\nimg:\n  src: "../../assets/uploads/front-ref.webp"\n---\n\n![Pool](../../assets/uploads/body-ref.webp)\n',
   );
-  const server = boot(root, 4421);
+  const server = boot(root, 4521);
   try {
     const base = await ready(server);
     const res = await fetch(base + '/api/git/push', {
@@ -322,7 +322,7 @@ test('publish never prunes a dotfile placeholder like .gitkeep, even when old an
   fs.utimesSync(up('.gitkeep'), threeDaysAgo, threeDaysAgo);
   fs.utimesSync(doc('.gitkeep'), threeDaysAgo, threeDaysAgo);
 
-  const server = boot(root, 4424);
+  const server = boot(root, 4524);
   try {
     const base = await ready(server);
     const res = await fetch(base + '/api/git/push', {
@@ -355,7 +355,7 @@ test('publish also protects an image referenced only inside a block, with no blo
     '---\ntitle: About\nsections:\n  - type: photo\n    image:\n      src: "../../assets/uploads/block-photo.webp"\n      alt: A photo\n---\n',
   );
 
-  const server = boot(root, 4423, {
+  const server = boot(root, 4523, {
     dynamicCollections: {
       flexpage: {
         label: 'Flexible Page', titleField: 'title',
@@ -389,7 +389,7 @@ test('publish also protects an image referenced only inside a block, with no blo
 test('mutating requests are refused for foreign or missing Origin', async t => {
   const root = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const server = boot(root, 4422);
+  const server = boot(root, 4522);
   try {
     const base = await ready(server);
     const save = headers => fetch(base + '/api/content/pages/home', {
