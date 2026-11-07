@@ -1170,7 +1170,7 @@ layout:
 ---
 `);
   const server = startAdmin({
-    root, port: 4463, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+    root, port: 4483, pullOnStart: false, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
     fields: { 'pages/home': [
       { name: 'title', label: 'Title', type: 'string' },
       { name: 'layout', label: 'Page content', type: 'layout' },
