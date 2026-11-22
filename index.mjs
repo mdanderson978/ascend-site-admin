@@ -220,6 +220,7 @@ import { findInternalLinks, fixInternalLinks } from './linkFixer.mjs';
 import { loadMenus, saveMenus } from './menus.mjs';
 import { createVariants, pruneMedia } from './media.mjs';
 import { brandJson, defineBrand, isBrandJson } from './elements/brand.mjs';
+import { unseenNotes } from './whats-new.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENGINE_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version;
@@ -390,6 +391,20 @@ export function startAdmin(config) {
     catch { return path.join(ROOT, '.git', 'ascend-site-admin', 'chatgpt-imports'); }
   })();
   const CHATGPT_IMPORT_STAGING = path.join(path.dirname(CHATGPT_IMPORT_STORE), 'chatgpt-import-staging');
+
+  // "What's new" (whats-new.mjs): the last engine version whose notes were
+  // dismissed on this computer. Kept in git's private metadata, beside the
+  // ChatGPT store, so it is per clone (per computer), survives the admin
+  // moving to another port (which would empty browser storage), and is
+  // never published.
+  const WHATS_NEW_SEEN = path.join(path.dirname(CHATGPT_IMPORT_STORE), 'whats-new-seen');
+  const whatsNew = () => {
+    let seen = '';
+    try { seen = fs.readFileSync(WHATS_NEW_SEEN, 'utf8').trim(); } catch (_) { /* never dismissed */ }
+    let workflowText = '';
+    try { workflowText = fs.readFileSync(path.join(ROOT, '.github', 'workflows', config.deployWorkflowFile || 'publish-deploy.yml'), 'utf8'); } catch (_) { /* no workflow here */ }
+    return unseenNotes({ config, workflowText, seen, engineVersion: ENGINE_VERSION });
+  };
   if (config.richHtmlImport) {
     fs.mkdirSync(CHATGPT_IMPORT_STORE, { recursive: true });
     fs.mkdirSync(CHATGPT_IMPORT_STAGING, { recursive: true });
@@ -1376,6 +1391,8 @@ export function startAdmin(config) {
           githubRepo:       GITHUB_REPO,
           deployWorkflowFile: config.deployWorkflowFile || 'publish-deploy.yml',
           developerName:    config.developerName,
+          engineVersion:    ENGINE_VERSION,
+          whatsNew:         whatsNew(),
           imageSizes:       IMAGE_SIZES,
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
@@ -2087,6 +2104,17 @@ export function startAdmin(config) {
         return;
       }
 
+      // "Got it" on the start screen's What's new card: these notes stay
+      // dismissed on this computer until a newer version brings new ones.
+      if (path_ === '/api/whats-new/seen' && req.method === 'POST') {
+        try {
+          fs.mkdirSync(path.dirname(WHATS_NEW_SEEN), { recursive: true });
+          fs.writeFileSync(WHATS_NEW_SEEN, ENGINE_VERSION + '\n');
+          jsonResp(res, 200, { ok: true });
+        } catch (e) { jsonResp(res, 500, { error: 'Could not save that: ' + e.message }); }
+        return;
+      }
+
       // Is the commit just published live yet? The site's build writes
       // <siteUrl>/version.json with the content commit it was built from;
       // fetched here (server side: no CORS, no token, nothing stored) so the
@@ -2170,6 +2198,13 @@ export function startAdmin(config) {
     console.log('\n  ' + siteTitle + ' Content Admin');
     console.log('  ->  http://localhost:' + PORT);
     console.log('  ->  Make changes -> Save Draft -> Publish Changes -> site rebuilds automatically\n');
+    // The same notes as the start screen's card, until they're dismissed
+    // there. The browser usually covers this window, so the card is the
+    // one people read.
+    try {
+      const notes = whatsNew();
+      if (notes.length) console.log("  What's new:\n" + notes.map(n => '   - ' + n.text).join('\n') + '\n');
+    } catch (_) { /* never block startup over release notes */ }
 
     ensureGitIdentity();
 
