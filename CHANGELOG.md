@@ -1,5 +1,59 @@
 # Changelog
 
+## 2.21.0 - 2026-11-22
+
+### New: the Publish button can tell a slow deploy from a failed one
+
+Until now the admin only knew a publish was done when the live site's
+`version.json` showed it. A failed build looked exactly like a slow one: the
+timer ran for 45 minutes, then fell back to a link to GitHub Actions. An
+editor facing a long build with no explanation tends to publish again (and
+again), and a real failure went unnoticed.
+
+The site's deploy workflow can now report its own progress on a one-file
+`deploy-status` branch in the content repo, force-pushed at each stage:
+
+```json
+{ "commit": "<content sha>", "state": "building|failed|deployed",
+  "cold": false, "step": "", "startedAt": "<ISO time>" }
+```
+
+`cold: true` means the workflow found no image cache, so every image is
+re-encoded and the build takes many times longer than usual. `step` names
+the step that failed. The admin fetches the branch with the editor's
+existing git access (no token, private repos work) at most every 8
+seconds, and `GET /api/deploy-status` adds a `build` field:
+
+- `building` / `failed` / `deployed` for this publish, or for a later
+  publish that includes it (a newer publish replaces a queued one);
+- `waiting` when the latest build is an earlier publish's (`behind: true`
+  while that build is still running).
+
+What the editor sees:
+
+- **Cold build:** a status card, "This publish will take about 30
+  minutes ... no need to publish again".
+- **Queued:** "Waiting for the previous publish".
+- **Failed:** the persistent publish-failure banner says the live site
+  hasn't changed, the changes are saved and the developer (config
+  `developerName`, now sent to the UI) has been notified, and the toolbar
+  shows "Website not updated". The Publish button is available again.
+- A normal build looks exactly as before.
+
+A site whose workflow doesn't write the branch behaves exactly as before
+(the response has no `build` field). With reports, the admin waits up to
+90 minutes instead of 45, since the workflow itself says when it fails.
+The git calls this needs run asynchronously, so polling never blocks the
+admin's other requests.
+
+Workflow side (template in the split-repo setup): write the status at
+start, after the image cache restore (with `cold`), after the deploy, and
+in an `if: failure() || cancelled()` step that also alerts the developer.
+Set a job `timeout-minutes` so a hung build reports as failed.
+
+Also in this release: V3 phase 1, part 3 (Astro integration, brand and
+performance budget), merged after 2.20.0; its notes are further down.
+
 ## 2.20.0 - 2026-11-07
 
 ### New: safer ChatGPT imports with one-click recovery

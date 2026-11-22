@@ -357,6 +357,13 @@ input:focus, textarea:focus, select:focus { border-color: var(--focus) !importan
 .publish-banner { position: fixed; z-index: 60; left: calc(var(--sidebar) + var(--space-5)); right: var(--space-5); bottom: var(--space-5); padding: var(--space-4) var(--space-5); border: 1px solid var(--danger); border-radius: var(--radius-md); background: white; box-shadow: var(--shadow-md); }
 .publish-banner__header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
 .publish-banner__header strong { flex: 1; color: var(--danger); font-size: .85rem; }
+/* A long or queued deploy (2.21.0): informational, so the brand colour and
+   no dismiss button; it goes away when the deploy finishes. Bottom left,
+   clear of the toasts on the right. */
+.deploy-notice { position: fixed; z-index: 55; left: calc(var(--sidebar) + var(--space-5)); bottom: var(--space-5); width: min(30rem, calc(100vw - var(--sidebar) - 2 * var(--space-5))); padding: var(--space-4) var(--space-5); border: 1px solid var(--brand-700); border-left-width: 4px; border-radius: var(--radius-md); background: white; box-shadow: var(--shadow-md); }
+.deploy-notice strong { display: block; margin-bottom: var(--space-1); color: var(--brand-900); font-size: .85rem; }
+.deploy-notice p { margin: 0; color: var(--ink); font-size: .8rem; line-height: 1.5; }
+.deploy-status-note--failed { color: var(--danger); font-weight: 650; }
 .publish-banner__output { max-height: 200px; margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); overflow-y: auto; border-radius: var(--radius-sm); background: var(--brand-950); color: #7ec898; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .72rem; line-height: 1.5; white-space: pre-wrap; }
 
 .boot-state { min-height: 100vh; display: flex; align-items: center; justify-content: center; gap: .8rem; color: var(--ink-soft); }
@@ -383,6 +390,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--focus) !importan
   .content-scroll { padding: 1rem 1rem 6rem; }
   .mobile-actions { position: fixed; z-index: 19; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; padding: .7rem 1rem calc(.7rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgb(255 255 255 / 95%); box-shadow: 0 -5px 20px rgb(20 40 32 / 8%); backdrop-filter: blur(12px); }
   .publish-banner { left: var(--space-4); right: var(--space-4); bottom: calc(4.75rem + env(safe-area-inset-bottom)); }
+  .deploy-notice { left: var(--space-4); right: var(--space-4); width: auto; bottom: calc(4.75rem + env(safe-area-inset-bottom)); }
   .gallery-card { grid-template-columns: 20px 78px 1fr; }
   .gallery-card > img { width: 78px; height: 65px; }
   .gallery-card .reorder-actions { grid-column: 3; }

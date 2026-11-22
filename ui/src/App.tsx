@@ -4,7 +4,7 @@ import type { AdminConfig, ContentTree, EntryResponse, HistoryVersion, SearchInd
 import { ConfirmDialog } from './components/Dialog';
 import { ExternalIcon, HistoryIcon, MenuIcon, PublishIcon, SaveIcon, TrashIcon } from './components/Icons';
 import { DeployStatusNote } from './components/DeployStatusNote';
-import { formatElapsed, useDeployProgress } from './features/publish/useDeployProgress';
+import { deployDetailNote, deployFailedSummary, formatElapsed, useDeployProgress } from './features/publish/useDeployProgress';
 import { PublishBanner, type PublishFailure } from './components/PublishBanner';
 import { Sidebar } from './components/Sidebar';
 import { ToastRegion, type ToastMessage } from './components/Toasts';
@@ -37,6 +37,11 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [publishFailure, setPublishFailure] = useState<PublishFailure | null>(null);
   const deploy = useDeployProgress();
+  // A build the deploy workflow reported as failed: the same persistent
+  // banner as a failed push, since the live site didn't update.
+  useEffect(() => {
+    if (deploy.phase === 'failed') setPublishFailure({ summary: deployFailedSummary(config?.developerName ?? '') });
+  }, [deploy.phase, config?.developerName]);
 
   const notify = useCallback((message: string, kind: ToastMessage['kind'] = 'info') => {
     setToasts(current => [...current, { id: Date.now() + Math.random(), message, kind }]);
@@ -178,6 +183,7 @@ export default function App() {
   // the live site has it or the editor saves something new to publish.
   const deploying = deploy.phase === 'deploying';
   const holdPublish = deploying && !draftSaved;
+  const deployNote = deployDetailNote(deploy.detail);
   const liveUrl = currentKey && !isNew ? liveUrlFor(slug, config.siteUrl, config.urlPatterns[collection]) : '';
   const status = dirty ? 'Unsaved changes' : draftSaved ? 'Draft saved' : currentKey ? 'Published' : '';
 
@@ -195,8 +201,9 @@ export default function App() {
           {deploy.phase === 'unconfirmed' && (config.githubRepo
             ? <DeployStatusNote githubRepo={config.githubRepo} deployWorkflowFile={config.deployWorkflowFile} />
             : <span className="deploy-status-note">Changes sent. The website is being updated.</span>)}
+          {deploy.phase === 'failed' && <span className="deploy-status-note deploy-status-note--failed">Website not updated</span>}
           {deploying && !holdPublish && <span className="deploy-status-note">Still deploying your last publish… {formatElapsed(deploy.elapsed)}</span>}
-          <span className="sr-only" aria-live="polite">{publishing ? 'Sending changes' : deploying ? 'Compiling and deploying website' : deploy.phase === 'live' ? 'Website updated' : ''}</span>
+          <span className="sr-only" aria-live="polite">{publishing ? 'Sending changes' : deploying ? 'Compiling and deploying website' : deploy.phase === 'live' ? 'Website updated' : deploy.phase === 'failed' ? 'Website not updated' : ''}</span>
           <button className="button button--secondary" disabled={!entry || saving || !dirty} onClick={save}><SaveIcon /> {saving ? 'Saving…' : 'Save draft'}</button>
           <button className="button button--primary publish-button" aria-busy={publishing || holdPublish} disabled={publishing || dirty || holdPublish} onClick={publish}>{publishing || holdPublish ? <span className="button-spinner" aria-hidden="true" /> : <PublishIcon />} {publishing ? 'Sending changes…' : holdPublish ? `Compiling and deploying website… ${formatElapsed(deploy.elapsed)}` : 'Publish'}</button>
         </div>
@@ -210,6 +217,7 @@ export default function App() {
     <HistoryPanel open={historyOpen} versions={versions} loading={historyLoading} onClose={() => setHistoryOpen(false)} onRestore={version => setConfirm({ kind: 'restore', version })} />
     {confirmDetails && <ConfirmDialog open title={confirmDetails.title} description={confirmDetails.description} confirmLabel={confirmDetails.label} danger={confirmDetails.danger} onCancel={() => setConfirm(null)} onConfirm={acceptConfirm} />}
     {publishFailure && <PublishBanner failure={publishFailure} onDismiss={() => setPublishFailure(null)} />}
+    {!publishFailure && deploying && deployNote && <div className="deploy-notice" role="status"><strong>{deployNote.title}</strong><p>{deployNote.text}</p></div>}
     <ToastRegion toasts={toasts} dismiss={dismissToast} />
   </div>;
 }

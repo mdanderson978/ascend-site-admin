@@ -101,7 +101,10 @@
  *                   by the site's build): when it reports the commit just
  *                   published (or a later one), the Publish button says the
  *                   website is updated. Without it the button falls back to
- *                   a link to the deploy workflow's runs.
+ *                   a link to the deploy workflow's runs. Since 2.21.0 the
+ *                   deploy workflow can also report building / failed /
+ *                   deployed (and a cold image cache) on a one-file
+ *                   `deploy-status` branch; see CHANGELOG 2.21.0.
  *   urlPatterns     optional; '<collection>' -> a path template using
  *                   '{slug}', e.g. { pages: '{slug}', services:
  *                   'services/{slug}' }. A collection with no entry here
@@ -206,7 +209,8 @@ import os from 'os';
 import crypto from 'crypto';
 import { gzipSync, gunzipSync } from 'zlib';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
+import { promisify } from 'util';
 import matter from './safe-matter.mjs';
 import sharp from 'sharp';
 import Busboy from 'busboy';
@@ -340,6 +344,42 @@ export function startAdmin(config) {
     'git', ['-C', ROOT, ...args],
     { encoding: 'utf-8', stdio: 'pipe', ...options },
   );
+  // For calls made while the editor waits on a poll (deploy status): a
+  // network fetch must not block every other request to this server.
+  const execFileAsync = promisify(execFile);
+  const gitAsync = async (args, options = {}) => (await execFileAsync('git', ['-C', ROOT, ...args], { encoding: 'utf-8', ...options })).stdout;
+
+  // Build progress written by the site's own deploy workflow (2.21.0): a
+  // one-file `deploy-status` branch in this repo, force-pushed at each stage
+  // with {commit, state: building|failed|deployed, cold, step, startedAt}.
+  // Fetched with the editor's existing git access, so no token is needed
+  // and a private repo works. A repo whose workflow doesn't write it just
+  // has no branch: the deploy check then behaves exactly as before.
+  const BUILD_STATES = new Set(['building', 'failed', 'deployed']);
+  let buildFetchedAt = 0;
+  const readBuildStatus = async () => {
+    if (Date.now() - buildFetchedAt > 8000) {
+      buildFetchedAt = Date.now();
+      try { await gitAsync(['fetch', '--quiet', '--no-tags', 'origin', '+refs/heads/deploy-status:refs/remotes/origin/deploy-status'], { timeout: 20000 }); }
+      catch (_) { /* no branch yet, or offline: use what we have */ }
+    }
+    try {
+      const s = JSON.parse(await gitAsync(['show', 'refs/remotes/origin/deploy-status:status.json']));
+      if (!s || !/^[0-9a-f]{7,40}$/i.test(String(s.commit)) || !BUILD_STATES.has(s.state)) return null;
+      return { commit: String(s.commit), state: s.state, cold: s.cold === true, step: typeof s.step === 'string' ? s.step : '', startedAt: typeof s.startedAt === 'string' ? s.startedAt : '' };
+    } catch (_) { return null; }
+  };
+  // Is `later` the same commit as `commit`, or built on top of it? (A
+  // newer publish replaces a waiting one in the deploy queue, and its
+  // build then carries both.) Fetches once when `later` isn't known here.
+  const sameOrLater = async (commit, later) => {
+    const a = commit.toLowerCase(), b = later.toLowerCase();
+    if (a.startsWith(b) || b.startsWith(a)) return true;
+    const known = async () => { try { await gitAsync(['cat-file', '-e', later + '^{commit}']); return true; } catch (_) { return false; } };
+    if (!(await known())) { try { await gitAsync(['fetch', '--quiet'], { timeout: 20000 }); } catch (_) {} }
+    if (!(await known())) return false;
+    try { await gitAsync(['merge-base', '--is-ancestor', commit, later]); return true; } catch (_) { return false; }
+  };
 
   // Raw ChatGPT pastes and import undo snapshots are operational recovery
   // data, not website content. Git's private metadata directory keeps them
@@ -1335,6 +1375,7 @@ export function startAdmin(config) {
           menuSlots:        config.menuSlots     || {},
           githubRepo:       GITHUB_REPO,
           deployWorkflowFile: config.deployWorkflowFile || 'publish-deploy.yml',
+          developerName:    config.developerName,
           imageSizes:       IMAGE_SIZES,
           startScreenIntro: config.startScreenIntro || 'Pick a page from the left, type in the search box to find any setting, or jump straight to a common task:',
           startScreenNote:  config.startScreenNote  || 'Fields are listed top-to-bottom in the same order they appear on the website.<br>Make your changes, click <strong>Save Draft</strong>, then <strong>Publish Changes</strong> when ready.',
@@ -2061,17 +2102,29 @@ export function startAdmin(config) {
           const r = await fetch(new URL('/version.json?t=' + Date.now(), config.siteUrl), { cache: 'no-store', signal: AbortSignal.timeout(8000) });
           if (r.ok) liveCommit = (await r.json())?.commit || null;
         } catch (_) { /* offline or not deployed yet: report not live */ }
-        if (liveCommit === null || !/^[0-9a-f]{7,40}$/i.test(String(liveCommit))) { jsonResp(res, 200, { supported: liveCommit !== null, live: false }); return; }
-        let live = liveCommit === commit;
-        if (!live) {
-          // A different commit is live: the previous version (still
-          // deploying), or a newer publish from someone else. Only a commit
-          // this copy doesn't have yet needs a fetch to tell which.
-          const known = () => { try { git(['cat-file', '-e', liveCommit + '^{commit}']); return true; } catch (_) { return false; } };
-          if (!known()) { try { git(['fetch', '--quiet']); } catch (_) {} }
-          if (known()) { try { git(['merge-base', '--is-ancestor', commit, liveCommit]); live = true; } catch (_) {} }
-        }
-        jsonResp(res, 200, { supported: true, live });
+        // Not live yet: what the deploy workflow says about this publish.
+        //   building / failed / deployed - its build is this commit (or a
+        //     later one that includes it); cold = no image cache, so a
+        //     long build is expected
+        //   waiting - the latest build is for an earlier commit: this
+        //     publish is queued behind it or hasn't started yet
+        // Only included when the site's workflow writes the branch.
+        const withBuild = async body => {
+          const s = await readBuildStatus();
+          if (s) {
+            body.build = await sameOrLater(commit, s.commit)
+              ? { state: s.state, cold: s.cold, step: s.step, startedAt: s.startedAt }
+              : { state: 'waiting', behind: s.state === 'building' };
+          }
+          jsonResp(res, 200, body);
+        };
+        if (liveCommit === null || !/^[0-9a-f]{7,40}$/i.test(String(liveCommit))) { await withBuild({ supported: liveCommit !== null, live: false }); return; }
+        // A different commit is live: the previous version (still
+        // deploying), or a newer publish from someone else that includes
+        // this one.
+        const live = await sameOrLater(commit, String(liveCommit));
+        if (live) { jsonResp(res, 200, { supported: true, live: true }); return; }
+        await withBuild({ supported: true, live: false });
         return;
       }
 
