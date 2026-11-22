@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.22.0 - 2026-11-22
+
+### New: "What's new" for editors
+
+The start screen shows a short "What's new" card the first time someone
+opens a version with changes they'll notice, with a "Got it" button. The
+same lines print in the terminal at startup, until dismissed (the browser
+usually covers that window, so the card is what people read).
+
+- Notes live in `whats-new.mjs`: one or two plain sentences per release,
+  only for things an editor will notice, written for the editor rather
+  than a developer. Most releases need none. See the file's header for the
+  rules.
+- A note can name a feature it needs (`requires`). It is hidden on sites
+  without it: `deployStatus` (the deploy workflow reports to the
+  `deploy-status` branch, 2.21.0) or any `admin.config.mjs` flag.
+- "Got it" is remembered per clone, in git's private metadata
+  (`.git/ascend-site-admin/whats-new-seen`), so it is per computer, never
+  published, and survives the admin moving to another port. An editor who
+  skips several versions sees the 3 newest unseen notes.
+- `/api/config` gains `engineVersion` and `whatsNew`; `POST
+  /api/whats-new/seen` records the dismissal.
+
+First note (2.21.0, sites with deploy-status reporting): the Publish button
+now says when a publish will take longer or something went wrong.
+
 ## 2.21.0 - 2026-11-22
 
 ### New: the Publish button can tell a slow deploy from a failed one

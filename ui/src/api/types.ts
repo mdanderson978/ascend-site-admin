@@ -106,6 +106,11 @@ export interface AdminConfig {
    *  since 2.21.0; optional so a missing value falls back to "Your web
    *  developer"). */
   developerName?: string;
+  /** The running engine version (2.22.0+). */
+  engineVersion?: string;
+  /** Editor-facing notes not yet dismissed on this computer, newest
+   *  first (whats-new.mjs). Empty when there's nothing new. */
+  whatsNew?: WhatsNewNote[];
   imageSizes: Record<string, ImagePreset>;
   startScreenIntro: string;
   startScreenNote: string;
@@ -173,6 +178,8 @@ export interface RichHtmlImportResult {
   recovery?: ChatGptRecovery;
 }
 export interface HistoryVersion { sha: string; date: number; message: string }
+
+export interface WhatsNewNote { version: string; text: string }
 
 /** What the site's deploy workflow reports about a publish (2.21.0). Only
  *  present when the workflow writes the repo's `deploy-status` branch.
