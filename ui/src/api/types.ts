@@ -102,6 +102,10 @@ export interface AdminConfig {
   /** The .github/workflows/*.yml filename that builds and deploys this
    *  site - defaults to 'publish-deploy.yml' server-side. */
   deployWorkflowFile: string;
+  /** Named in client-facing messages, e.g. a failed deploy (always sent
+   *  since 2.21.0; optional so a missing value falls back to "Your web
+   *  developer"). */
+  developerName?: string;
   imageSizes: Record<string, ImagePreset>;
   startScreenIntro: string;
   startScreenNote: string;
@@ -169,6 +173,17 @@ export interface RichHtmlImportResult {
   recovery?: ChatGptRecovery;
 }
 export interface HistoryVersion { sha: string; date: number; message: string }
+
+/** What the site's deploy workflow reports about a publish (2.21.0). Only
+ *  present when the workflow writes the repo's `deploy-status` branch.
+ *  building/failed/deployed: the build for this commit (or a later one
+ *  that includes it); cold = no image cache, so it takes much longer.
+ *  waiting: the latest build is an earlier commit's (behind = it is still
+ *  running, so this publish is queued behind it). */
+export type BuildStatus =
+  | { state: 'building' | 'failed' | 'deployed'; cold: boolean; step: string; startedAt: string }
+  | { state: 'waiting'; behind: boolean };
+export interface DeployStatus { supported: boolean; live?: boolean; build?: BuildStatus }
 
 // Menus: admin-authored, freely add/rename/delete-able named menus. A page
 // item stores stableId (never a slug/path) so a rename never goes stale -

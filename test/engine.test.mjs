@@ -1194,6 +1194,71 @@ test('GET /api/deploy-status compares the live site\'s version.json with the pub
   }
 });
 
+// 2.21.0: the deploy workflow reports its own progress on a one-file
+// `deploy-status` branch, so the admin can tell a slow build (cold image
+// cache), a queued one and a failed one apart instead of waiting blind.
+test('GET /api/deploy-status adds what the deploy workflow reports on the deploy-status branch', async t => {
+  const http = await import('node:http');
+  const root = fixture();
+  const origin = fs.mkdtempSync(path.join(os.tmpdir(), 'site-admin-origin-'));
+  const reporter = fs.mkdtempSync(path.join(os.tmpdir(), 'site-admin-reporter-'));
+  t.after(() => { for (const d of [root, origin, reporter]) fs.rmSync(d, { recursive: true, force: true }); });
+  const g = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, encoding: 'utf8' }).trim();
+  g(origin, 'init', '--bare', '-q');
+  g(root, 'add', '.'); g(root, 'commit', '-qm', 'first');
+  const first = g(root, 'rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(root, 'src/content/pages/home.md'), '---\ntitle: Home 2\n---\nWelcome\n');
+  g(root, 'commit', '-qam', 'second');
+  const second = g(root, 'rev-parse', 'HEAD');
+  g(root, 'remote', 'add', 'origin', origin);
+  g(root, 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+  // What the workflow does: a fresh one-commit branch, force-pushed.
+  g(reporter, 'init', '-q');
+  const report = s => {
+    fs.writeFileSync(path.join(reporter, 'status.json'), JSON.stringify(s));
+    g(reporter, 'add', 'status.json');
+    g(reporter, 'commit', '-q', '--allow-empty', '-m', `${s.state} ${s.commit}`);
+    g(reporter, 'push', '-qf', origin, 'HEAD:refs/heads/deploy-status');
+  };
+
+  const site = http.createServer((req, res) => {
+    if (req.url.startsWith('/version.json')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ commit: first })); }
+    else { res.writeHead(404); res.end(); }
+  });
+  await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
+  const siteUrl = `http://127.0.0.1:${site.address().port}`;
+  const ready = async server => { if (!server.listening) await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); }); return `http://127.0.0.1:${server.address().port}`; };
+  // The admin fetches the branch at most every 8 s; a fresh admin per
+  // report keeps the test fast and checks one state at a time.
+  let port = 4480;
+  const statusAfter = async (s, commit = second) => {
+    if (s) report(s);
+    const admin = startAdmin({
+      root, port: port++, pullOnStart: false, siteUrl, siteTitle: 'Fixture Site', developerName: 'Test Developer', developerEmail: 'developer@example.invalid',
+      fields: { 'pages/home': [{ name: 'title', label: 'Title' }] },
+    });
+    try { return await (await fetch(`${await ready(admin)}/api/deploy-status?commit=${commit}`)).json(); }
+    finally { if (admin.listening) await new Promise(resolve => admin.close(resolve)); }
+  };
+
+  try {
+    assert.deepEqual(await statusAfter(null), { supported: true, live: false }, 'no branch yet: exactly the old response');
+    assert.deepEqual(await statusAfter({ commit: second, state: 'building', cold: true, step: '', startedAt: '2026-11-22T05:00:00Z' }),
+      { supported: true, live: false, build: { state: 'building', cold: true, step: '', startedAt: '2026-11-22T05:00:00Z' } }, 'this publish is building with no image cache');
+    assert.deepEqual(await statusAfter({ commit: second, state: 'failed', cold: false, step: 'Build', startedAt: '' }),
+      { supported: true, live: false, build: { state: 'failed', cold: false, step: 'Build', startedAt: '' } }, 'this publish failed');
+    assert.deepEqual(await statusAfter({ commit: first, state: 'building', cold: false, step: '', startedAt: '' }),
+      { supported: true, live: false, build: { state: 'waiting', behind: true } }, 'an earlier publish is still building: queued behind it');
+    assert.deepEqual(await statusAfter({ commit: first, state: 'failed', cold: false, step: 'Build', startedAt: '' }),
+      { supported: true, live: false, build: { state: 'waiting', behind: false } }, "an earlier publish's failure is not this one's");
+    assert.deepEqual((await statusAfter({ commit: second, state: 'building', cold: false, step: '', startedAt: '' }, first)).live, true,
+      'the earlier commit is already live: live wins over any report');
+    assert.deepEqual(await statusAfter({ commit: 'zzz', state: 'building' }), { supported: true, live: false }, 'a malformed report is ignored');
+  } finally {
+    if (site.listening) await new Promise(resolve => site.close(resolve));
+  }
+});
+
 // V3: the editor's colour choices come from the live site's brand.json,
 // with admin.config.mjs `brand` as the stand-in before the first deploy.
 test('GET /api/brand prefers the live site\'s brand.json and reports the engine that built it', async t => {

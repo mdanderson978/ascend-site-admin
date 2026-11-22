@@ -1,4 +1,4 @@
-import type { AdminConfig, ChatGptRecovery, ContentData, ContentTree, EntryResponse, HistoryVersion, MenuItem, MenuPageOption, MenusResponse, RenamePreview, RenameResult, RichHtmlImportResult, SearchIndex, UploadImage } from './types';
+import type { AdminConfig, ChatGptRecovery, ContentData, ContentTree, DeployStatus, EntryResponse, HistoryVersion, MenuItem, MenuPageOption, MenusResponse, RenamePreview, RenameResult, RichHtmlImportResult, SearchIndex, UploadImage } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -27,7 +27,7 @@ export const api = {
   history: (key: string) => request<{ versions: HistoryVersion[] }>(`/api/history/${key}`),
   restore: (key: string, sha: string) => request<{ ok: boolean; restoredFiles?: string[]; error?: string }>(`/api/restore/${key}`, json({ sha })),
   publish: (message = 'Content update') => request<{ ok: boolean; output?: string; commit?: string | null }>('/api/git/push', json({ message })),
-  deployStatus: (commit: string) => request<{ supported: boolean; live?: boolean }>(`/api/deploy-status?commit=${encodeURIComponent(commit)}`),
+  deployStatus: (commit: string) => request<DeployStatus>(`/api/deploy-status?commit=${encodeURIComponent(commit)}`),
   renamePreview: (key: string, newSlug: string) => request<RenamePreview>(`/api/rename/${key}/preview`, json({ newSlug })),
   rename: (key: string, newSlug: string) => request<RenameResult>(`/api/rename/${key}`, json({ newSlug })),
   uploads: () => request<{ files: UploadImage[] }>('/api/uploads'),
